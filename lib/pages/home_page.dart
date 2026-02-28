@@ -88,7 +88,7 @@ class HomePageState extends State<HomePage> {
       android: initializationSettingsAndroid,
       iOS: initializationSettingsIOS,
     );
-    _flutterLocalNotificationsPlugin.initialize(initializationSettings);
+    _flutterLocalNotificationsPlugin.initialize(settings: initializationSettings);
   }
 
   void _scrollListener() {
@@ -126,10 +126,10 @@ class HomePageState extends State<HomePage> {
     print(remoteNotification);
 
     await _flutterLocalNotificationsPlugin.show(
-      0,
-      remoteNotification.title,
-      remoteNotification.body,
-      platformChannelSpecifics,
+      id: 0,
+      title: remoteNotification.title,
+      body: remoteNotification.body,
+      notificationDetails: platformChannelSpecifics,
       payload: null,
     );
   }

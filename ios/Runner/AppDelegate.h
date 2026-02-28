@@ -2,6 +2,6 @@
 #import <UIKit/UIKit.h>
 #import <Firebase/Firebase.h>
 
-@interface AppDelegate : FlutterAppDelegate
+@interface AppDelegate : FlutterAppDelegate <FlutterImplicitEngineDelegate>
 
 @end
