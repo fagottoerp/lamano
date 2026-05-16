@@ -21,13 +21,24 @@ android {
         disable 'InvalidPackage'
     }
 
+    signingConfigs {
+        debug {
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+            storeFile file(System.getProperty("user.home") + '/.android/debug.keystore')
+            storePassword 'android'
+        }
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId "com.dfa.flutterchatdemo"
+            // Use debug signing so release APK can be installed/tested with current Firebase SHA.
+            signingConfig signingConfigs.debug
         minSdkVersion flutter.minSdkVersion
         targetSdkVersion 36
-        versionCode 1
-        versionName "1.0"
+        versionCode flutter.versionCode
+            signingConfig signingConfigs.debug
+        versionName flutter.versionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -43,24 +54,15 @@ android {
         jvmTarget = '1.8'
     }
 
-    signingConfigs {
-        debug {
-            keyAlias 'KeyAlias'
-            keyPassword 'android'
-            storeFile file("keystore/chatdebug.keystore")
-            storePassword 'android'
-        }
-    }
-
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig signingConfigs.debug
+            // Keep default setup for now; add a real release signing config when publishing.
+            minifyEnabled false
+            shrinkResources false
         }
         debug {
             debuggable true
-            signingConfig signingConfigs.debug
         }
     }
 }

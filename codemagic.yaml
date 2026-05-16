@@ -1,0 +1,31 @@
+workflows:
+  ios-free-build:
+    name: iOS Build (No Signing)
+    max_build_duration: 60
+    environment:
+      flutter: 3.29.3
+      xcode: latest
+      cocoapods: default
+
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Install CocoaPods
+        script: |
+          cd ios && pod install
+
+      - name: Build iOS (no code signing)
+        script: |
+          flutter build ios --release --no-codesign
+
+    artifacts:
+      - build/ios/iphoneos/Runner.app
+
+    publishing:
+      email:
+        recipients:
+          - tu-email@gmail.com   # <-- cambia esto por tu email
+        notify:
+          success: true
+          failure: true

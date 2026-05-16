@@ -10,6 +10,13 @@ class FirestoreConstants {
   static const idTo = "idTo";
   static const timestamp = "timestamp";
   static const createdAt = "createdAt";
+  static const isOnline = "isOnline";
+  static const lastSeen = "lastSeen";
   static const content = "content";
   static const type = "type";
+  static const lamanoUserId = "lamanoUserId";
+  static const motoboyPhone = "motoboyPhone";
+  static const rolId = "lamanoRolId";
+  static const pathGroupLocations = "group_locations";
+  static const pathLiveLocations = "live_locations";
 }

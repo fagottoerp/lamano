@@ -1,0 +1,34 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Users collection ─────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ── Messages collection ───────────────────────────────────────
+    match /messages/{groupChatId}/{subCollection}/{messageId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ── Announcements (noticias) ──────────────────────────────────
+    // Anyone authenticated can read; only admin can write
+    match /announcements/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1';
+    }
+
+    // ── Groups ────────────────────────────────────────────────────
+    // Members can read their groups; only admin can create/delete
+    match /groups/{groupId} {
+      allow read: if request.auth != null
+                  && (request.auth.uid in resource.data.members
+                      || request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1');
+      allow write: if request.auth != null
+                   && request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1';
+    }
+  }
+}
