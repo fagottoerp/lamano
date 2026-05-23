@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -195,7 +196,16 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         );
       }
     } catch (err) {
-      Fluttertoast.showToast(msg: err.toString());
+      final msg = err.toString();
+      // On iOS sideload/no-signing builds APNS token may be unavailable.
+      // Suppress this non-critical warning to avoid noisy toast in production UI.
+      if (Platform.isIOS &&
+          (msg.contains('apns-token-not-set') ||
+              msg.contains('APNS token has not been set'))) {
+        print('push token skipped on iOS (APNS unavailable): $msg');
+        return;
+      }
+      Fluttertoast.showToast(msg: msg);
     }
   }
 
