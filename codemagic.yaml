@@ -3,7 +3,7 @@ workflows:
     name: iOS Build (No Signing)
     max_build_duration: 60
     environment:
-      flutter: 3.29.3
+      flutter: 3.44.0
       xcode: latest
       cocoapods: default
 
