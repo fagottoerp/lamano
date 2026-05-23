@@ -480,14 +480,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.5"
-  giphy_flutter_sdk:
-    dependency: "direct main"
-    description:
-      name: giphy_flutter_sdk
-      sha256: "82dd0efcf90251ebe061eff524591b0bd2a81f522cfa2fcbec17f01b10020d62"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.9"
   google_fonts:
     dependency: "direct main"
     description:

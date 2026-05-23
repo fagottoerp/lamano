@@ -1,16 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:giphy_flutter_sdk/giphy_flutter_sdk.dart';
-import 'package:giphy_flutter_sdk/giphy_grid_view.dart';
-import 'package:giphy_flutter_sdk/dto/giphy_content_request.dart';
-import 'package:giphy_flutter_sdk/dto/giphy_media_type.dart';
-import 'package:giphy_flutter_sdk/dto/giphy_rendition.dart';
-import 'package:giphy_flutter_sdk/dto/giphy_theme.dart';
-import 'package:giphy_flutter_sdk/dto/giphy_media.dart';
 import '../services/sticker_service.dart';
 import '../constants/color_constants.dart';
-
-const _kGiphyApiKey = 'X8nOqtlMMY8MoOelMMrGr8C463M0NeX6';
 
 class StickerPicker extends StatefulWidget {
   final void Function(String sticker) onStickerSelected;
@@ -31,7 +22,6 @@ class _StickerPickerState extends State<StickerPicker>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    GiphyFlutterSDK.configure(apiKey: _kGiphyApiKey);
   }
 
   @override
@@ -39,26 +29,6 @@ class _StickerPickerState extends State<StickerPicker>
     _tabController.dispose();
     _searchCtrl.dispose();
     super.dispose();
-  }
-
-  void _handleMediaSelect(GiphyMedia media) {
-    final url = media.images?.fixedWidth?.webPUrl ??
-        media.images?.fixedWidth?.gifUrl ??
-        media.images?.original?.gifUrl ?? '';
-    if (url.isNotEmpty && mounted) {
-      widget.onStickerSelected(url);
-      StickerService.saveGiphySticker(url);
-    }
-  }
-
-  GiphyContentRequest get _currentRequest {
-    if (_searchQuery.trim().isNotEmpty) {
-      return GiphyContentRequest.search(
-        mediaType: GiphyMediaType.sticker,
-        searchQuery: _searchQuery.trim(),
-      );
-    }
-    return GiphyContentRequest.trending(mediaType: GiphyMediaType.sticker);
   }
 
   Future<void> _addSticker(ImageSource source) async {
@@ -102,7 +72,7 @@ class _StickerPickerState extends State<StickerPicker>
             child: TabBarView(
               controller: _tabController,
               children: [
-                // ── Tab 0: Giphy GridView embebido ───────────────────────
+                // ── Tab 0: Giphy temporalmente deshabilitado ─────────────
                 Column(
                   children: [
                     Padding(
@@ -110,7 +80,7 @@ class _StickerPickerState extends State<StickerPicker>
                       child: TextField(
                         controller: _searchCtrl,
                         decoration: InputDecoration(
-                          hintText: 'Buscar stickers en Giphy...',
+                          hintText: 'Giphy deshabilitado temporalmente...',
                           prefixIcon: const Icon(Icons.search, size: 20),
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(vertical: 8),
@@ -125,17 +95,20 @@ class _StickerPickerState extends State<StickerPicker>
                                 )
                               : null,
                         ),
+                        enabled: false,
                         onChanged: (v) => setState(() => _searchQuery = v),
                       ),
                     ),
-                    Expanded(
-                      child: GiphyGridView(
-                        content: _currentRequest,
-                        renditionType: GiphyRendition.fixedWidth,
-                        spanCount: 3,
-                        cellPadding: 4,
-                        theme: GiphyTheme.fromPreset(preset: GiphyThemePreset.light),
-                        onMediaSelect: _handleMediaSelect,
+                    const Expanded(
+                      child: Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'Giphy esta deshabilitado temporalmente en la build iOS de prueba para evitar un conflicto de dependencias.\n\nPuedes seguir usando Mis Stickers y Predeterminados.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
                       ),
                     ),
                   ],
