@@ -260,10 +260,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<MacOSFlutterLocalNotificationsPlugin>()
         ?.requestPermissions(alert: true, badge: true, sound: true);
-
-      _flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<DarwinFlutterLocalNotificationsPlugin>()
-        ?.requestPermissions(alert: true, badge: true, sound: true);
     _flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_androidChannel);
