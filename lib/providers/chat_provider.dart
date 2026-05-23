@@ -59,6 +59,7 @@ class ChatProvider {
     );
 
     final data = messageChat.toJson();
+    data['status'] = 'sent';
     if (extras != null) data.addAll(extras);
 
     FirebaseFirestore.instance.runTransaction((transaction) async {

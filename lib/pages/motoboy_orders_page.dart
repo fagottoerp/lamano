@@ -923,8 +923,6 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
                   _infoRow(Icons.person, clientName),
                   if (phone.isNotEmpty)
                     _infoRow(Icons.phone, phone),
-                  if (address.isNotEmpty)
-                    _infoRow(Icons.location_on, address),
                   const SizedBox(height: 6),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1154,7 +1152,6 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
             const Divider(height: 24),
             _detailRow(Icons.person, 'Cliente', o['client_name']?.toString() ?? '-'),
             if (phone.isNotEmpty) _detailRow(Icons.phone, 'Teléfono', phone),
-            if (address.isNotEmpty) _detailRow(Icons.location_on, 'Dirección', address),
             _detailRow(Icons.shopping_cart_outlined, 'Subtotal', _formatMoney(o['total'])),
             _detailRow(Icons.delivery_dining, 'Delivery', _formatMoney(o['delivery_price'])),
             if ((o['extra_charge'] as num? ?? 0) > 0)
@@ -1407,8 +1404,14 @@ class _TerminarOrderSheetState extends State<_TerminarOrderSheet> {
     ];
     _payments = [_PaymentEntry(
       methodId: widget.paymentMethods.isNotEmpty ? (widget.paymentMethods[0]['id'] as num).toInt() : 0,
-      amount: widget.orderTotal,
+      amount: 0,
     )];
+    for (final p in _payments) {
+      p.amountCtrl.addListener(() {
+        final v = double.tryParse(p.amountCtrl.text) ?? 0;
+        if (p.amount != v) setState(() => p.amount = v);
+      });
+    }
   }
 
   @override
@@ -1740,12 +1743,19 @@ class _TerminarOrderSheetState extends State<_TerminarOrderSheet> {
                     children: [
                       _sectionHeader(Icons.credit_card_outlined, 'Métodos de pago', const Color(0xFFca8a04)),
                       TextButton.icon(
-                        onPressed: () => setState(() => _payments.add(_PaymentEntry(
-                          methodId: widget.paymentMethods.isNotEmpty
-                              ? (widget.paymentMethods[0]['id'] as num).toInt()
-                              : 0,
-                          amount: 0,
-                        ))),
+                        onPressed: () {
+                          final entry = _PaymentEntry(
+                            methodId: widget.paymentMethods.isNotEmpty
+                                ? (widget.paymentMethods[0]['id'] as num).toInt()
+                                : 0,
+                            amount: 0,
+                          );
+                          entry.amountCtrl.addListener(() {
+                            final v = double.tryParse(entry.amountCtrl.text) ?? 0;
+                            if (entry.amount != v) setState(() => entry.amount = v);
+                          });
+                          setState(() => _payments.add(entry));
+                        },
                         icon: const Icon(Icons.add, size: 16),
                         label: const Text('Agregar', style: TextStyle(fontSize: 13)),
                         style: TextButton.styleFrom(
@@ -1966,10 +1976,21 @@ class _TerminarOrderSheetState extends State<_TerminarOrderSheet> {
                     _fieldLabel('Monto *'),
                     TextField(
                       keyboardType: const TextInputType.numberWithOptions(decimal: false),
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: _inputDeco('0').copyWith(prefixText: '\$'),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        TextInputFormatter.withFunction((old, nw) {
+                          final val = double.tryParse(nw.text) ?? 0;
+                          // Max allowed = restante + lo que ya tenía este campo
+                          final maxAllowed = _restante + p.amount;
+                          if (val > maxAllowed + 1) return old;
+                          return nw;
+                        }),
+                      ],
+                      decoration: _inputDeco('0').copyWith(
+                        prefixText: '\$',
+                        hintText: (_restante + p.amount).toStringAsFixed(0),
+                      ),
                       controller: p.amountCtrl,
-                      onChanged: (v) => setState(() => _payments[index].amount = double.tryParse(v) ?? 0),
                     ),
                   ],
                 ),
@@ -2178,17 +2199,7 @@ class _RouteProgressSheetState extends State<_RouteProgressSheet> {
                       Text(clientName, style: const TextStyle(fontSize: 13)),
                     ]),
                   ],
-                  const SizedBox(height: 6),
-                  Row(children: [
-                    const Icon(Icons.location_on, size: 14, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(address,
-                          style: const TextStyle(fontSize: 13),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                  ]),
+                  // Dirección oculta — solo se usa para navegación por Waze/Maps
                 ],
               ),
             ),

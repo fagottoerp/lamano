@@ -16,6 +16,7 @@ import 'package:flutter_chat_demo/providers/providers.dart';
 import 'package:flutter_chat_demo/utils/utilities.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:flutter_chat_demo/widgets/sticker_picker.dart';
+import 'package:flutter_chat_demo/widgets/rainbow_text.dart';
 import 'package:flutter_chat_demo/widgets/location_map_bubble.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
@@ -25,6 +26,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
@@ -49,6 +51,7 @@ class ChatPageState extends State<ChatPage> {
   String _groupChatId = "";
   bool _autoGreetingSent = false; // prevent duplicate greeting
   bool _viewerIsAgente = false;   // true if current user can see GPS
+  bool _gpsBannerExpanded = true;   // toggle hide/show GPS map banner
   Map<String, dynamic>? _motoGps; // live GPS data from Firestore
   StreamSubscription<DocumentSnapshot>? _gpsSub;
 
@@ -80,19 +83,31 @@ class ChatPageState extends State<ChatPage> {
   // Reply to message
   Map<String, dynamic>? _replyTo; // {content, senderName, msgId, type}
 
+  // Peer is admin (rainbow name)
+  bool _peerIsAdmin = false;
+
   // Typing indicator
   bool _peerTyping = false;
   StreamSubscription<DocumentSnapshot>? _typingSub;
+  StreamSubscription<DocumentSnapshot>? _peerPresenceSub;
   Timer? _typingTimer;
 
   // Mute
   int _mutedUntil = 0; // epoch ms, 0 = not muted
+
+  // Block
+  bool _isBlocked = false; // current user blocked peer
+  bool _blockedByPeer = false; // peer blocked current user
+
+  // Pinned message
+  Map<String, dynamic>? _pinnedMessage;
 
   // Custom text color (own bubbles)
   Color _myBubbleColor = const Color(0xFFE8E8E8); // default grey
 
   // Video playback state
   final Map<String, VideoPlayerController> _videoControllers = {};
+  final Map<String, GlobalKey> _messageKeys = {};
 
   final _chatInputController = TextEditingController();
   final _listScrollController = ScrollController();
@@ -116,6 +131,78 @@ class ChatPageState extends State<ChatPage> {
     if (colorValue != null && mounted) {
       setState(() => _myBubbleColor = Color(colorValue));
     }
+  }
+
+  Future<void> _markMessagesRead() async {
+    if (_groupChatId.isEmpty) return;
+    // Mark peer's messages as 'read' so they can show blue ticks on their side
+    final snap = await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(_groupChatId)
+        .collection(_groupChatId)
+        .where(FirestoreConstants.idFrom, isEqualTo: widget.arguments.peerId)
+        .where('status', isLessThan: 'read')
+        .limit(50)
+        .get();
+    final batch = FirebaseFirestore.instance.batch();
+    for (final doc in snap.docs) {
+      batch.update(doc.reference, {'status': 'read'});
+    }
+    if (snap.docs.isNotEmpty) batch.commit().catchError((_) {});
+  }
+
+  Future<void> _markMyMessagesDelivered() async {
+    if (_groupChatId.isEmpty) return;
+    final snap = await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(_groupChatId)
+        .collection(_groupChatId)
+        .where(FirestoreConstants.idFrom, isEqualTo: _currentUserId)
+        .where('status', isEqualTo: 'sent')
+        .limit(50)
+        .get();
+    final batch = FirebaseFirestore.instance.batch();
+    for (final doc in snap.docs) {
+      batch.update(doc.reference, {'status': 'delivered'});
+    }
+    if (snap.docs.isNotEmpty) batch.commit().catchError((_) {});
+  }
+
+  Widget _buildTicks(String? status) {
+    if (status == null || status == 'sent') {
+      return const Icon(Icons.check, size: 13, color: Colors.grey);
+    } else if (status == 'delivered') {
+      return const Icon(Icons.done_all, size: 13, color: Colors.grey);
+    } else {
+      // read
+      return const Icon(Icons.done_all, size: 13, color: Colors.blue);
+    }
+  }
+
+  Future<void> _togglePin(String messageId, String content) async {
+    final ref = FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(_groupChatId);
+    if (_pinnedMessage != null && _pinnedMessage!['msgId'] == messageId) {
+      await ref.set({'pinnedMessage': null}, SetOptions(merge: true));
+      setState(() => _pinnedMessage = null);
+    } else {
+      final pin = {'msgId': messageId, 'content': content};
+      await ref.set({'pinnedMessage': pin}, SetOptions(merge: true));
+      setState(() => _pinnedMessage = pin);
+    }
+  }
+
+  void _loadPinnedMessage() {
+    FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(_groupChatId)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final pin = snap.data()?['pinnedMessage'];
+      setState(() => _pinnedMessage = pin != null ? Map<String, dynamic>.from(pin) : null);
+    });
   }
 
   void _startTypingStream() {
@@ -146,6 +233,7 @@ class ChatPageState extends State<ChatPage> {
     _recordTimer?.cancel();
     _gpsSub?.cancel();
     _typingSub?.cancel();
+    _peerPresenceSub?.cancel();
     _typingTimer?.cancel();
     _chatProvider.setTyping(_groupChatId, _currentUserId, false);
     for (final c in _videoControllers.values) { c.dispose(); }
@@ -202,6 +290,19 @@ class ChatPageState extends State<ChatPage> {
       _currentUserId,
       {FirestoreConstants.chattingWith: peerId},
     );
+    // Mark all incoming messages as read
+    _markMessagesRead();
+    // Load pinned message
+    _loadPinnedMessage();
+    // Watch peer presence to auto-mark our messages as delivered
+    _peerPresenceSub = FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathUserCollection)
+        .doc(peerId)
+        .snapshots()
+        .listen((snap) {
+      final online = snap.data()?[FirestoreConstants.isOnline] as bool? ?? false;
+      if (online) _markMyMessagesDelivered();
+    });
 
     // Determine if viewer can see GPS (agente/ejecutivo/asociado/admin, not motoboy)
     final role = (_authProvider.prefs.getString(FirestoreConstants.aboutMe) ?? '').toLowerCase();
@@ -246,6 +347,47 @@ class ChatPageState extends State<ChatPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _startTypingStream());
     // Load mute setting
     _mutedUntil = _authProvider.prefs.getInt('muted_until_$_groupChatId') ?? 0;
+    // Load block state
+    _loadBlockState();
+  }
+
+  Future<void> _loadBlockState() async {
+    final myDoc = await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathUserCollection)
+        .doc(_currentUserId)
+        .get();
+    final blockedList = List<String>.from(myDoc.data()?['blockedUsers'] as List? ?? []);
+    final peerId = widget.arguments.peerId;
+
+    // Check if peer blocked me
+    final peerDoc = await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathUserCollection)
+        .doc(peerId)
+        .get();
+    final peerBlockedList = List<String>.from(peerDoc.data()?['blockedUsers'] as List? ?? []);
+
+    if (mounted) {
+      setState(() {
+        _isBlocked = blockedList.contains(peerId);
+        _blockedByPeer = peerBlockedList.contains(_currentUserId);
+      });
+    }
+  }
+
+  Future<void> _toggleBlock() async {
+    final peerId = widget.arguments.peerId;
+    final ref = FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathUserCollection)
+        .doc(_currentUserId);
+    if (_isBlocked) {
+      await ref.update({'blockedUsers': FieldValue.arrayRemove([peerId])});
+      setState(() => _isBlocked = false);
+      Fluttertoast.showToast(msg: 'Usuario desbloqueado');
+    } else {
+      await ref.update({'blockedUsers': FieldValue.arrayUnion([peerId])});
+      setState(() => _isBlocked = true);
+      Fluttertoast.showToast(msg: 'Usuario bloqueado');
+    }
   }
 
   Future<bool> _pickImage({ImageSource source = ImageSource.gallery}) async {
@@ -618,6 +760,10 @@ class ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _startJitsiCall({bool videoMuted = true}) async {
+    // Pedir permisos antes de unirse
+    await Permission.microphone.request();
+    if (!videoMuted) await Permission.camera.request();
+
     final myNickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
     final myAvatar = _authProvider.prefs.getString(FirestoreConstants.photoUrl) ?? '';
     final ids = [_currentUserId, widget.arguments.peerId]..sort();
@@ -657,7 +803,20 @@ class ChatPageState extends State<ChatPage> {
         avatar: myAvatar.isNotEmpty ? myAvatar : null,
       ),
     );
-    await jitsi.join(options);
+    try {
+      await jitsi.join(options, JitsiMeetEventListener(
+        conferenceJoined: (url) => debugPrint('JITSI joined: $url'),
+        conferenceTerminated: (url, error) => debugPrint('JITSI terminated: $url err=$error'),
+        conferenceWillJoin: (url) => debugPrint('JITSI willJoin: $url'),
+      ));
+    } catch (e) {
+      debugPrint('JITSI ERROR: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error llamada: $e'), duration: const Duration(seconds: 6)),
+        );
+      }
+    }
   }
 
   /// Sends FCM push to peer so they see an incoming-call screen even if the
@@ -1070,6 +1229,8 @@ class ChatPageState extends State<ChatPage> {
     if (content.trim().isNotEmpty) {
       _chatInputController.clear();
       final extras = <String, dynamic>{};
+      final myRolId = _authProvider.prefs.getString(FirestoreConstants.rolId) ?? '';
+      extras['senderRolId'] = myRolId;
       if (_replyTo != null) {
         extras['replyTo'] = _replyTo;
         setState(() => _replyTo = null);
@@ -1123,10 +1284,39 @@ class ChatPageState extends State<ChatPage> {
     final docData = document.data() as Map<String, dynamic>;
     final reactions = Map<String, dynamic>.from(docData['reactions'] as Map? ?? {});
     final replyTo = docData['replyTo'] as Map<String, dynamic>?;
+    final deletedByName = docData['deletedByName'] as String? ?? '';
+    final isDeleted = (docData['deletedBy'] as String? ?? '').isNotEmpty;
+    final msgStatus = docData['status'] as String?;
     final isMe = messageChat.idFrom == _currentUserId;
+    // Detect if peer is admin from their messages
+    if (!isMe && (docData['senderRolId'] as String? ?? '') == '1' && !_peerIsAdmin) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _peerIsAdmin = true);
+      });
+    }
     final senderName = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Yo';
+    final msgKey = _messageKeys.putIfAbsent(document.id, () => GlobalKey());
 
     Widget _bubbleContent() {
+      if (isDeleted) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          constraints: const BoxConstraints(maxWidth: 240),
+          decoration: BoxDecoration(
+            color: isMe ? const Color(0xFFE0E0E0) : const Color(0xFFF5F5F5),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.delete_outline, size: 14, color: Colors.grey),
+              const SizedBox(width: 6),
+              Flexible(child: Text('Eliminado por $deletedByName', style: const TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic))),
+            ],
+          ),
+        );
+      }
       if (messageChat.type == TypeMessage.text) {
         return Container(
           padding: const EdgeInsets.fromLTRB(15, 10, 15, 10),
@@ -1139,7 +1329,7 @@ class ChatPageState extends State<ChatPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (replyTo != null) _buildReplyBubble(replyTo),
+              if (replyTo != null) _buildReplyBubble(replyTo, onTap: () => _scrollToMessage(replyTo['msgId'] ?? '')),
               _buildRichText(messageChat.content, isMe ? ColorConstants.primaryColor : Colors.white),
             ],
           ),
@@ -1204,18 +1394,40 @@ class ChatPageState extends State<ChatPage> {
 
     if (isMe) {
       return Container(
+        key: msgKey,
         margin: EdgeInsets.only(bottom: _isLastMessageRight(index) ? 20 : 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            bubble,
-            const SizedBox(width: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                bubble,
+                const SizedBox(width: 10),
+              ],
+            ),
+            if (_isLastMessageRight(index))
+              Padding(
+                padding: const EdgeInsets.only(right: 10, top: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      DateFormat('HH:mm').format(DateTime.fromMillisecondsSinceEpoch(int.tryParse(messageChat.timestamp) ?? 0)),
+                      style: const TextStyle(color: ColorConstants.greyColor, fontSize: 11),
+                    ),
+                    const SizedBox(width: 3),
+                    _buildTicks(msgStatus),
+                  ],
+                ),
+              ),
           ],
         ),
       );
     } else {
       return Container(
+        key: msgKey,
         margin: EdgeInsets.only(bottom: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1282,6 +1494,21 @@ class ChatPageState extends State<ChatPage> {
       } else {
         _showMuteDialog();
       }
+    } else if (val == 'block') {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(_isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'),
+          content: Text(_isBlocked
+              ? '¿Deseas desbloquear a ${widget.arguments.peerNickname}?'
+              : '¿Bloquear a ${widget.arguments.peerNickname}? No podrás enviar ni recibir mensajes.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirmar')),
+          ],
+        ),
+      );
+      if (confirm == true) _toggleBlock();
     }
   }
 
@@ -1317,22 +1544,93 @@ class ChatPageState extends State<ChatPage> {
 
   void _showReactionPicker(String messageId) {
     const emojis = ['❤️', '👍', '😂', '😮', '😢', '👏'];
+    String _deletedBy = '';
+    String _msgContent = '';
+    try {
+      final doc = _listMessage.firstWhere((d) => d.id == messageId);
+      final data = doc.data() as Map<String, dynamic>;
+      _deletedBy = data['deletedBy'] as String? ?? '';
+      _msgContent = data[FirestoreConstants.content] as String? ?? '';
+    } catch (_) {}
+    final isPinned = _pinnedMessage != null && _pinnedMessage!['msgId'] == messageId;
+
     showModalBottomSheet(
       context: context,
-      builder: (_) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: emojis.map((e) => GestureDetector(
-            onTap: () {
-              Navigator.pop(context);
-              _chatProvider.toggleReaction(_groupChatId, messageId, e, _currentUserId);
-            },
-            child: Text(e, style: const TextStyle(fontSize: 32)),
-          )).toList(),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: emojis.map((e) => GestureDetector(
+                  onTap: () {
+                    Navigator.pop(context);
+                    _chatProvider.toggleReaction(_groupChatId, messageId, e, _currentUserId);
+                  },
+                  child: Text(e, style: const TextStyle(fontSize: 32)),
+                )).toList(),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                  color: ColorConstants.primaryColor),
+              title: Text(isPinned ? 'Desfijar mensaje' : 'Fijar mensaje', style: const TextStyle(fontSize: 14)),
+              onTap: () {
+                Navigator.pop(context);
+                _togglePin(messageId, _msgContent);
+              },
+            ),
+            if (_deletedBy.isEmpty)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.orange),
+                title: const Text('Eliminar mensaje', style: TextStyle(fontSize: 14)),
+                subtitle: const Text('Queda visible como eliminado', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _softDeleteMessage(messageId);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.delete_forever, color: Colors.red),
+              title: const Text('Eliminar permanente', style: TextStyle(fontSize: 14, color: Colors.red)),
+              subtitle: const Text('Se borra para siempre sin dejar rastro', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              onTap: () {
+                Navigator.pop(context);
+                _hardDeleteMessage(messageId);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
+  }
+
+  Future<void> _softDeleteMessage(String messageId) async {
+    final myNickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
+    await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(_groupChatId)
+        .collection(_groupChatId)
+        .doc(messageId)
+        .update({
+      'deletedBy': _currentUserId,
+      'deletedByName': myNickname,
+      'deletedAt': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<void> _hardDeleteMessage(String messageId) async {
+    await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(_groupChatId)
+        .collection(_groupChatId)
+        .doc(messageId)
+        .delete();
   }
 
   Widget _buildReactions(Map<String, dynamic> reactions) {
@@ -1355,12 +1653,26 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildReplyBubble(Map<String, dynamic> replyTo) {
+  void _scrollToMessage(String msgId) {
+    final key = _messageKeys[msgId];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+        alignment: 0.5,
+      );
+    }
+  }
+
+  Widget _buildReplyBubble(Map<String, dynamic> replyTo, {VoidCallback? onTap}) {
     final content = replyTo['content'] as String? ?? '';
     final sender = replyTo['senderName'] as String? ?? 'Mensaje';
     final type = replyTo['type'] as int? ?? 0;
     final preview = type == TypeMessage.image ? '📷 Foto' : type == TypeMessage.video ? '🎥 Video' : type == TypeMessage.audio ? '🎤 Audio' : content.length > 60 ? '${content.substring(0, 60)}...' : content;
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
       decoration: BoxDecoration(
@@ -1377,7 +1689,7 @@ class ChatPageState extends State<ChatPage> {
           Text(preview, style: const TextStyle(fontSize: 11, color: Colors.black54), maxLines: 2, overflow: TextOverflow.ellipsis),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildReplyPreviewBar() {
@@ -1418,7 +1730,7 @@ class ChatPageState extends State<ChatPage> {
     }
     final ctrl = _videoControllers[url]!;
     return GestureDetector(
-      onTap: () { ctrl.value.isPlaying ? ctrl.pause() : ctrl.play(); setState(() {}); },
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullVideoPage(url: url))),
       child: Container(
         width: 220,
         height: 160,
@@ -1432,15 +1744,17 @@ class ChatPageState extends State<ChatPage> {
             else
               const Center(child: CircularProgressIndicator(color: Colors.white)),
             Center(
-              child: AnimatedOpacity(
-                opacity: ctrl.value.isPlaying ? 0.0 : 1.0,
-                duration: const Duration(milliseconds: 300),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
-                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 36),
-                ),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                child: const Icon(Icons.play_arrow, color: Colors.white, size: 36),
               ),
+            ),
+            // Fullscreen hint
+            Positioned(
+              top: 6,
+              right: 6,
+              child: Icon(Icons.fullscreen, color: Colors.white70, size: 20),
             ),
           ],
         ),
@@ -1452,15 +1766,43 @@ class ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(widget.arguments.peerNickname, style: const TextStyle(color: ColorConstants.primaryColor)),
-            if (_peerTyping)
-              const Text('escribiendo...', style: TextStyle(fontSize: 11, color: Colors.green, fontStyle: FontStyle.italic)),
-            if (_isMuted)
-              const Text('🔇 silenciado', style: TextStyle(fontSize: 10, color: Colors.grey)),
-          ],
+        title: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection(FirestoreConstants.pathUserCollection)
+              .doc(widget.arguments.peerId)
+              .snapshots(),
+          builder: (_, snap) {
+            final data = snap.data?.data() as Map<String, dynamic>?;
+            final isOnline = data?[FirestoreConstants.isOnline] as bool? ?? false;
+            final lastSeen = data?[FirestoreConstants.lastSeen] as int? ?? 0;
+            String subtitle = '';
+            if (isOnline) {
+              subtitle = 'en línea';
+            } else if (lastSeen > 0) {
+              final dt = DateTime.fromMillisecondsSinceEpoch(lastSeen);
+              final diff = DateTime.now().difference(dt);
+              if (diff.inMinutes < 1) subtitle = 'visto hace un momento';
+              else if (diff.inMinutes < 60) subtitle = 'visto hace ${diff.inMinutes}m';
+              else if (diff.inHours < 24) subtitle = 'visto hoy a las ${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}';
+              else if (diff.inDays == 1) subtitle = 'visto ayer';
+              else subtitle = 'visto el ${dt.day}/${dt.month}';
+            }
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!_peerIsAdmin)
+                  Text(widget.arguments.peerNickname, style: const TextStyle(color: ColorConstants.primaryColor))
+                else
+                  RainbowText(widget.arguments.peerNickname, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                if (_peerTyping)
+                  const Text('escribiendo...', style: TextStyle(fontSize: 11, color: Colors.green, fontStyle: FontStyle.italic))
+                else if (subtitle.isNotEmpty)
+                  Text(subtitle, style: TextStyle(fontSize: 11, color: isOnline ? Colors.green : Colors.grey)),
+                if (_isMuted)
+                  const Text('🔇 silenciado', style: TextStyle(fontSize: 10, color: Colors.grey)),
+              ],
+            );
+          },
         ),
         centerTitle: true,
         actions: [
@@ -1487,6 +1829,11 @@ class ChatPageState extends State<ChatPage> {
                 const SizedBox(width: 8),
                 Text(_isMuted ? 'Activar notificaciones' : 'Silenciar'),
               ])),
+              PopupMenuItem(value: 'block', child: Row(children: [
+                Icon(_isBlocked ? Icons.lock_open : Icons.block, size: 18, color: _isBlocked ? Colors.green : Colors.red),
+                const SizedBox(width: 8),
+                Text(_isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'),
+              ])),
             ],
           ),
         ],
@@ -1498,9 +1845,64 @@ class ChatPageState extends State<ChatPage> {
               Column(
                 children: [
                   if (_groupChatId.startsWith('order-') && _viewerIsAgente) _buildGpsBanner(),
+                  if (_pinnedMessage != null)
+                    GestureDetector(
+                      onTap: () => _scrollToMessage(_pinnedMessage!['msgId'] ?? ''),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          border: Border(bottom: BorderSide(color: Colors.amber.shade200)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.push_pin, size: 14, color: Colors.amber),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _pinnedMessage!['content'] as String? ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13, color: Colors.black87),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => _togglePin(_pinnedMessage!['msgId'] ?? '', ''),
+                              child: const Icon(Icons.close, size: 16, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   _buildListMessage(),
                   _isShowSticker ? _buildStickers() : SizedBox.shrink(),
-                  _buildInput(),
+                  if (_isBlocked || _blockedByPeer)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      color: Colors.grey.shade200,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.block, color: Colors.grey, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            _isBlocked ? 'Has bloqueado a este usuario' : 'No puedes enviar mensajes',
+                            style: const TextStyle(color: Colors.grey, fontSize: 13),
+                          ),
+                          if (_isBlocked) ...[
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: _toggleBlock,
+                              child: const Text('Desbloquear',
+                                  style: TextStyle(color: ColorConstants.primaryColor, fontSize: 13, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ],
+                      ),
+                    )
+                  else
+                    _buildInput(),
                 ],
               ),
               Positioned(
@@ -1557,65 +1959,80 @@ class ChatPageState extends State<ChatPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(
-              height: 220,
-              child: Stack(
-                children: [
-                  _LiveMiniMap(
-                    lat: lat,
-                    lng: lng,
-                    nickname: widget.arguments.peerNickname,
-                  ),
-                  // Abrir en Maps tap hint
-                  Positioned(
-                    top: 6, right: 6,
-                    child: GestureDetector(
-                      onTap: () async {
-                        final url = Uri.parse('https://maps.google.com/?q=$lat,$lng');
-                        if (await canLaunchUrl(url)) launchUrl(url, mode: LaunchMode.externalApplication);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.open_in_new, size: 11, color: Colors.white),
-                            SizedBox(width: 4),
-                            Text('Google Maps', style: TextStyle(color: Colors.white, fontSize: 10)),
-                          ],
+            // Header con toggle ocultar
+            GestureDetector(
+              onTap: () => setState(() => _gpsBannerExpanded = !_gpsBannerExpanded),
+              child: Container(
+                color: const Color(0xFF128C7E),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8, height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: online ? Colors.greenAccent : Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.directions_bike, size: 13, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Ubicación del motoboy${agoText.isNotEmpty ? '  ·  $agoText' : ''}',
+                        style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    Icon(
+                      _gpsBannerExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                      size: 16, color: Colors.white,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _gpsBannerExpanded ? 'Ocultar' : 'Ver mapa',
+                      style: const TextStyle(color: Colors.white, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Mapa colapsable
+            AnimatedCrossFade(
+              firstChild: SizedBox(
+                height: 220,
+                child: Stack(
+                  children: [
+                    _LiveMiniMap(lat: lat, lng: lng, nickname: widget.arguments.peerNickname),
+                    Positioned(
+                      top: 6, right: 6,
+                      child: GestureDetector(
+                        onTap: () async {
+                          final url = Uri.parse('https://maps.google.com/?q=$lat,$lng');
+                          if (await canLaunchUrl(url)) launchUrl(url, mode: LaunchMode.externalApplication);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.open_in_new, size: 11, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text('Google Maps', style: TextStyle(color: Colors.white, fontSize: 10)),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              child: Row(
-                children: [
-                  Container(
-                    width: 8, height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: online ? const Color(0xFF16a34a) : Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.directions_bike, size: 13, color: Color(0xFF166534)),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      'Ubicación del motoboy${agoText.isNotEmpty ? '  ·  $agoText' : ''}',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF166534), fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                ],
-              ),
+              secondChild: const SizedBox(height: 0),
+              crossFadeState: _gpsBannerExpanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+              duration: const Duration(milliseconds: 220),
             ),
           ],
         ),
@@ -1934,8 +2351,7 @@ class _LiveMiniMapState extends State<_LiveMiniMap> {
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-          subdomains: const ['a', 'b', 'c', 'd'],
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.lamano.clonewhatsapp',
         ),
         MarkerLayer(markers: [
@@ -1947,18 +2363,18 @@ class _LiveMiniMapState extends State<_LiveMiniMap> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFF0d1f14),
+                color: Colors.white,
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF00e65a), width: 2.5),
+                border: Border.all(color: const Color(0xFF128C7E), width: 2.5),
                 boxShadow: const [
-                  BoxShadow(color: Color(0x5500e65a), blurRadius: 8, spreadRadius: 2),
+                  BoxShadow(color: Color(0x44128C7E), blurRadius: 8, spreadRadius: 2),
                 ],
               ),
               alignment: Alignment.center,
               child: Text(
                 initial,
                 style: const TextStyle(
-                  color: Color(0xFF00e65a),
+                  color: Color(0xFF128C7E),
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
                 ),

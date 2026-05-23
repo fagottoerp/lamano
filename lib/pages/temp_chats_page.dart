@@ -78,6 +78,8 @@ class _TempChatsPageState extends State<TempChatsPage> with AutomaticKeepAliveCl
     final motoboyName        = (order['motoboy_name']         ?? 'Motoboy') as String;
     final orderId            = order['order_id'] as int;
     final motoboyLamanoId    = (order['motoboy_id'] ?? 0).toString();
+    final isGroup            = order['is_group'] == true;
+    final motoboy2Uid        = (order['motoboy2_firebase_uid'] ?? '') as String;
 
     if (motoboyFirebaseUid.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -92,14 +94,18 @@ class _TempChatsPageState extends State<TempChatsPage> with AutomaticKeepAliveCl
     // Room shared between web and app: 'order-{id}'
     final customGroupChatId = 'order-$orderId';
 
+    // For group orders, use motoboy2 uid as peerId so both receive messages
+    // The room is shared so both will see all messages
+    final effectivePeerId = (isGroup && motoboy2Uid.isNotEmpty) ? motoboy2Uid : motoboyFirebaseUid;
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatPage(
           arguments: ChatPageArguments(
-            peerId:            motoboyFirebaseUid,
+            peerId:            effectivePeerId,
             peerAvatar:        '',
-            peerNickname:      '$motoboyName · Orden #$orderId',
+            peerNickname:      isGroup ? '👥 $motoboyName · Orden #$orderId' : '$motoboyName · Orden #$orderId',
             customGroupChatId: customGroupChatId,
             peerLamanoId:      motoboyLamanoId,
           ),
@@ -187,36 +193,29 @@ class _TempChatsPageState extends State<TempChatsPage> with AutomaticKeepAliveCl
           final state = (o['state'] ?? 0) as int;
           final motoboyName = (o['motoboy_name'] ?? 'Motoboy') as String;
           final orderId = (o['order_id'] ?? 0) as int;
-          final address = (o['address'] ?? '') as String;
+          final isGroup = o['is_group'] == true;
           final hasUid = (o['motoboy_firebase_uid'] ?? '').toString().isNotEmpty;
 
           return ListTile(
             leading: CircleAvatar(
-              backgroundColor: _stateColor(state).withOpacity(0.15),
-              child: Text(
-                motoboyName.isNotEmpty ? motoboyName[0].toUpperCase() : 'M',
-                style: TextStyle(
-                  color: _stateColor(state),
-                  fontWeight: FontWeight.bold,
-                ),
+              backgroundColor: isGroup ? Colors.red.withOpacity(0.15) : _stateColor(state).withOpacity(0.15),
+              child: Icon(
+                isGroup ? Icons.group : Icons.person,
+                color: isGroup ? Colors.red : _stateColor(state),
+                size: 20,
               ),
             ),
             title: Text(
-              motoboyName,
+              isGroup ? '👥 $motoboyName' : motoboyName,
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Orden #$orderId',
+                  'Orden #$orderId${isGroup ? ' · Entrega doble ⚠️' : ''}',
                   style: const TextStyle(fontSize: 12),
                 ),
-                if (address.isNotEmpty)
-                  Text(
-                    address.length > 45 ? '${address.substring(0, 45)}…' : address,
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
               ],
             ),
             trailing: Column(

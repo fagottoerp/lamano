@@ -43,6 +43,26 @@ class StickerService {
     return url;
   }
 
+  /// Save a Giphy URL directly to the user's stickers (no upload needed).
+  static Future<void> saveGiphySticker(String url) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    // Avoid duplicates
+    final existing = await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('stickers')
+        .where('url', isEqualTo: url)
+        .limit(1)
+        .get();
+    if (existing.docs.isNotEmpty) return;
+    await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('stickers')
+        .add({'url': url, 'createdAt': FieldValue.serverTimestamp()});
+  }
+
   /// Stream of the current user's stickers (most recent first).
   static Stream<List<String>> myStickersStream() {
     final uid = _auth.currentUser?.uid;

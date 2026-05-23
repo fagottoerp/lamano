@@ -15,6 +15,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'pin_lock_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -395,6 +396,31 @@ class SettingsPageState extends State<SettingsPage> {
                     title: const Text('Color de mis burbujas'),
                     subtitle: const Text('Toca para cambiar el color'),
                     onTap: _showColorPicker,
+                  ),
+                ),
+
+                // PIN de seguridad
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  child: ListTile(
+                    leading: const Icon(Icons.lock_outline_rounded,
+                        color: ColorConstants.primaryColor),
+                    title: const Text('PIN de acceso'),
+                    subtitle: const Text('Configura o cambia tu PIN de seguridad'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => PinLockPage(
+                          mode: PinMode.setup,
+                          onSuccess: () {
+                            Navigator.of(context).pop();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('PIN configurado correctamente')),
+                            );
+                          },
+                        ),
+                      ));
+                    },
                   ),
                 ),
 

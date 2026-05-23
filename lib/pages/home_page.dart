@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -16,8 +18,10 @@ import 'temp_chats_page.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'shift_open_close_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -38,11 +42,20 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     enableVibration: true,
     showBadge: true,
   );
+
+  // Acumulador de mensajes por remitente para agrupar notificaciones
+  // clave: senderId, valor: {name, messages: List<String>, notifId: int}
+  final Map<String, Map<String, dynamic>> _pendingNotifs = {};
+  static const String _notifGroupKey = 'com.lamano.chat.MSG_GROUP';
   int _selectedTab = 0;
   int _orderBadge = 0;
   bool _isMotoboy = false;
   bool _isAdmin = false;
   bool _isAgente = false; // agente o ejecutivo (pueden ver Chat Temporales)
+  bool _isShiftUser = false;
+  bool _shiftLocked = false;
+  bool _mustStartShift = false;
+  bool _showingShiftDialog = false;
   int _refreshKey = 0; // increment to force home rebuild
 
   late final _authProvider = context.read<AuthProvider>();
@@ -52,8 +65,10 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final _btnClearController = StreamController<bool>();
   StreamSubscription<String>? _tokenRefreshSubscription;
   PanicAlertService? _panicAlertService;
+  DateTime? _lastGpsOffAlertSentAt;
 
   List<MenuSetting> get _dynamicMenus => [
+    if (_isShiftUser) MenuSetting(title: 'Apertura y cierre', icon: Icons.manage_history),
     MenuSetting(title: 'Actualizar app', icon: Icons.system_update_alt),
     MenuSetting(title: 'Configuración', icon: Icons.settings),
     MenuSetting(title: 'Cerrar sesión', icon: Icons.exit_to_app),
@@ -76,11 +91,13 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _configLocalNotification();
     final role = _authProvider.prefs.getString(FirestoreConstants.aboutMe) ?? '';
     final rolId = _authProvider.prefs.getString(FirestoreConstants.rolId) ?? '';
+    final lamanoUserId = _authProvider.prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
     _isMotoboy = role.toLowerCase().contains('motoboy');
     _isAdmin = rolId == '1' ||
       role.toLowerCase().contains('admin') ||
       _currentUserId == AppConstants.adminFirebaseUid;
     _isAgente = role.toLowerCase() == 'agente' || role.toLowerCase() == 'ejecutivo' || role.toLowerCase() == 'asociado' || _isAdmin;
+    _isShiftUser = lamanoUserId == '106';
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -90,6 +107,9 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       LocationTracker.instance.start(_currentUserId, nickname);
       startForegroundGps(_currentUserId, nickname);
       _checkGpsGate();
+      if (_isShiftUser) {
+        _checkShiftLock();
+      }
       // Start panic alert listener (volume buttons)
       final panicNickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
       _panicAlertService = PanicAlertService(
@@ -143,6 +163,8 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
           message.notification!,
           '$idFrom|$groupChatId|$senderName',
           senderName: senderName,
+          // En grupos: agrupar por groupChatId. En chats 1:1: agrupar por idFrom.
+          senderId: groupChatId.isNotEmpty ? groupChatId : idFrom,
         );
       }
       return;
@@ -268,6 +290,9 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!mounted || roomName.isEmpty) return;
     // Cancel ongoing call notification if any
     _flutterLocalNotificationsPlugin.cancel(id: 9999);
+    // Limpiar acumulador de notificaciones (el usuario abrió la app)
+    _pendingNotifs.clear();
+    _flutterLocalNotificationsPlugin.cancelAll();
     Navigator.of(context).push(MaterialPageRoute(
       fullscreenDialog: true,
       builder: (_) => IncomingCallPage(
@@ -289,6 +314,36 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final groupChatId = parts[1];
     final senderName = parts.length > 2 ? parts[2] : '';
     if (peerId.isEmpty || peerId == _currentUserId) return;
+
+    // Detect group notification: group IDs are Firestore auto-IDs (no '-').
+    // 1-on-1 IDs are always "uid-uid" (contain '-').
+    // Order chats start with "order-" — also open as 1-on-1 (ChatPage).
+    final isGroup = groupChatId.isNotEmpty &&
+        !groupChatId.contains('-') &&
+        !groupChatId.startsWith('order-');
+
+    if (isGroup) {
+      // Look up group name then open GroupChatPage
+      FirebaseFirestore.instance.collection('groups').doc(groupChatId).get().then((snap) {
+        if (!mounted) return;
+        final groupName = snap.exists
+            ? (snap.data()?['name'] as String? ?? 'Grupo')
+            : 'Grupo';
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => GroupChatPage(
+              arguments: GroupChatArguments(
+                groupId: groupChatId,
+                groupName: groupName,
+              ),
+            ),
+          ),
+        );
+      }).catchError((_) {});
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -305,7 +360,18 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _onItemMenuPress(MenuSetting choice) {
-    if (choice.title == 'Actualizar app') {
+    if (choice.title == 'Apertura y cierre') {
+      final lamanoUserId = _authProvider.prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ShiftOpenClosePage(
+            lamanoUserId: lamanoUserId,
+            onStatusChanged: _checkShiftLock,
+          ),
+        ),
+      );
+    } else if (choice.title == 'Actualizar app') {
       AppUpdater.checkAndUpdate(context, force: true, showUpToDate: true);
     } else if (choice.title == 'Cerrar sesión') {
       _handleSignOut();
@@ -314,8 +380,96 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  void _showNotificationWithPayload(RemoteNotification remoteNotification, String payload, {String senderName = ''}) async {
-    final androidPlatformChannelSpecifics = AndroidNotificationDetails(
+  Future<void> _checkShiftLock() async {
+    if (!_isShiftUser || !mounted) return;
+    try {
+      final lamanoUserId = _authProvider.prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
+      if (lamanoUserId.isEmpty) return;
+      final uri = Uri.parse('http://38.247.147.220/lamano/api_shift_status.php?user_id=$lamanoUserId');
+      final resp = await http.get(uri).timeout(const Duration(seconds: 12));
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (!mounted) return;
+      final locked = data['lock_required'] == true;
+      final todayStarted = data['today_started'] == true;
+      final mustStart = !todayStarted;
+      setState(() {
+        _shiftLocked = locked;
+        _mustStartShift = mustStart;
+      });
+      if (mustStart || locked) {
+        _showShiftLockDialog(lamanoUserId, mustStart: mustStart);
+      }
+    } catch (_) {}
+  }
+
+  void _showShiftLockDialog(String lamanoUserId, {bool mustStart = false}) {
+    if (!mounted) return;
+    if (_showingShiftDialog) return;
+    _showingShiftDialog = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: Text(mustStart ? 'Inicio de turno requerido' : 'Cierre pendiente'),
+        content: Text(mustStart
+            ? 'Debes iniciar turno para poder navegar en la aplicación.'
+            : 'Debes cerrar el turno anterior para seguir usando el sistema.'),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ShiftOpenClosePage(
+                    lamanoUserId: lamanoUserId,
+                    onStatusChanged: _checkShiftLock,
+                  ),
+                ),
+              );
+            },
+            child: const Text('Ir a Apertura/Cierre'),
+          ),
+        ],
+      ),
+    ).whenComplete(() {
+      _showingShiftDialog = false;
+    });
+  }
+
+  void _showNotificationWithPayload(RemoteNotification remoteNotification, String payload, {String senderName = '', String senderId = ''}) async {
+    final displayTitle = senderName.isNotEmpty ? senderName : (remoteNotification.title ?? 'La Mano');
+    final displayBody = remoteNotification.body ?? '';
+    final isGroup = senderId.isNotEmpty && senderId != (senderId.contains('|') ? '' : senderId) || senderId.length > 28;
+    // En grupos mostramos "Nombre: mensaje", en 1:1 solo el mensaje
+    final notifTitle = remoteNotification.title ?? displayTitle;
+    final bodyLine = (senderName.isNotEmpty && notifTitle != senderName)
+        ? '$senderName: $displayBody'  // grupo: "Juan: hola"
+        : displayBody;                  // 1:1: solo el mensaje
+    final key = senderId.isNotEmpty ? senderId : displayTitle;
+
+    // Acumular mensajes de este remitente
+    if (!_pendingNotifs.containsKey(key)) {
+      _pendingNotifs[key] = {
+        'name': displayTitle,
+        'messages': <String>[],
+        'notifId': key.hashCode.abs() % 100000 + 1,
+      };
+    }
+    (_pendingNotifs[key]!['messages'] as List<String>).add(bodyLine);
+
+    final msgs = _pendingNotifs[key]!['messages'] as List<String>;
+    final notifId = _pendingNotifs[key]!['notifId'] as int;
+    final count = msgs.length;
+
+    // Notificación individual del remitente (InboxStyle con todos sus mensajes)
+    final inboxStyle = InboxStyleInformation(
+      msgs,
+      contentTitle: displayTitle,
+      summaryText: count > 1 ? '$count mensajes' : null,
+    );
+
+    final androidDetails = AndroidNotificationDetails(
       _androidChannel.id,
       _androidChannel.name,
       channelDescription: _androidChannel.description,
@@ -325,25 +479,48 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       priority: Priority.high,
       category: AndroidNotificationCategory.message,
       ticker: 'Nuevo mensaje',
+      styleInformation: inboxStyle,
+      groupKey: _notifGroupKey,
+      setAsGroupSummary: false,
     );
-    final iOSPlatformChannelSpecifics = DarwinNotificationDetails();
-    final platformChannelSpecifics = NotificationDetails(
-      android: androidPlatformChannelSpecifics,
-      iOS: iOSPlatformChannelSpecifics,
-    );
-
-    print(remoteNotification);
-
-    // Use senderName if available, otherwise fall back to FCM title
-    final displayTitle = senderName.isNotEmpty ? senderName : (remoteNotification.title ?? 'La Mano');
-    final displayBody = remoteNotification.body ?? '';
 
     await _flutterLocalNotificationsPlugin.show(
-      id: 0,
+      id: notifId,
       title: displayTitle,
-      body: displayBody,
-      notificationDetails: platformChannelSpecifics,
+      body: count > 1 ? '$count mensajes nuevos' : bodyLine,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: const DarwinNotificationDetails(),
+      ),
       payload: payload,
+    );
+
+    // Notificación resumen del grupo (agrupa todas en el panel de notificaciones)
+    final totalMsgs = _pendingNotifs.values.fold<int>(
+      0, (sum, v) => sum + (v['messages'] as List<String>).length,
+    );
+    final totalConvs = _pendingNotifs.length;
+
+    final summaryDetails = AndroidNotificationDetails(
+      _androidChannel.id,
+      _androidChannel.name,
+      channelDescription: _androidChannel.description,
+      importance: Importance.min,
+      priority: Priority.low,
+      groupKey: _notifGroupKey,
+      setAsGroupSummary: true,
+      styleInformation: InboxStyleInformation(
+        _pendingNotifs.entries.map((e) => '${e.value['name']}: ${(e.value['messages'] as List<String>).last}').toList(),
+        contentTitle: 'La Mano',
+        summaryText: '$totalMsgs mensajes de $totalConvs conversación${totalConvs > 1 ? 'es' : ''}',
+      ),
+    );
+
+    await _flutterLocalNotificationsPlugin.show(
+      id: 0, // ID fijo para el resumen
+      title: 'La Mano',
+      body: '$totalMsgs mensajes nuevos',
+      notificationDetails: NotificationDetails(android: summaryDetails),
     );
   }
 
@@ -398,6 +575,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         return; // GPS OK
       }
     }
+    await _notifyGpsDisabled();
     if (!mounted) return;
     // Show non-dismissible dialog
     showDialog(
@@ -443,8 +621,47 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _notifyGpsDisabled() async {
+    final now = DateTime.now();
+    if (_lastGpsOffAlertSentAt != null && now.difference(_lastGpsOffAlertSentAt!).inMinutes < 5) {
+      return;
+    }
+
+    final lamanoUserId = _authProvider.prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
+    if (lamanoUserId.isEmpty) return;
+
+    final nickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
+
+    try {
+      await http.post(
+        Uri.parse('http://38.247.147.220/lamano/api_gps_off_alert.php'),
+        body: {
+          'user_id': lamanoUserId,
+          'user_name': nickname,
+        },
+      ).timeout(const Duration(seconds: 10));
+      _lastGpsOffAlertSentAt = now;
+    } catch (_) {
+      // best-effort only
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isShiftUser && _mustStartShift) {
+      final lamanoUserId = _authProvider.prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Inicio de turno requerido', style: TextStyle(color: ColorConstants.primaryColor)),
+          centerTitle: true,
+        ),
+        body: ShiftOpenClosePage(
+          lamanoUserId: lamanoUserId,
+          onStatusChanged: _checkShiftLock,
+        ),
+      );
+    }
+
     final appBarTitles = _isMotoboy
         ? ['Inicio', 'Estados', 'Chats', 'Mis Órdenes']
         : _isAgente
@@ -458,12 +675,27 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
         centerTitle: true,
         actions: [
+          if (_isShiftUser && _shiftLocked)
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Center(
+                child: Icon(Icons.lock_clock, color: Colors.redAccent),
+              ),
+            ),
           // ── Refresh button (Inicio tab only) ──
           if (_selectedTab == 0)
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: 'Refrescar',
               onPressed: () => setState(() => _refreshKey++),
+            ),
+          if (_isAdmin)
+            IconButton(
+              icon: const Icon(Icons.my_location, color: Color(0xFF1565C0)),
+              tooltip: 'GPS Vivo',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const GpsVivoPage()),
+              ),
             ),
           if (_isAdmin)
             IconButton(
@@ -518,69 +750,114 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _buildBottomNav() {
-    return BottomNavigationBar(
-      currentIndex: _selectedTab,
-      selectedItemColor: ColorConstants.primaryColor,
-      unselectedItemColor: ColorConstants.greyColor,
-      onTap: (index) {
-        setState(() {
-          _selectedTab = index;
-          if (_isMotoboy && index == 3) _orderBadge = 0;
-        });
-      },
-      items: [
-        const BottomNavigationBarItem(
-          icon: Icon(Icons.home_outlined),
-          activeIcon: Icon(Icons.home),
-          label: 'Inicio',
-        ),
-        const BottomNavigationBarItem(
-          icon: Icon(Icons.auto_awesome_outlined),
-          activeIcon: Icon(Icons.auto_awesome),
-          label: 'Estados',
-        ),
-        const BottomNavigationBarItem(
-          icon: Icon(Icons.chat_bubble_outline),
-          activeIcon: Icon(Icons.chat_bubble),
-          label: 'Chats',
-        ),
-        if (_isAgente)
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.forum_outlined, color: Colors.black87),
-            activeIcon: const Icon(Icons.forum, color: Colors.black),
-            label: 'Chat Temp.',
+    final items = [
+      {'icon': Icons.home_outlined, 'active': Icons.home, 'label': 'Inicio'},
+      {'icon': Icons.auto_awesome_outlined, 'active': Icons.auto_awesome, 'label': 'Estados'},
+      {'icon': Icons.chat_bubble_outline, 'active': Icons.chat_bubble, 'label': 'Chats'},
+      if (_isAgente) {'icon': Icons.forum_outlined, 'active': Icons.forum, 'label': 'Chat Temp.'},
+      if (_isMotoboy) {'icon': Icons.delivery_dining_outlined, 'active': Icons.delivery_dining, 'label': 'Mis Órdenes'},
+    ];
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: ColorConstants.cardWhite,
+            border: Border(top: BorderSide(color: ColorConstants.divider, width: 1)),
           ),
-        if (_isMotoboy)
-          BottomNavigationBarItem(
-            icon: _orderBadge > 0
-                ? Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      const Icon(Icons.delivery_dining_outlined),
-                      Positioned(
-                        top: -4,
-                        right: -6,
-                        child: Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                          child: Text(
-                            '$_orderBadge',
-                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                            textAlign: TextAlign.center,
-                          ),
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 60,
+              child: Row(
+                children: List.generate(items.length, (i) {
+                  final item = items[i];
+                  final isActive = _selectedTab == i;
+                  final badgeCount = (_isMotoboy && i == items.length - 1) ? _orderBadge : 0;
+                  return Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        if (_isShiftUser && _mustStartShift) {
+                          final lamanoUserId = _authProvider.prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
+                          _showShiftLockDialog(lamanoUserId, mustStart: true);
+                          return;
+                        }
+                        setState(() {
+                          _selectedTab = i;
+                          if (_isMotoboy && i == items.length - 1) _orderBadge = 0;
+                        });
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Active indicator dot
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: isActive ? 20 : 0,
+                              height: 3,
+                              margin: const EdgeInsets.only(bottom: 4),
+                              decoration: BoxDecoration(
+                                color: ColorConstants.themeColor,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Icon(
+                                  isActive
+                                      ? item['active'] as IconData
+                                      : item['icon'] as IconData,
+                                  color: isActive
+                                      ? ColorConstants.themeColor
+                                      : ColorConstants.greyColor,
+                                  size: 22,
+                                ),
+                                if (badgeCount > 0)
+                                  Positioned(
+                                    top: -4,
+                                    right: -8,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(3),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.red,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                                      child: Text(
+                                        '$badgeCount',
+                                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              item['label'] as String,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                                color: isActive ? ColorConstants.themeColor : ColorConstants.greyColor,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  )
-                : const Icon(Icons.delivery_dining_outlined),
-            activeIcon: const Icon(Icons.delivery_dining),
-            label: 'Mis Órdenes',
+                    ),
+                  );
+                }),
+              ),
+            ),
           ),
-      ],
+        ),
+      ),
     );
   }
 
@@ -641,9 +918,9 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       builder: (_) => Container(
         constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
         decoration: const BoxDecoration(
-          color: Color(0xFF0D1F14),
+          color: ColorConstants.cardWhite,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          border: Border(top: BorderSide(color: Color(0xFF00E65A), width: 1.5)),
+          border: Border(top: BorderSide(color: ColorConstants.primaryColor, width: 2)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -653,7 +930,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: const Color(0xFF00E65A),
+                color: ColorConstants.primaryColor,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -732,57 +1009,65 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   ///  HOME BODY — Noticias + Grupos
   /// -------------------------------------------------------
   Widget _buildHomeBody() {
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          // ── Chip changelog ────────────────────────────────
-          Align(
-            alignment: Alignment.centerRight,
-            child: GestureDetector(
-              onTap: _showChangelogModal,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A3A2A),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFF00E65A), width: 1),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.android, color: Color(0xFF00E65A), size: 14),
-                    SizedBox(width: 4),
-                    Text('APK La Mano · Beta',
-                        style: TextStyle(
-                            color: Color(0xFF00E65A),
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold)),
-                  ],
+    return Container(
+      color: ColorConstants.bgApp,
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(14),
+          children: [
+            // ── Chip changelog ────────────────────────────────
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: _showChangelogModal,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: ColorConstants.surfaceLight,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: ColorConstants.primaryColor, width: 1),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.android, color: ColorConstants.primaryColor, size: 14),
+                      SizedBox(width: 4),
+                      Text('APK La Mano · Beta',
+                          style: TextStyle(
+                              color: ColorConstants.primaryColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold)),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 16),
 
-          // ── Grupos ────────────────────────────────────────
-          Row(
-            children: const [
-              Icon(Icons.group_outlined, color: ColorConstants.primaryColor),
-              SizedBox(width: 6),
-              Text('Grupos',
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: ColorConstants.primaryColor)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _buildGroupsSection(),
+            // ── Burbujas de estados ───────────────────────────
+            _buildStatusBubblesRow(),
+            const SizedBox(height: 16),
 
-          // ── Panel alertas de pánico (solo admin, debajo de grupos) ──
-          if (_isAdmin) ...[const SizedBox(height: 16), _buildPanicAlertsSection()],
-        ],
+            // ── Grupos ────────────────────────────────────────
+            Row(
+              children: const [
+                Icon(Icons.group_outlined, color: ColorConstants.themeColor, size: 18),
+                SizedBox(width: 6),
+                Text('Grupos',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: ColorConstants.textPrimary,
+                        letterSpacing: 0.3)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _buildGroupsSection(),
+
+            // ── Panel alertas de pánico (solo admin, debajo de grupos) ──
+            if (_isAdmin) ...[const SizedBox(height: 16), _buildPanicAlertsSection()],
+          ],
+        ),
       ),
     );
   }
@@ -793,6 +1078,175 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         currentUserId: _currentUserId,
         currentNickname: _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario',
       ),
+    );
+  }
+
+  Widget _buildStatusBubblesRow() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('stories')
+          .where('expiresAt', isGreaterThan: now)
+          .orderBy('expiresAt', descending: true)
+          .snapshots(),
+      builder: (_, snap) {
+        // Agrupar: mis stories + otros usuarios (max 4)
+        List<QueryDocumentSnapshot> myStoriesDocs = [];
+        final Map<String, Map<String, dynamic>> byUser = {};
+        if (snap.hasData) {
+          for (final doc in snap.data!.docs) {
+            final d = doc.data() as Map<String, dynamic>;
+            final uid = d['userId'] as String? ?? '';
+            if (uid == _currentUserId) {
+              myStoriesDocs.add(doc);
+            } else {
+              byUser.putIfAbsent(uid, () => d);
+            }
+          }
+        }
+
+        final entries = byUser.entries.take(4).toList();
+        final hasAnyStory = myStoriesDocs.isNotEmpty || entries.isNotEmpty;
+
+        if (!hasAnyStory) {
+          // Sin estados: botón de subir
+          return GestureDetector(
+            onTap: () => setState(() => _selectedTab = 1),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: ColorConstants.surfaceLight,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: ColorConstants.divider),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.add_circle_outline, color: ColorConstants.themeColor, size: 20),
+                  SizedBox(width: 8),
+                  Text('Subir estado', style: TextStyle(color: ColorConstants.themeColor, fontWeight: FontWeight.w600, fontSize: 13)),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SizedBox(
+          height: 84,
+          child: Row(
+            children: [
+              // Burbuja "Mi estado" — anillo verde si tengo stories, "+" si no
+              GestureDetector(
+                onTap: () {
+                  if (myStoriesDocs.isNotEmpty) {
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => StoryViewPage(stories: myStoriesDocs, currentUserId: _currentUserId),
+                    ));
+                  } else {
+                    setState(() => _selectedTab = 1);
+                  }
+                },
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: myStoriesDocs.isNotEmpty
+                            ? const LinearGradient(
+                                colors: [Color(0xFF00E65A), Color(0xFF00B347)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight)
+                            : null,
+                        border: myStoriesDocs.isEmpty
+                            ? Border.all(color: ColorConstants.divider, width: 1.5)
+                            : null,
+                        color: myStoriesDocs.isEmpty ? ColorConstants.surfaceLight : null,
+                      ),
+                      padding: const EdgeInsets.all(2.5),
+                      child: CircleAvatar(
+                        backgroundColor: ColorConstants.primaryColor.withOpacity(0.15),
+                        child: myStoriesDocs.isEmpty
+                            ? const Icon(Icons.add, color: ColorConstants.themeColor, size: 22)
+                            : Text(
+                                (_authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Y').isNotEmpty
+                                    ? (_authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Y')[0].toUpperCase()
+                                    : 'Y',
+                                style: const TextStyle(color: ColorConstants.primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text('Mi estado', style: TextStyle(fontSize: 10, color: ColorConstants.greyColor)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Burbujas de usuarios con estados
+              ...entries.map((e) {
+                final uid = e.key;
+                final data = e.value;
+                final nickname = data['nickname'] as String? ?? 'Usuario';
+                final allDocs = snap.data!.docs.where((d) => (d.data() as Map)['userId'] == uid).toList();
+                final allViewed = allDocs.every((d) {
+                  final views = (d.data() as Map)['views'] as List? ?? [];
+                  return views.contains(_currentUserId);
+                });
+                // Get avatar from users collection via StreamBuilder would be complex;
+                // use initials avatar instead
+                final initials = nickname.isNotEmpty ? nickname[0].toUpperCase() : '?';
+                return Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => StoryViewPage(stories: allDocs, currentUserId: _currentUserId),
+                      ));
+                    },
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: allViewed
+                                ? null
+                                : const LinearGradient(
+                                    colors: [Color(0xFF00E65A), Color(0xFF00B347)],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight),
+                            border: allViewed
+                                ? Border.all(color: ColorConstants.greyColor, width: 2)
+                                : null,
+                            color: allViewed ? ColorConstants.surfaceLight : null,
+                          ),
+                          padding: const EdgeInsets.all(2.5),
+                          child: CircleAvatar(
+                            backgroundColor: ColorConstants.primaryColor.withOpacity(0.15),
+                            child: Text(initials,
+                                style: const TextStyle(
+                                    color: ColorConstants.primaryColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18)),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          nickname.length > 7 ? '${nickname.substring(0, 6)}…' : nickname,
+                          style: const TextStyle(fontSize: 10, color: ColorConstants.textPrimary),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -1078,11 +1532,11 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
           return Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-                color: ColorConstants.greyColor2,
-                borderRadius: BorderRadius.circular(12)),
+                color: ColorConstants.cardWhite,
+                borderRadius: BorderRadius.circular(16)),
             child: Text(
               'No se pudo cargar grupos: ${snapshot.error}',
-              style: const TextStyle(color: Colors.red, fontSize: 12),
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
             ),
           );
         }
@@ -1104,8 +1558,8 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
           return Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-                color: ColorConstants.greyColor2,
-                borderRadius: BorderRadius.circular(12)),
+                color: ColorConstants.cardWhite,
+                borderRadius: BorderRadius.circular(16)),
             child: const Text(
               'No perteneces a ningún grupo aún.\nUn administrador puede agregarte.',
               style: TextStyle(color: ColorConstants.greyColor, fontSize: 13),
@@ -1120,89 +1574,170 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final description = data['description'] as String? ?? '';
             final memberCount = (data['members'] as List?)?.length ?? 0;
             final lastMessage = data['lastMessage'] as String? ?? '';
+            final lastSenderName = data['lastSenderName'] as String? ?? '';
             final lastTs = (data['lastTimestamp'] as num?)?.toInt() ?? 0;
             final unread = ((data['unreadCounts'] as Map?)?[_currentUserId] as num?)?.toInt() ?? 0;
             final groupImage = (data['groupImage'] as String?) ?? '';
+
             final subtitleText = lastMessage.isNotEmpty
-                ? lastMessage
+                ? (lastSenderName.isNotEmpty ? '$lastSenderName: $lastMessage' : lastMessage)
                 : (description.isNotEmpty ? description : '$memberCount miembros');
-            return Card(
-              margin: const EdgeInsets.only(bottom: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              elevation: 1,
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: ColorConstants.primaryColor,
-                  backgroundImage: groupImage.isNotEmpty ? NetworkImage(groupImage) : null,
-                  child: groupImage.isEmpty
-                      ? Text(
-                          name.isNotEmpty ? name[0].toUpperCase() : 'G',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                        )
-                      : null,
-                ),
-                title: Text(name,
-                    style: TextStyle(
-                        fontWeight: unread > 0 ? FontWeight.bold : FontWeight.w600,
-                        color: ColorConstants.primaryColor)),
-                subtitle: Text(
-                  subtitleText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: unread > 0 ? Colors.black87 : ColorConstants.greyColor,
-                    fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.normal,
-                    fontSize: 13,
-                  ),
-                ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (lastTs > 0)
-                      Text(
-                        _formatChatTime(lastTs),
-                        style: TextStyle(
-                          color: unread > 0
-                              ? ColorConstants.themeColor
-                              : ColorConstants.greyColor,
-                          fontSize: 11,
-                          fontWeight: unread > 0 ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      )
-                    else
-                      const Icon(Icons.chevron_right, color: ColorConstants.greyColor),
-                    if (unread > 0) ...[
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: ColorConstants.themeColor,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          unread > 99 ? '99+' : '$unread',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => GroupChatPage(
-                      arguments: GroupChatArguments(
-                        groupId: doc.id,
-                        groupName: name,
-                        groupDescription: description,
-                        groupImage: groupImage,
-                      ),
+
+            // Color avatar basado en nombre del grupo
+            final avatarColors = [
+              ColorConstants.policeBlue, ColorConstants.motoboyGreen,
+              ColorConstants.trafficOrange, ColorConstants.accidentYellow,
+              ColorConstants.dangerRed,
+            ];
+            final avatarColor = avatarColors[name.length % avatarColors.length];
+
+            return GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => GroupChatPage(
+                    arguments: GroupChatArguments(
+                      groupId: doc.id,
+                      groupName: name,
+                      groupDescription: description,
+                      groupImage: groupImage,
                     ),
                   ),
+                ),
+              ),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ColorConstants.cardWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  border: unread > 0
+                      ? Border.all(color: ColorConstants.primaryColor.withValues(alpha: 0.4), width: 1)
+                      : Border.all(color: ColorConstants.divider, width: 1),
+                ),
+                child: Row(
+                  children: [
+                    // Avatar
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CircleAvatar(
+                          radius: 26,
+                          backgroundColor: avatarColor.withOpacity(0.15),
+                          backgroundImage: groupImage.isNotEmpty ? NetworkImage(groupImage) : null,
+                          child: groupImage.isEmpty
+                              ? Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : 'G',
+                                  style: TextStyle(
+                                      color: avatarColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18),
+                                )
+                              : null,
+                        ),
+                        // Online dot
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: ColorConstants.motoboyGreen,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: ColorConstants.cardWhite, width: 2),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 12),
+                    // Content
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  name,
+                                  style: TextStyle(
+                                    fontWeight: unread > 0 ? FontWeight.bold : FontWeight.w600,
+                                    color: ColorConstants.textPrimary,
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (lastTs > 0)
+                                Text(
+                                  _formatChatTime(lastTs),
+                                  style: TextStyle(
+                                    color: unread > 0
+                                        ? ColorConstants.themeColor
+                                        : ColorConstants.greyColor,
+                                    fontSize: 11,
+                                    fontWeight: unread > 0 ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  subtitleText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: unread > 0
+                                        ? ColorConstants.textSecondary
+                                        : ColorConstants.greyColor,
+                                    fontSize: 12,
+                                    fontWeight: unread > 0 ? FontWeight.w500 : FontWeight.normal,
+                                  ),
+                                ),
+                              ),
+                              if (unread > 0) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: ColorConstants.themeColor,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    unread > 99 ? '99+' : '$unread',
+                                    style: const TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          // Members badge
+                          Row(
+                            children: [
+                              Icon(Icons.people_outline,
+                                  size: 11, color: ColorConstants.greyColor),
+                              const SizedBox(width: 3),
+                              Text(
+                                '$memberCount miembros',
+                                style: const TextStyle(
+                                    fontSize: 10, color: ColorConstants.greyColor),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );

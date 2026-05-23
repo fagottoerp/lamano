@@ -1,18 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
+import 'package:flutter_chat_demo/constants/alert_types.dart';
 import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/providers.dart';
 import 'package:flutter_chat_demo/utils/utilities.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:flutter_chat_demo/widgets/sticker_picker.dart';
+import 'package:flutter_chat_demo/widgets/rainbow_text.dart';
 import 'package:flutter_chat_demo/widgets/location_map_bubble.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:geolocator/geolocator.dart';
@@ -20,6 +24,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -36,6 +41,7 @@ class GroupChatPage extends StatefulWidget {
 class _GroupChatPageState extends State<GroupChatPage> {
   late final String _currentUserId;
   late final String _currentNickname;
+  late final String _currentRolId;
 
   List<QueryDocumentSnapshot> _listMessage = [];
   int _limit = 20;
@@ -45,11 +51,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
   bool _isLoading = false;
   bool _isShowSticker = false;
   String _imageUrl = '';
-
-  // Active call banner
-  String? _activeCallRoom;
-  bool _activeCallIsVideo = false;
-  String _activeCallSender = '';
 
   // Reply to message
   Map<String, dynamic>? _replyTo;
@@ -62,8 +63,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
   // Mute
   int _mutedUntil = 0;
 
+  // Disappearing messages
+  int _disappearingSeconds = 0; // 0 = off
+  Timer? _disappearTimer;
+  final Map<String, double> _fadingMessages = {}; // msgId -> opacity (1.0→0.0)
+
+  // Pinned message
+  Map<String, dynamic>? _pinnedMessage;
+
   // Custom text color
-  Color _myBubbleColor = const Color(0xFFE8E8E8);
+  Color _myBubbleColor = ColorConstants.bgSent;
 
   // Video playback
   final Map<String, VideoPlayerController> _videoControllers = {};
@@ -73,9 +82,31 @@ class _GroupChatPageState extends State<GroupChatPage> {
   bool _isSharingLiveLocation = false;
   String? _activeLiveLocationDocId;
 
+  // Quick alerts
+  bool _showAlertPanel = false;
+
+  // KLK party overlay
+  OverlayEntry? _partyOverlay;
+  String? _lastKnownFirstMsgId;
+
   final _chatInputController = TextEditingController();
   final _listScrollController = ScrollController();
+  final Map<String, GlobalKey> _messageKeys = {};
   final _focusNode = FocusNode();
+
+  // @menciones
+  List<Map<String, String>> _groupMembers = []; // [{uid, name, avatar}]
+  List<Map<String, String>> _mentionSuggestions = [];
+  bool _showMentionSuggestions = false;
+
+  // Búsqueda en chat
+  bool _searchMode = false;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  // Editar mensaje
+  String? _editingMessageId;
+  String? _editingOriginalContent;
 
   late final _chatProvider = context.read<ChatProvider>();
   late final _authProvider = context.read<AuthProvider>();
@@ -87,10 +118,187 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _listScrollController.addListener(_scrollListener);
     _currentUserId = _authProvider.userFirebaseId ?? '';
     _currentNickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
+    _currentRolId = _authProvider.prefs.getString(FirestoreConstants.rolId) ?? '';
     _resetMyUnread();
     _loadMyBubbleColor();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startGroupTypingStream());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startGroupTypingStream();
+      // Si rolId no está en prefs, cargarlo desde Firestore
+      if (_currentRolId.isEmpty && _currentUserId.isNotEmpty) {
+        FirebaseFirestore.instance
+            .collection(FirestoreConstants.pathUserCollection)
+            .doc(_currentUserId)
+            .get()
+            .then((doc) {
+          final rolId = (doc.data()?['rol_id'] ?? '').toString();
+          if (rolId.isNotEmpty && mounted) {
+            _authProvider.prefs.setString(FirestoreConstants.rolId, rolId);
+            setState(() => _currentRolId = rolId);
+          }
+        }).catchError((_) {});
+      }
+    });
     _mutedUntil = _authProvider.prefs.getInt('muted_until_${widget.arguments.groupId}') ?? 0;
+    _loadDisappearingSetting();
+    _loadGroupPinnedMessage();
+  }
+
+  void _loadGroupPinnedMessage() {
+    FirebaseFirestore.instance
+        .collection('groups')
+        .doc(widget.arguments.groupId)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final pin = snap.data()?['pinnedMessage'];
+      setState(() => _pinnedMessage = pin != null ? Map<String, dynamic>.from(pin) : null);
+    });
+  }
+
+  Future<void> _toggleGroupPin(String messageId, String content) async {
+    final ref = FirebaseFirestore.instance.collection('groups').doc(widget.arguments.groupId);
+    if (_pinnedMessage != null && _pinnedMessage!['msgId'] == messageId) {
+      await ref.update({'pinnedMessage': FieldValue.delete()});
+    } else {
+      await ref.set({'pinnedMessage': {'msgId': messageId, 'content': content}}, SetOptions(merge: true));
+    }
+  }
+
+  Future<void> _loadDisappearingSetting() async {
+    final doc = await FirebaseFirestore.instance
+        .collection('groups')
+        .doc(widget.arguments.groupId)
+        .get();
+    final secs = doc.data()?['disappearingSeconds'] as int? ?? 0;
+    if (mounted) setState(() => _disappearingSeconds = secs);
+    if (secs > 0) _startDisappearTimer();
+  }
+
+  void _startDisappearTimer() {
+    _disappearTimer?.cancel();
+    _disappearTimer = Timer.periodic(const Duration(seconds: 30), (_) => _processExpiredMessages());
+  }
+
+  Future<void> _processExpiredMessages() async {
+    if (!mounted) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final toFade = <String>[];
+    for (final doc in _listMessage) {
+      final data = doc.data() as Map<String, dynamic>;
+      final expiresAt = data['expiresAt'] as int? ?? 0;
+      if (expiresAt > 0 && expiresAt <= now) {
+        toFade.add(doc.id);
+      }
+    }
+    if (toFade.isEmpty) return;
+
+    // Start fade animation
+    setState(() {
+      for (final id in toFade) _fadingMessages[id] = 0.0;
+    });
+
+    // Wait for fade then delete from Firestore
+    await Future.delayed(const Duration(milliseconds: 800));
+    final groupId = widget.arguments.groupId;
+    for (final id in toFade) {
+      FirebaseFirestore.instance
+          .collection(FirestoreConstants.pathMessageCollection)
+          .doc(groupId)
+          .collection(groupId)
+          .doc(id)
+          .delete()
+          .catchError((_) {});
+    }
+    if (mounted) setState(() {
+      for (final id in toFade) _fadingMessages.remove(id);
+    });
+  }
+
+  void _showDisappearingDialog(bool isCreator) {
+    if (!isCreator) {
+      Fluttertoast.showToast(msg: 'Solo el administrador puede cambiar esto');
+      return;
+    }
+    // 5 opciones de 10 min en 10 min hasta 1 hora, cada una con color distinto
+    final options = [
+      {'label': 'Desactivar',  'secs': 0,    'color': const Color(0xFF9E9E9E), 'icon': '🚫'},
+      {'label': '10 minutos',  'secs': 600,  'color': const Color(0xFF4CAF50), 'icon': '🟢'},
+      {'label': '20 minutos',  'secs': 1200, 'color': const Color(0xFF8BC34A), 'icon': '🟡'},
+      {'label': '30 minutos',  'secs': 1800, 'color': const Color(0xFFFF9800), 'icon': '🟠'},
+      {'label': '40 minutos',  'secs': 2400, 'color': const Color(0xFFFF5722), 'icon': '🔴'},
+      {'label': '1 hora',      'secs': 3600, 'color': const Color(0xFFF44336), 'icon': '🔥'},
+    ];
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Text('⏳', style: TextStyle(fontSize: 22)),
+            SizedBox(width: 8),
+            Text('Mensajes temporales', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Los mensajes se eliminarán automáticamente.\n⚠️ ¡Una vez activado no hay vuelta atrás!',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            ...options.map((o) {
+              final color = o['color'] as Color;
+              final isSelected = (_disappearingSeconds == (o['secs'] as int));
+              return Container(
+                margin: const EdgeInsets.symmetric(vertical: 3),
+                decoration: BoxDecoration(
+                  color: isSelected ? color.withOpacity(0.15) : Colors.transparent,
+                  border: Border.all(color: isSelected ? color : Colors.grey.shade300, width: isSelected ? 2 : 1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: RadioListTile<int>(
+                  dense: true,
+                  title: Row(
+                    children: [
+                      Text(o['icon'] as String, style: const TextStyle(fontSize: 18)),
+                      const SizedBox(width: 8),
+                      Text(
+                        o['label'] as String,
+                        style: TextStyle(
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected ? color : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  value: o['secs'] as int,
+                  groupValue: _disappearingSeconds,
+                  activeColor: color,
+                  onChanged: (val) async {
+                    Navigator.pop(context);
+                    final secs = val ?? 0;
+                    await FirebaseFirestore.instance
+                        .collection('groups')
+                        .doc(widget.arguments.groupId)
+                        .update({'disappearingSeconds': secs});
+                    setState(() => _disappearingSeconds = secs);
+                    if (secs > 0) {
+                      _startDisappearTimer();
+                      Fluttertoast.showToast(msg: '⏳ Mensajes se eliminarán en: ${o['label']}');
+                    } else {
+                      _disappearTimer?.cancel();
+                      Fluttertoast.showToast(msg: '✅ Mensajes temporales desactivados');
+                    }
+                  },
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadMyBubbleColor() async {
@@ -118,6 +326,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   void _onTypingChanged(String val) {
     _chatProvider.setTyping(widget.arguments.groupId, _currentUserId, val.isNotEmpty);
+    _handleMentionInput(val);
     _typingTimer?.cancel();
     if (val.isNotEmpty) {
       _typingTimer = Timer(const Duration(seconds: 5), () {
@@ -136,6 +345,87 @@ class _GroupChatPageState extends State<GroupChatPage> {
         'unreadCounts': {_currentUserId: 0},
       }, SetOptions(merge: true));
     } catch (_) {}
+    _markGroupMessagesRead();
+  }
+
+  Future<void> _markGroupMessagesRead() async {
+    final groupId = widget.arguments.groupId;
+    final snap = await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(groupId)
+        .collection(groupId)
+        .orderBy(FirestoreConstants.timestamp, descending: true)
+        .limit(30)
+        .get();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final batch = FirebaseFirestore.instance.batch();
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final idFrom = data[FirestoreConstants.idFrom] as String? ?? '';
+      if (idFrom == _currentUserId) continue; // no marcar los propios
+      final readBy = Map<String, dynamic>.from(data['readBy'] as Map? ?? {});
+      if (!readBy.containsKey(_currentUserId)) {
+        batch.update(doc.reference, {'readBy.$_currentUserId': now});
+      }
+    }
+    batch.commit().catchError((_) {});
+  }
+
+  void _showReadBySheet(String messageId) async {
+    final groupId = widget.arguments.groupId;
+    final doc = await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(groupId)
+        .collection(groupId)
+        .doc(messageId)
+        .get();
+    final readBy = Map<String, dynamic>.from(doc.data()?['readBy'] as Map? ?? {});
+    if (!mounted) return;
+    // Load member names
+    if (_groupMembers.isEmpty) await _loadGroupMembers();
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('Visto por', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            const Divider(height: 1),
+            if (readBy.isEmpty)
+              const Padding(padding: EdgeInsets.all(16), child: Text('Nadie ha leído este mensaje aún'))
+            else
+              ...readBy.entries.map((e) {
+                final member = _groupMembers.firstWhere((m) => m['uid'] == e.key, orElse: () => {'uid': e.key, 'name': e.key, 'avatar': ''});
+                final dt = DateTime.fromMillisecondsSinceEpoch(e.value as int? ?? 0);
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: (member['avatar'] ?? '').isNotEmpty ? NetworkImage(member['avatar']!) : null,
+                    backgroundColor: ColorConstants.greyColor2,
+                    child: (member['avatar'] ?? '').isEmpty ? Text((member['name'] ?? '?')[0].toUpperCase()) : null,
+                  ),
+                  title: Text(member['name'] ?? e.key),
+                  trailing: Text('${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}',
+                      style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupTicks(Map<String, dynamic> readBy, List<String> memberUids) {
+    // Remove own UID and sender
+    final others = memberUids.where((uid) => uid != _currentUserId).toList();
+    if (others.isEmpty) return const SizedBox.shrink();
+    final allRead = others.every((uid) => readBy.containsKey(uid));
+    final anyRead = readBy.isNotEmpty;
+    if (allRead) return const Icon(Icons.done_all, size: 13, color: Colors.blue);
+    if (anyRead) return const Icon(Icons.done_all, size: 13, color: Colors.grey);
+    return const Icon(Icons.check, size: 13, color: Colors.grey);
   }
 
   Future<void> _changeGroupImage() async {
@@ -162,6 +452,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _stopGroupLiveLocation();
     _groupTypingSub?.cancel();
     _typingTimer?.cancel();
+    _disappearTimer?.cancel();
     _chatProvider.setTyping(widget.arguments.groupId, _currentUserId, false);
     for (final c in _videoControllers.values) { c.dispose(); }
     _chatInputController.dispose();
@@ -178,6 +469,18 @@ class _GroupChatPageState extends State<GroupChatPage> {
         !_listScrollController.position.outOfRange &&
         _limit <= _listMessage.length) {
       setState(() => _limit += _limitIncrement);
+    }
+  }
+
+  void _scrollToMessage(String msgId) {
+    final key = _messageKeys[msgId];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+        alignment: 0.5,
+      );
     }
   }
 
@@ -265,6 +568,11 @@ class _GroupChatPageState extends State<GroupChatPage> {
       Fluttertoast.showToast(msg: 'Nada que enviar', backgroundColor: ColorConstants.greyColor);
       return;
     }
+    // Si estamos en modo edición, guardar edición en lugar de enviar nuevo
+    if (_editingMessageId != null && type == TypeMessage.text) {
+      _saveEdit();
+      return;
+    }
     _chatInputController.clear();
     final extras = <String, dynamic>{};
     if (_replyTo != null) {
@@ -296,7 +604,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
       FirestoreConstants.content: content,
       FirestoreConstants.type: type,
       'senderName': _currentNickname,
+      'senderRolId': _currentRolId,
     };
+    if (_disappearingSeconds > 0) {
+      data['expiresAt'] = ts + (_disappearingSeconds * 1000);
+    }
+    // Initialize readBy — sender has already "read" their own message
+    data['readBy'] = {_currentUserId: ts};
     if (extras != null) data.addAll(extras);
 
     FirebaseFirestore.instance.runTransaction((tx) async {
@@ -318,6 +632,14 @@ class _GroupChatPageState extends State<GroupChatPage> {
                             ? '📹 Videollamada'
                             : type == TypeMessage.video
                                 ? '🎥 Video'
+                                : type == TypeMessage.alert
+                                    ? () {
+                                        try {
+                                          final d = jsonDecode(content) as Map;
+                                          final k = AlertKind.fromId((d['alertKind'] as num).toInt());
+                                          return '${k.emoji} ${k.label}';
+                                        } catch (_) { return '🚨 Alerta'; }
+                                      }()
                             : '💬 Mensaje';
 
     () async {
@@ -348,6 +670,88 @@ class _GroupChatPageState extends State<GroupChatPage> {
   void _getSticker() {
     _focusNode.unfocus();
     setState(() => _isShowSticker = !_isShowSticker);
+  }
+
+  /// Efecto fiesta: emojis flotando + vibración al recibir KLK MANE ACTIVO
+  void _triggerPartyEffect(String senderName) {
+    // Vibración
+    try { HapticFeedback.heavyImpact(); } catch (_) {}
+    Future.delayed(const Duration(milliseconds: 150), () {
+      try { HapticFeedback.heavyImpact(); } catch (_) {}
+    });
+    Future.delayed(const Duration(milliseconds: 300), () {
+      try { HapticFeedback.heavyImpact(); } catch (_) {}
+    });
+
+    _partyOverlay?.remove();
+    _partyOverlay = null;
+
+    final overlay = Overlay.of(context);
+    final size = MediaQuery.of(context).size;
+    late OverlayEntry entry;
+    entry = OverlayEntry(builder: (_) => _PartyOverlay(
+      senderName: senderName,
+      screenSize: size,
+      onDone: () {
+        entry.remove();
+        if (_partyOverlay == entry) _partyOverlay = null;
+      },
+    ));
+    overlay.insert(entry);
+    _partyOverlay = entry;
+  }
+
+  /// Envía una alerta rápida con la ubicación actual del usuario al grupo
+  /// y la registra en la colección global `alerts` para el mapa en tiempo real.
+  Future<void> _sendQuickAlert(AlertKind kind) async {
+    setState(() => _showAlertPanel = false);
+    Fluttertoast.showToast(msg: 'Obteniendo ubicación...');
+
+    Position? pos;
+    try {
+      final ok = await Geolocator.isLocationServiceEnabled();
+      if (!ok) { Fluttertoast.showToast(msg: 'Activa el GPS'); return; }
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        Fluttertoast.showToast(msg: 'Permiso de ubicación denegado'); return;
+      }
+      pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    } catch (e) {
+      Fluttertoast.showToast(msg: 'Error GPS: $e'); return;
+    }
+
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final groupId = widget.arguments.groupId;
+    final alertDocId = '${groupId}_${_currentUserId}_$ts';
+
+    // Payload del mensaje de chat
+    final payload = jsonEncode({
+      'alertKind': kind.id,
+      'lat': pos.latitude,
+      'lng': pos.longitude,
+      'senderName': _currentNickname,
+      'ts': ts,
+      'alertDocId': alertDocId,
+    });
+
+    // 1 – Enviar como mensaje al grupo
+    _sendGroupMessage(payload, TypeMessage.alert);
+
+    // 2 – Registrar en colección global `alerts` para el mapa
+    await FirebaseFirestore.instance.collection('alerts').doc(alertDocId).set({
+      'alertKind': kind.id,
+      'lat': pos.latitude,
+      'lng': pos.longitude,
+      'groupId': groupId,
+      'groupName': widget.arguments.groupName,
+      'senderId': _currentUserId,
+      'senderName': _currentNickname,
+      'ts': ts,
+      'expireAt': ts + 30 * 60 * 1000, // expira en 30 min
+    });
+
+    Fluttertoast.showToast(msg: '${kind.emoji} Alerta enviada');
   }
 
   Future<void> _startGroupLiveLocation() async {
@@ -517,6 +921,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
   }
 
   Future<void> _startGroupJitsiCall({required bool videoMuted}) async {
+    await Permission.microphone.request();
+    if (!videoMuted) await Permission.camera.request();
+
     final groupId = widget.arguments.groupId;
     final groupName = widget.arguments.groupName;
     final roomName = 'grupo_${groupId}_${DateTime.now().millisecondsSinceEpoch}';
@@ -856,7 +1263,19 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   bool get _isMuted => _mutedUntil > DateTime.now().millisecondsSinceEpoch;
 
+  String _formatDisappearDuration(int secs) {
+    if (secs >= 604800) return '7 días';
+    if (secs >= 86400) return '24 horas';
+    if (secs >= 28800) return '8 horas';
+    if (secs >= 3600) return '1 hora';
+    return '${secs}s';
+  }
+
   void _handleAppBarMenu(String val) async {
+    if (val == 'members') {
+      _showMembersSheet();
+      return;
+    }
     if (val == 'mute') {
       if (_isMuted) {
         setState(() => _mutedUntil = 0);
@@ -865,6 +1284,19 @@ class _GroupChatPageState extends State<GroupChatPage> {
       } else {
         _showMuteDialog();
       }
+    }
+    if (val == 'disappearing') {
+      final doc = await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.arguments.groupId)
+          .get();
+      final createdBy = doc.data()?['createdBy'] as String? ?? '';
+      final nick = _currentNickname.toLowerCase().trim();
+      final canChange = createdBy == _currentUserId
+          || _currentRolId == '1'
+          || nick == 'jimmy'
+          || nick == 'admin';
+      _showDisappearingDialog(canChange);
     }
   }
 
@@ -898,24 +1330,303 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
   }
 
-  void _showReactionPicker(String messageId, String groupId) {
-    const emojis = ['❤️', '👍', '😂', '😮', '😢', '👏'];
+  // ── Cargar miembros del grupo ──────────────────────────────
+  Future<void> _loadGroupMembers() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('groups')
+        .doc(widget.arguments.groupId)
+        .get();
+    final uids = ((snap.data()?['members'] as List?) ?? []).cast<String>();
+    final List<Map<String, String>> members = [];
+    for (final uid in uids) {
+      final userSnap = await FirebaseFirestore.instance
+          .collection(FirestoreConstants.pathUserCollection)
+          .doc(uid)
+          .get();
+      final d = userSnap.data();
+      if (d != null) {
+        members.add({
+          'uid': uid,
+          'name': d[FirestoreConstants.nickname] as String? ?? uid,
+          'avatar': d[FirestoreConstants.photoUrl] as String? ?? '',
+        });
+      }
+    }
+    if (mounted) setState(() => _groupMembers = members);
+  }
+
+  void _showMembersSheet() async {
+    if (_groupMembers.isEmpty) await _loadGroupMembers();
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
-      builder: (_) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: emojis.map((e) => GestureDetector(
-            onTap: () {
-              Navigator.pop(context);
-              _chatProvider.toggleReaction(groupId, messageId, e, _currentUserId);
-            },
-            child: Text(e, style: const TextStyle(fontSize: 32)),
-          )).toList(),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Miembros (${_groupMembers.length})',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _groupMembers.length,
+              itemBuilder: (_, i) {
+                final m = _groupMembers[i];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: m['avatar']!.isNotEmpty ? NetworkImage(m['avatar']!) : null,
+                    child: m['avatar']!.isEmpty ? Text(m['name']![0].toUpperCase()) : null,
+                  ),
+                  title: Text(m['name']!),
+                  subtitle: m['uid'] == _currentUserId ? const Text('Tú', style: TextStyle(color: ColorConstants.primaryColor)) : null,
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── @menciones ──────────────────────────────────────────────
+  void _handleMentionInput(String text) {
+    final cursor = _chatInputController.selection.baseOffset;
+    if (cursor < 0) return;
+    final before = text.substring(0, cursor > text.length ? text.length : cursor);
+    final match = RegExp(r'@(\w*)$').firstMatch(before);
+    if (match != null) {
+      final query = match.group(1)!.toLowerCase();
+      if (_groupMembers.isEmpty) _loadGroupMembers();
+      final suggestions = _groupMembers
+          .where((m) => m['name']!.toLowerCase().contains(query))
+          .toList();
+      setState(() {
+        _mentionSuggestions = suggestions;
+        _showMentionSuggestions = suggestions.isNotEmpty;
+      });
+    } else {
+      setState(() => _showMentionSuggestions = false);
+    }
+  }
+
+  void _insertMention(Map<String, String> member) {
+    final text = _chatInputController.text;
+    final cursor = _chatInputController.selection.baseOffset;
+    final before = text.substring(0, cursor > text.length ? text.length : cursor);
+    final after = cursor < text.length ? text.substring(cursor) : '';
+    final newBefore = before.replaceFirst(RegExp(r'@\w*$'), '@${member['name']} ');
+    _chatInputController.value = TextEditingValue(
+      text: newBefore + after,
+      selection: TextSelection.collapsed(offset: newBefore.length),
+    );
+    setState(() => _showMentionSuggestions = false);
+  }
+
+  // ── Editar mensaje ──────────────────────────────────────────
+  void _startEditing(String messageId, String content) {
+    setState(() {
+      _editingMessageId = messageId;
+      _editingOriginalContent = content;
+    });
+    _chatInputController.text = content;
+    _chatInputController.selection = TextSelection.collapsed(offset: content.length);
+    _focusNode.requestFocus();
+    Navigator.pop(context);
+  }
+
+  Future<void> _saveEdit() async {
+    if (_editingMessageId == null) return;
+    final newContent = _chatInputController.text.trim();
+    if (newContent.isEmpty) return;
+    await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(widget.arguments.groupId)
+        .collection(widget.arguments.groupId)
+        .doc(_editingMessageId)
+        .update({
+      FirestoreConstants.content: newContent,
+      'edited': true,
+      'editedAt': DateTime.now().millisecondsSinceEpoch,
+    });
+    setState(() {
+      _editingMessageId = null;
+      _editingOriginalContent = null;
+    });
+    _chatInputController.clear();
+  }
+
+  // ── Reenviar mensaje ────────────────────────────────────────
+  void _showForwardSheet(String content, int type) {
+    Navigator.pop(context); // cierra el bottom sheet de reacciones
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Reenviar a...', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _groupMembers.length,
+              itemBuilder: (ctx, i) {
+                final m = _groupMembers[i];
+                if (m['uid'] == _currentUserId) return const SizedBox.shrink();
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: m['avatar']!.isNotEmpty ? NetworkImage(m['avatar']!) : null,
+                    child: m['avatar']!.isEmpty ? Text(m['name']![0].toUpperCase()) : null,
+                  ),
+                  title: Text(m['name']!),
+                  onTap: () {
+                    // Reenviar al chat individual con ese usuario
+                    final chatId = _currentUserId.compareTo(m['uid']!) < 0
+                        ? '${_currentUserId}-${m['uid']}'
+                        : '${m['uid']!}-$_currentUserId';
+                    FirebaseFirestore.instance
+                        .collection(FirestoreConstants.pathMessageCollection)
+                        .doc(chatId)
+                        .collection(chatId)
+                        .add({
+                      FirestoreConstants.idFrom: _currentUserId,
+                      FirestoreConstants.idTo: m['uid'],
+                      FirestoreConstants.content: content,
+                      FirestoreConstants.type: type,
+                      FirestoreConstants.timestamp: DateTime.now().millisecondsSinceEpoch.toString(),
+                      'forwarded': true,
+                    });
+                    Navigator.pop(context);
+                    Fluttertoast.showToast(msg: 'Reenviado a ${m['name']}');
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReactionPicker(String messageId, String groupId) {
+    const emojis = ['❤️', '👍', '😂', '😮', '😢', '👏'];
+    bool _isOwner = false;
+    String _deletedBy = '';
+    String _msgContent = '';
+    int _msgType = TypeMessage.text;
+    try {
+      final doc = _listMessage.firstWhere((d) => d.id == messageId);
+      final data = doc.data() as Map<String, dynamic>;
+      _isOwner = (data[FirestoreConstants.idFrom] as String? ?? '') == _currentUserId;
+      _deletedBy = data['deletedBy'] as String? ?? '';
+      _msgContent = data[FirestoreConstants.content] as String? ?? '';
+      _msgType = data[FirestoreConstants.type] as int? ?? TypeMessage.text;
+    } catch (_) {}
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Emoji reactions
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: emojis.map((e) => GestureDetector(
+                  onTap: () {
+                    Navigator.pop(context);
+                    _chatProvider.toggleReaction(groupId, messageId, e, _currentUserId);
+                  },
+                  child: Text(e, style: const TextStyle(fontSize: 32)),
+                )).toList(),
+              ),
+            ),
+            const Divider(height: 1),
+            // Fijar
+            ListTile(
+              leading: Icon(
+                (_pinnedMessage != null && _pinnedMessage!['msgId'] == messageId) ? Icons.push_pin : Icons.push_pin_outlined,
+                color: ColorConstants.primaryColor),
+              title: Text(
+                (_pinnedMessage != null && _pinnedMessage!['msgId'] == messageId) ? 'Desfijar mensaje' : 'Fijar mensaje',
+                style: const TextStyle(fontSize: 14)),
+              onTap: () {
+                Navigator.pop(context);
+                _toggleGroupPin(messageId, _msgContent);
+              },
+            ),
+            // Reenviar
+            if (_deletedBy.isEmpty) ...[
+              ListTile(
+                leading: const Icon(Icons.forward, color: ColorConstants.primaryColor),
+                title: const Text('Reenviar', style: TextStyle(fontSize: 14)),
+                onTap: () {
+                  if (_groupMembers.isEmpty) _loadGroupMembers();
+                  _showForwardSheet(_msgContent, _msgType);
+                },
+              ),
+            ],
+            // Editar (solo mensajes de texto propios)
+            if (_isOwner && _deletedBy.isEmpty && _msgType == TypeMessage.text) ...[
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, color: Colors.blue),
+                title: const Text('Editar mensaje', style: TextStyle(fontSize: 14)),
+                onTap: () => _startEditing(messageId, _msgContent),
+              ),
+            ],
+            // Delete options (only if not already deleted)
+            if (_deletedBy.isEmpty) ...[
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.orange),
+                title: const Text('Eliminar mensaje', style: TextStyle(fontSize: 14)),
+                subtitle: const Text('Queda visible como eliminado', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _deleteMessage(messageId, groupId);
+                },
+              ),
+            ],
+            ListTile(
+              leading: const Icon(Icons.delete_forever, color: Colors.red),
+              title: const Text('Eliminar permanente', style: TextStyle(fontSize: 14, color: Colors.red)),
+              subtitle: const Text('Se borra para siempre sin dejar rastro', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              onTap: () {
+                Navigator.pop(context);
+                _permanentDeleteMessage(messageId, groupId);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
+  }
+
+  Future<void> _deleteMessage(String messageId, String groupId) async {
+    await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(groupId)
+        .collection(groupId)
+        .doc(messageId)
+        .update({
+      'deletedBy': _currentUserId,
+      'deletedByName': _currentNickname,
+      'deletedAt': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<void> _permanentDeleteMessage(String messageId, String groupId) async {
+    await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(groupId)
+        .collection(groupId)
+        .doc(messageId)
+        .delete();
   }
 
   Widget _buildReactions(Map<String, dynamic> reactions) {
@@ -938,12 +1649,14 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
   }
 
-  Widget _buildReplyBubble(Map<String, dynamic> replyTo) {
+  Widget _buildReplyBubble(Map<String, dynamic> replyTo, {VoidCallback? onTap}) {
     final content = replyTo['content'] as String? ?? '';
     final sender = replyTo['senderName'] as String? ?? 'Mensaje';
     final type = replyTo['type'] as int? ?? 0;
     final preview = type == TypeMessage.image ? '📷 Foto' : type == TypeMessage.video ? '🎥 Video' : type == TypeMessage.audio ? '🎤 Audio' : content.length > 60 ? '${content.substring(0, 60)}...' : content;
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
       decoration: BoxDecoration(
@@ -960,7 +1673,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
           Text(preview, style: const TextStyle(fontSize: 11, color: Colors.black54), maxLines: 2, overflow: TextOverflow.ellipsis),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildReplyPreviewBar() {
@@ -1001,7 +1714,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
     final ctrl = _videoControllers[url]!;
     return GestureDetector(
-      onTap: () { ctrl.value.isPlaying ? ctrl.pause() : ctrl.play(); setState(() {}); },
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullVideoPage(url: url))),
       child: Container(
         width: 220,
         height: 160,
@@ -1015,18 +1728,45 @@ class _GroupChatPageState extends State<GroupChatPage> {
             else
               const Center(child: CircularProgressIndicator(color: Colors.white)),
             Center(
-              child: AnimatedOpacity(
-                opacity: ctrl.value.isPlaying ? 0.0 : 1.0,
-                duration: const Duration(milliseconds: 300),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
-                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 36),
-                ),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                child: const Icon(Icons.play_arrow, color: Colors.white, size: 36),
               ),
+            ),
+            // Fullscreen hint
+            Positioned(
+              top: 6,
+              right: 6,
+              child: Icon(Icons.fullscreen, color: Colors.white70, size: 20),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDeletedBubble(String deletedByName, bool isMe) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      constraints: const BoxConstraints(maxWidth: 240),
+      decoration: BoxDecoration(
+        color: isMe ? const Color(0xFFE0E0E0) : const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.delete_outline, size: 14, color: Colors.grey),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              'Eliminado por $deletedByName',
+              style: const TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1041,26 +1781,45 @@ class _GroupChatPageState extends State<GroupChatPage> {
     final senderName = data['senderName'] as String? ?? '';
     final reactions = Map<String, dynamic>.from(data['reactions'] as Map? ?? {});
     final replyTo = data['replyTo'] as Map<String, dynamic>?;
+    final deletedByName = data['deletedByName'] as String? ?? '';
+    final isDeleted = (data['deletedBy'] as String? ?? '').isNotEmpty;
+    final readBy = Map<String, dynamic>.from(data['readBy'] as Map? ?? {});
 
     final isMe = idFrom == _currentUserId;
     final showSender = !isMe && (index == _listMessage.length - 1 ||
         (_listMessage[index + 1].get(FirestoreConstants.idFrom) != idFrom));
+    final msgKey = _messageKeys.putIfAbsent(document.id, () => GlobalKey());
+
+    // Filtro de búsqueda
+    if (_searchQuery.isNotEmpty && !content.toLowerCase().contains(_searchQuery)) {
+      return const SizedBox.shrink();
+    }
 
     Widget _bubbleContent() {
+      // If deleted, always show the deleted bubble
+      if (isDeleted) return _buildDeletedBubble(deletedByName, isMe);
+      final isEdited = data['edited'] == true;
+
       if (type == TypeMessage.text) {
         return Container(
           padding: const EdgeInsets.fromLTRB(15, 10, 15, 10),
           constraints: const BoxConstraints(maxWidth: 220),
           decoration: BoxDecoration(
-            color: isMe ? _myBubbleColor : ColorConstants.primaryColor,
+            color: isMe ? _myBubbleColor : ColorConstants.bgReceived,
             borderRadius: BorderRadius.circular(8),
+            boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 2, offset: Offset(0,1))],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (replyTo != null) _buildReplyBubble(replyTo),
-              _buildRichText(content, isMe ? ColorConstants.primaryColor : Colors.white),
+              if (replyTo != null) _buildReplyBubble(replyTo, onTap: () => _scrollToMessage(replyTo['msgId'] ?? '')),
+              _buildRichText(content, isMe ? ColorConstants.textPrimary : ColorConstants.textPrimary),
+              if (isEdited)
+                const Padding(
+                  padding: EdgeInsets.only(top: 2),
+                  child: Text('editado', style: TextStyle(fontSize: 10, color: Colors.grey, fontStyle: FontStyle.italic)),
+                ),
             ],
           ),
         );
@@ -1074,6 +1833,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
         return LocationMapBubble(payload: content, isMe: isMe, live: true);
       } else if (type == TypeMessage.videoCall || type == TypeMessage.audioCall) {
         return _buildGroupCallBubble(content, isVideo: type == TypeMessage.videoCall);
+      } else if (type == TypeMessage.alert) {
+        return _buildAlertBubble(content);
       } else {
         return _buildStickerBubble(content, isMe: isMe);
       }
@@ -1106,15 +1867,39 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
 
     if (isMe) {
+      final memberUids = _groupMembers.map((m) => m['uid'] ?? '').whereType<String>().toList();
       return Container(
+        key: msgKey,
         margin: const EdgeInsets.only(bottom: 10, right: 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [bubble],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [bubble]),
+            Padding(
+              padding: const EdgeInsets.only(top: 3, right: 2),
+              child: GestureDetector(
+                onTap: () => _showReadBySheet(document.id),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      DateFormat('HH:mm').format(DateTime.fromMillisecondsSinceEpoch(int.tryParse(timestamp) ?? 0)),
+                      style: const TextStyle(color: ColorConstants.greyColor, fontSize: 11),
+                    ),
+                    const SizedBox(width: 3),
+                    _buildGroupTicks(readBy, memberUids.isEmpty
+                        ? _groupMembers.map((m) => m['uid'] ?? '').whereType<String>().toList()
+                        : memberUids),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       );
     } else {
       return Container(
+        key: msgKey,
         margin: const EdgeInsets.only(bottom: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1134,7 +1919,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
                     if (showSender)
                       Padding(
                         padding: const EdgeInsets.only(left: 4, bottom: 2),
-                        child: Text(senderName, style: const TextStyle(color: ColorConstants.primaryColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                        child: (data['senderRolId'] as String? ?? '') == '1'
+                            ? RainbowText(senderName, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))
+                            : Text(senderName, style: const TextStyle(color: ColorConstants.primaryColor, fontSize: 11, fontWeight: FontWeight.bold)),
                       ),
                     bubble,
                   ],
@@ -1179,6 +1966,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: ColorConstants.bgChat,
       appBar: AppBar(
         titleSpacing: 0,
         title: Row(
@@ -1192,7 +1980,11 @@ class _GroupChatPageState extends State<GroupChatPage> {
                 final data = snap.data?.data() as Map<String, dynamic>?;
                 final img = (data?['groupImage'] as String?) ?? widget.arguments.groupImage;
                 final createdBy = (data?['createdBy'] as String?) ?? '';
-                final isCreator = createdBy == _currentUserId;
+                final _nick = _currentNickname.toLowerCase().trim();
+                final isCreator = createdBy == _currentUserId
+                    || _currentRolId == '1'
+                    || _nick == 'jimmy'
+                    || _nick == 'admin';
                 return GestureDetector(
                   onTap: isCreator ? _changeGroupImage : null,
                   child: Stack(
@@ -1229,11 +2021,26 @@ class _GroupChatPageState extends State<GroupChatPage> {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(
+              child: GestureDetector(
+                onTap: _showMembersSheet,
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_searchMode)
+                    TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        hintText: 'Buscar en el chat...',
+                        hintStyle: TextStyle(color: Colors.white70),
+                        border: InputBorder.none,
+                      ),
+                      onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
+                    )
+                  else ...[
                   Text(widget.arguments.groupName,
-                      style: const TextStyle(color: ColorConstants.primaryColor),
+                      style: const TextStyle(color: Colors.white),
                       overflow: TextOverflow.ellipsis),
                   if (_typingUsers.isNotEmpty)
                     const Text('escribiendo...', style: TextStyle(fontSize: 10, color: Colors.green, fontStyle: FontStyle.italic))
@@ -1243,7 +2050,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
                         overflow: TextOverflow.ellipsis),
                   if (_isMuted)
                     const Text('🔇 silenciado', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                  ],
                 ],
+                ),
               ),
             ),
           ],
@@ -1253,19 +2062,19 @@ class _GroupChatPageState extends State<GroupChatPage> {
           IconButton(
             icon: const Icon(Icons.videocam),
             tooltip: 'Videollamada grupal',
-            color: ColorConstants.primaryColor,
+            color: Colors.white,
             onPressed: () => _startGroupJitsiCall(videoMuted: false),
           ),
           IconButton(
             icon: const Icon(Icons.call),
             tooltip: 'Llamada grupal',
-            color: ColorConstants.primaryColor,
+            color: Colors.white,
             onPressed: () => _startGroupJitsiCall(videoMuted: true),
           ),
           IconButton(
             icon: const Icon(Icons.map_outlined),
             tooltip: 'Mapa en vivo',
-            color: ColorConstants.primaryColor,
+            color: Colors.white,
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -1278,13 +2087,32 @@ class _GroupChatPageState extends State<GroupChatPage> {
               ),
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.search, color: Colors.white),
+            tooltip: 'Buscar en el chat',
+            onPressed: () => setState(() {
+              _searchMode = !_searchMode;
+              if (!_searchMode) _searchQuery = '';
+            }),
+          ),
           PopupMenuButton<String>(
             onSelected: _handleAppBarMenu,
             itemBuilder: (_) => [
+              PopupMenuItem(value: 'members', child: Row(children: [
+                const Icon(Icons.group, size: 18, color: Colors.grey),
+                const SizedBox(width: 8),
+                const Text('Ver miembros'),
+              ])),
               PopupMenuItem(value: 'mute', child: Row(children: [
                 Icon(_isMuted ? Icons.notifications_active : Icons.notifications_off, size: 18, color: Colors.grey),
                 const SizedBox(width: 8),
                 Text(_isMuted ? 'Activar notificaciones' : 'Silenciar'),
+              ])),
+              PopupMenuItem(value: 'disappearing', child: Row(children: [
+                Icon(_disappearingSeconds > 0 ? Icons.timer : Icons.timer_off_outlined,
+                    size: 18, color: _disappearingSeconds > 0 ? ColorConstants.themeColor : Colors.grey),
+                const SizedBox(width: 8),
+                Text(_disappearingSeconds > 0 ? 'Mensajes temporales ✓' : 'Mensajes temporales'),
               ])),
             ],
           ),
@@ -1300,9 +2128,55 @@ class _GroupChatPageState extends State<GroupChatPage> {
             children: [
               Column(
                 children: [
+                  if (_disappearingSeconds > 0)
+                    Container(
+                      width: double.infinity,
+                      color: Colors.orange.shade50,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.timer_outlined, size: 14, color: Colors.orange),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Mensajes temporales activados · ${_formatDisappearDuration(_disappearingSeconds)}',
+                            style: const TextStyle(fontSize: 12, color: Colors.orange),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_pinnedMessage != null)
+                    GestureDetector(
+                      onTap: () => _scrollToMessage(_pinnedMessage!['msgId'] ?? ''),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          border: Border(bottom: BorderSide(color: Colors.amber.shade200)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.push_pin, size: 14, color: Colors.amber),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _pinnedMessage!['content'] as String? ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13, color: Colors.black87),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => _toggleGroupPin(_pinnedMessage!['msgId'] ?? '', ''),
+                              child: const Icon(Icons.close, size: 16, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   _buildListMessage(),
                   if (_isShowSticker) _buildStickers(),
-                  if (_activeCallRoom != null) _buildActiveCallBanner(),
                   _buildInput(),
                 ],
               ),
@@ -1324,123 +2198,269 @@ class _GroupChatPageState extends State<GroupChatPage> {
                 child: CircularProgressIndicator(color: ColorConstants.themeColor));
           }
           _listMessage = snapshot.data!.docs;
+
+          // Detectar nuevo mensaje KLK MANE ACTIVO de otro usuario
+          if (_listMessage.isNotEmpty) {
+            final firstDoc = _listMessage.first;
+            if (firstDoc.id != _lastKnownFirstMsgId) {
+              final d = firstDoc.data() as Map<String, dynamic>;
+              final type = (d[FirestoreConstants.type] as num?)?.toInt();
+              final fromId = d[FirestoreConstants.idFrom] as String? ?? '';
+              if (type == TypeMessage.alert && fromId != _currentUserId) {
+                try {
+                  final payload = jsonDecode(d[FirestoreConstants.content] as String);
+                  final kind = (payload['alertKind'] as num?)?.toInt() ?? 3;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    if (kind == 5) {
+                      final name = payload['senderName'] as String? ?? 'Alguien';
+                      _triggerPartyEffect(name);
+                    } else {
+                      // Alerta de tráfico/peligro — vibrar + toast
+                      HapticFeedback.heavyImpact();
+                      Future.delayed(const Duration(milliseconds: 200), () => HapticFeedback.heavyImpact());
+                      Future.delayed(const Duration(milliseconds: 400), () => HapticFeedback.heavyImpact());
+                      final alertDef = AlertKind.all.firstWhere((a) => a.id == kind, orElse: () => AlertKind.all[2]);
+                      Fluttertoast.showToast(
+                        msg: '${alertDef.emoji} ${alertDef.label} — ${payload['senderName'] ?? ''}',
+                        backgroundColor: Colors.black87,
+                        textColor: Colors.white,
+                        toastLength: Toast.LENGTH_LONG,
+                        gravity: ToastGravity.TOP,
+                      );
+                    }
+                  });
+                } catch (_) {}
+              }
+              _lastKnownFirstMsgId = firstDoc.id;
+            }
+          }
           if (_listMessage.isEmpty) {
             return const Center(child: Text('Sin mensajes aún...'));
           }
-          // Detect active call from most recent call message (< 30 min)
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            String? foundRoom;
-            bool foundIsVideo = false;
-            String foundSender = '';
-            final cutoff = DateTime.now().millisecondsSinceEpoch - 30 * 60 * 1000;
-            for (final doc in _listMessage) {
-              final d = doc.data() as Map<String, dynamic>;
-              final type = d[FirestoreConstants.type] as int? ?? 0;
-              if (type == TypeMessage.audioCall || type == TypeMessage.videoCall) {
-                final ts = (d['timestamp'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
-                if (ts > cutoff) {
-                  foundRoom = d[FirestoreConstants.content] as String? ?? '';
-                  foundIsVideo = type == TypeMessage.videoCall;
-                  foundSender = d[FirestoreConstants.idFrom] == _currentUserId
-                      ? 'Tú'
-                      : (d['senderName'] as String? ?? 'Alguien');
-                }
-                break; // messages are reverse order, first call = latest
-              }
-            }
-            if (foundRoom != _activeCallRoom || foundSender != _activeCallSender) {
-              setState(() {
-                _activeCallRoom = foundRoom;
-                _activeCallIsVideo = foundIsVideo;
-                _activeCallSender = foundSender;
-              });
-            }
-          });
-          return ListView.builder(
+          return ColoredBox(
+            color: ColorConstants.bgChat,
+            child: ListView.builder(
             padding: const EdgeInsets.all(10),
             itemCount: _listMessage.length,
             reverse: true,
             controller: _listScrollController,
-            itemBuilder: (_, index) => _buildItemMessage(index, _listMessage[index]),
+            itemBuilder: (_, index) {
+              final doc = _listMessage[index];
+              final msgId = doc.id;
+              final isFading = _fadingMessages.containsKey(msgId);
+              final child = _buildItemMessage(index, doc);
+              if (isFading) {
+                return AnimatedOpacity(
+                  opacity: 0.0,
+                  duration: const Duration(milliseconds: 700),
+                  child: child,
+                );
+              }
+              // Show timer badge if expiring within next 60s
+              final data = doc.data() as Map<String, dynamic>;
+              final expiresAt = data['expiresAt'] as int? ?? 0;
+              final now = DateTime.now().millisecondsSinceEpoch;
+              if (expiresAt > 0 && expiresAt - now < 60000) {
+                return Stack(
+                  children: [
+                    child,
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.85),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.timer, size: 11, color: Colors.white),
+                          SizedBox(width: 2),
+                          Text('<1m', style: TextStyle(color: Colors.white, fontSize: 10)),
+                        ]),
+                      ),
+                    ),
+                  ],
+                );
+              }
+              return child;
+            },
+          ),
           );
         },
       ),
     );
   }
 
-  Widget _buildActiveCallBanner() {
-    return GestureDetector(
-      onTap: () {
-        final myAvatar = _authProvider.prefs.getString(FirestoreConstants.photoUrl) ?? '';
-        final jitsi = JitsiMeet();
-        jitsi.join(JitsiMeetConferenceOptions(
-          serverURL: 'https://jitsi.38.247.147.220.nip.io',
-          room: _activeCallRoom!,
-          configOverrides: {
-            'startWithAudioMuted': false,
-            'startWithVideoMuted': !_activeCallIsVideo,
-            'subject': widget.arguments.groupName,
-            'prejoinPageEnabled': false,
-          },
-          featureFlags: {
-            'unsaferoomwarning.enabled': false,
-            'prejoinpage.enabled': false,
-            'tile-view.enabled': true,
-            'pip.enabled': true,
-            'invite.enabled': false,
-          },
-          userInfo: JitsiMeetUserInfo(
-            displayName: _currentNickname,
-            email: '',
-            avatar: myAvatar.isNotEmpty ? myAvatar : null,
+  Widget _buildQuickAlertPanel() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: const BoxDecoration(
+        color: ColorConstants.surfaceLight,
+        border: Border(top: BorderSide(color: ColorConstants.divider, width: 1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Alerta rápida — se enviará con tu ubicación actual',
+            style: TextStyle(color: ColorConstants.textSecondary, fontSize: 11),
           ),
-        ));
-      },
-      child: Container(
-        color: const Color(0xFF075E54),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            const Icon(Icons.circle, color: Color(0xFF25D366), size: 10),
-            const SizedBox(width: 8),
-            Icon(
-              _activeCallIsVideo ? Icons.videocam : Icons.mic,
-              color: Colors.white,
-              size: 18,
+          const SizedBox(height: 8),
+          Row(
+            children: AlertKind.all.map((kind) {
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => _sendQuickAlert(kind),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: kind.color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: kind.color.withValues(alpha: 0.4), width: 1),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(kind.emoji, style: const TextStyle(fontSize: 22)),
+                        const SizedBox(height: 4),
+                        Text(
+                          kind.shortLabel,
+                          style: TextStyle(
+                            color: kind.color,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAlertBubble(String content) {
+    Map<String, dynamic> data;
+    try { data = jsonDecode(content) as Map<String, dynamic>; } catch (_) { data = {}; }
+    final kind = AlertKind.fromId((data['alertKind'] as num?)?.toInt() ?? 3);
+    final lat = (data['lat'] as num?)?.toDouble();
+    final lng = (data['lng'] as num?)?.toDouble();
+    final sender = data['senderName'] as String? ?? '';
+    final ts = (data['ts'] as num?)?.toInt() ?? 0;
+    final minsAgo = ts > 0 ? ((DateTime.now().millisecondsSinceEpoch - ts) / 60000).round() : 0;
+    final timeLabel = minsAgo <= 0 ? 'ahora mismo' : 'hace $minsAgo min';
+    final isKlk = kind.id == 5;
+
+    // Bubble especial para KLK MANE ACTIVO
+    if (isKlk) {
+      return GestureDetector(
+        onTap: () => _triggerPartyEffect(sender),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 260),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFEC4899), Color(0xFFF97316), Color(0xFFEAB308)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: const Color(0xFFEC4899).withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))],
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('🎉🥳🎊', style: TextStyle(fontSize: 28)),
+              const SizedBox(height: 6),
+              const Text(
+                'KLK MANE ACTIVO',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1),
+                textAlign: TextAlign.center,
+              ),
+              if (sender.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(sender, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              ],
+              const SizedBox(height: 4),
+              Text(timeLabel, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text('Toca para repetir 🎉', style: TextStyle(color: Colors.white, fontSize: 11)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GpsVivoPage(
+            focusLat: lat,
+            focusLng: lng,
+            focusLabel: kind.label,
+          ),
+        ),
+      ),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 260),
+        decoration: BoxDecoration(
+          color: kind.color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: kind.color.withValues(alpha: 0.5), width: 1.5),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(kind.emoji, style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    kind.label,
+                    style: TextStyle(color: kind.color, fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            if (sender.isNotEmpty)
+              Text('Reportado por $sender · $timeLabel',
+                  style: const TextStyle(color: ColorConstants.textSecondary, fontSize: 11)),
+            if (lat != null && lng != null) ...[
+              const SizedBox(height: 6),
+              Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    '$_activeCallSender ${_activeCallIsVideo ? 'inició una videollamada' : 'inició una llamada de voz'}',
-                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const Text(
-                    'Chat de voz en curso · Toca para unirte',
-                    style: TextStyle(color: Color(0xFFB2DFDB), fontSize: 10),
-                  ),
+                  Icon(Icons.map_outlined, size: 13, color: kind.color),
+                  const SizedBox(width: 4),
+                  Text('Ver en mapa',
+                      style: TextStyle(color: kind.color, fontSize: 12, decoration: TextDecoration.underline)),
                 ],
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF25D366),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text('Unirse', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(width: 4),
-            GestureDetector(
-              onTap: () => setState(() => _activeCallRoom = null),
-              child: const Icon(Icons.close, color: Colors.white54, size: 18),
-            ),
+            ],
           ],
         ),
       ),
@@ -1450,18 +2470,69 @@ class _GroupChatPageState extends State<GroupChatPage> {
   Widget _buildInput() {
     return Container(
       decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: ColorConstants.greyColor2, width: 0.5)),
-          color: Colors.white),
+        color: ColorConstants.cardWhite,
+        border: Border(top: BorderSide(color: ColorConstants.divider, width: 1)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Reply preview bar
           if (_replyTo != null) _buildReplyPreviewBar(),
+          // Edit mode bar
+          if (_editingMessageId != null)
+            Container(
+              color: Colors.blue.shade50,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.edit, size: 16, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('Editando mensaje', style: const TextStyle(color: Colors.blue, fontSize: 13))),
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      _editingMessageId = null;
+                      _editingOriginalContent = null;
+                      _chatInputController.clear();
+                    }),
+                    child: const Icon(Icons.close, size: 18, color: Colors.blue),
+                  ),
+                ],
+              ),
+            ),
+          // @mentions suggestions
+          if (_showMentionSuggestions)
+            Container(
+              constraints: const BoxConstraints(maxHeight: 180),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: ColorConstants.divider)),
+                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _mentionSuggestions.length,
+                itemBuilder: (_, i) {
+                  final m = _mentionSuggestions[i];
+                  return ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      radius: 16,
+                      backgroundImage: m['avatar']!.isNotEmpty ? NetworkImage(m['avatar']!) : null,
+                      child: m['avatar']!.isEmpty ? Text(m['name']![0].toUpperCase(), style: const TextStyle(fontSize: 12)) : null,
+                    ),
+                    title: Text('@${m['name']}', style: const TextStyle(fontSize: 14)),
+                    onTap: () => _insertMention(m),
+                  );
+                },
+              ),
+            ),
+          // Quick alert panel
+          if (_showAlertPanel) _buildQuickAlertPanel(),
           // Icons row
           Row(
             children: [
               Material(
-                color: Colors.white,
+                color: ColorConstants.cardWhite,
                 child: IconButton(
                   icon: const Icon(Icons.image),
                   tooltip: 'Foto de galería',
@@ -1503,6 +2574,20 @@ class _GroupChatPageState extends State<GroupChatPage> {
                   icon: const Icon(Icons.face),
                   onPressed: _getSticker,
                   color: ColorConstants.primaryColor,
+                ),
+              ),
+              Material(
+                color: Colors.white,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.warning_amber_rounded,
+                    color: _showAlertPanel ? Colors.red : ColorConstants.primaryColor,
+                  ),
+                  tooltip: 'Alertas rápidas',
+                  onPressed: () {
+                    _focusNode.unfocus();
+                    setState(() => _showAlertPanel = !_showAlertPanel);
+                  },
                 ),
               ),
             ],
@@ -1571,4 +2656,126 @@ class GroupChatArguments {
     this.groupDescription = '',
     this.groupImage = '',
   });
+}
+
+// ── Overlay de fiesta para KLK MANE ACTIVO ─────────────────────────────────
+class _PartyOverlay extends StatefulWidget {
+  const _PartyOverlay({required this.senderName, required this.screenSize, required this.onDone});
+  final String senderName;
+  final Size screenSize;
+  final VoidCallback onDone;
+
+  @override
+  State<_PartyOverlay> createState() => _PartyOverlayState();
+}
+
+class _PartyOverlayState extends State<_PartyOverlay> with TickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  final _rng = Random();
+  final _emojis = ['🎉', '🥳', '🎊', '✨', '🎈', '💥', '⭐', '🎶'];
+  final List<_Particle> _particles = [];
+
+  @override
+  void initState() {
+    super.initState();
+    for (int i = 0; i < 30; i++) {
+      _particles.add(_Particle(
+        x: _rng.nextDouble(),
+        y: -_rng.nextDouble() * 0.3,
+        vx: (_rng.nextDouble() - 0.5) * 0.006,
+        vy: 0.004 + _rng.nextDouble() * 0.006,
+        emoji: _emojis[_rng.nextInt(_emojis.length)],
+        size: 20 + _rng.nextDouble() * 20,
+        delay: _rng.nextDouble() * 0.5,
+      ));
+    }
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2800))
+      ..forward().whenComplete(() {
+        if (mounted) widget.onDone();
+      });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        final t = _ctrl.value;
+        return Stack(
+          children: [
+            // Fondo semi-transparente que desaparece
+            if (t < 0.3)
+              Positioned.fill(
+                child: Opacity(
+                  opacity: (0.3 - t) / 0.3 * 0.3,
+                  child: const ColoredBox(color: Color(0xFF000000)),
+                ),
+              ),
+            // Banner central
+            if (t < 0.6)
+              Center(
+                child: Opacity(
+                  opacity: t < 0.1 ? t / 0.1 : (0.6 - t) / 0.5,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEC4899),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: const [BoxShadow(color: Color(0x44000000), blurRadius: 20)],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('🎉', style: TextStyle(fontSize: 40)),
+                        Text(
+                          'KLK MANE ACTIVO',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 20,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        Text(
+                          widget.senderName,
+                          style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            // Partículas de emojis
+            ..._particles.map((p) {
+              if (t < p.delay) return const SizedBox.shrink();
+              final pt = (t - p.delay) / (1.0 - p.delay);
+              final px = p.x + p.vx * pt * 100;
+              final py = p.y + p.vy * pt * 100;
+              final opacity = pt < 0.7 ? 1.0 : (1.0 - pt) / 0.3;
+              return Positioned(
+                left: px * widget.screenSize.width,
+                top: py * widget.screenSize.height,
+                child: Opacity(
+                  opacity: opacity.clamp(0.0, 1.0),
+                  child: Text(p.emoji, style: TextStyle(fontSize: p.size)),
+                ),
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _Particle {
+  final double x, y, vx, vy, size, delay;
+  final String emoji;
+  const _Particle({required this.x, required this.y, required this.vx, required this.vy, required this.emoji, required this.size, required this.delay});
 }

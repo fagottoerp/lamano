@@ -16,11 +16,52 @@ class _RecentChatsPageState extends State<RecentChatsPage> {
   late final _authProvider = context.read<AuthProvider>();
   late final _chatProvider = context.read<ChatProvider>();
   late final String _currentUserId;
+  bool _showArchived = false;
 
   @override
   void initState() {
     super.initState();
     _currentUserId = _authProvider.userFirebaseId ?? '';
+  }
+
+  Future<void> _toggleArchive(String peerId, bool currentlyArchived) async {
+    await FirebaseFirestore.instance
+        .collection('user_conversations')
+        .doc(_currentUserId)
+        .collection('chats')
+        .doc(peerId)
+        .set({'archived': !currentlyArchived}, SetOptions(merge: true));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(currentlyArchived ? 'Chat desarchivado' : 'Chat archivado'),
+        action: SnackBarAction(
+          label: 'Deshacer',
+          onPressed: () => _toggleArchive(peerId, !currentlyArchived),
+        ),
+      ));
+    }
+  }
+
+  void _showChatOptions(BuildContext ctx, String peerId, String name, bool archived) {
+    showModalBottomSheet(
+      context: ctx,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(archived ? Icons.unarchive : Icons.archive_outlined,
+                  color: ColorConstants.primaryColor),
+              title: Text(archived ? 'Desarchivar chat' : 'Archivar chat'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _toggleArchive(peerId, archived);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _formatTime(int ts) {
@@ -62,11 +103,55 @@ class _RecentChatsPageState extends State<RecentChatsPage> {
         }
 
         final docs = snapshot.data!.docs;
-        return ListView.separated(
-          itemCount: docs.length,
-          separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
-          itemBuilder: (_, i) {
-            final data = docs[i].data() as Map<String, dynamic>;
+        final filtered = docs.where((d) {
+          final data = d.data() as Map<String, dynamic>;
+          final archived = data['archived'] as bool? ?? false;
+          return _showArchived ? archived : !archived;
+        }).toList();
+        final archivedCount = docs.where((d) {
+          final data = d.data() as Map<String, dynamic>;
+          return data['archived'] as bool? ?? false;
+        }).length;
+
+        return Column(
+          children: [
+            if (!_showArchived && archivedCount > 0)
+              InkWell(
+                onTap: () => setState(() => _showArchived = true),
+                child: Container(
+                  color: ColorConstants.greyColor2,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.archive_outlined, color: ColorConstants.primaryColor),
+                      const SizedBox(width: 12),
+                      Text('Archivados ($archivedCount)',
+                          style: const TextStyle(color: ColorConstants.primaryColor, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ),
+              ),
+            if (_showArchived)
+              InkWell(
+                onTap: () => setState(() => _showArchived = false),
+                child: Container(
+                  color: ColorConstants.greyColor2,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.arrow_back, color: ColorConstants.primaryColor),
+                      SizedBox(width: 12),
+                      Text('Volver a chats', style: TextStyle(color: ColorConstants.primaryColor, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ),
+              ),
+            Expanded(
+              child: ListView.separated(
+                itemCount: filtered.length,
+                separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+                itemBuilder: (_, i) {
+                  final data = filtered[i].data() as Map<String, dynamic>;
             final peerId = data['peerId'] as String? ?? '';
             final groupChatId = data['groupChatId'] as String? ?? '';
             final lastMessage = data['lastMessage'] as String? ?? '';
@@ -128,6 +213,10 @@ class _RecentChatsPageState extends State<RecentChatsPage> {
                       ],
                     ],
                   ),
+                  onLongPress: () {
+                    final archived = data['archived'] as bool? ?? false;
+                    _showChatOptions(context, peerId, name, archived);
+                  },
                   onTap: () {
                     // Reset unread count
                     FirebaseFirestore.instance
@@ -144,7 +233,10 @@ class _RecentChatsPageState extends State<RecentChatsPage> {
                             peerId: peerId,
                             peerAvatar: avatar,
                             peerNickname: name,
-                            customGroupChatId: groupChatId,
+                            // Only pass customGroupChatId for 1-on-1 / order chats (contain '-').
+                            // Group IDs are Firestore auto-IDs with no '-'; skip them to avoid
+                            // loading group messages inside a 1-on-1 chat view.
+                            customGroupChatId: groupChatId.contains('-') ? groupChatId : null,
                           ),
                         ),
                       ),
@@ -154,6 +246,9 @@ class _RecentChatsPageState extends State<RecentChatsPage> {
               },
             );
           },
+        ),
+            ),
+          ],
         );
       },
     );

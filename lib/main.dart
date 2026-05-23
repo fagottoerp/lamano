@@ -9,13 +9,16 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/app_constants.dart';
+import 'package:flutter_chat_demo/constants/firestore_constants.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'constants/color_constants.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'pages/pages.dart';
+import 'pages/pin_lock_page.dart';
 import 'providers/providers.dart';
 import 'utils/foreground_gps_service.dart';
 
@@ -171,11 +174,115 @@ class MyApp extends StatelessWidget {
         navigatorKey: navigatorKey,
         theme: ThemeData(
           useMaterial3: true,
-          colorSchemeSeed: ColorConstants.themeColor,
+          brightness: Brightness.light,
+          scaffoldBackgroundColor: ColorConstants.bgApp,
+          colorScheme: const ColorScheme.light(
+            primary: ColorConstants.primaryColor,
+            secondary: ColorConstants.accentGreen,
+            surface: ColorConstants.cardWhite,
+            onPrimary: Colors.white,
+            onSurface: ColorConstants.textPrimary,
+          ),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: ColorConstants.primaryColor,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            centerTitle: true,
+          ),
+          cardTheme: CardThemeData(
+            color: ColorConstants.cardWhite,
+            elevation: 0,
+            shadowColor: Color(0x18000000),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+              side: BorderSide(color: ColorConstants.divider, width: 1),
+            ),
+          ),
+          bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+            backgroundColor: ColorConstants.cardWhite,
+            selectedItemColor: ColorConstants.primaryColor,
+            unselectedItemColor: ColorConstants.greyColor,
+            type: BottomNavigationBarType.fixed,
+            elevation: 8,
+          ),
+          dividerColor: ColorConstants.divider,
+          textTheme: GoogleFonts.poppinsTextTheme(
+            ThemeData.light().textTheme.copyWith(
+              bodyMedium: const TextStyle(color: ColorConstants.textPrimary),
+              bodySmall: const TextStyle(color: ColorConstants.textSecondary),
+            ),
+          ),
         ),
-        home: SplashPage(),
+        home: AppShell(),
         debugShowCheckedModeBanner: false,
       ),
     );
+  }
+}
+
+/// Wrapper que gestiona el PIN lock sobre toda la app.
+class AppShell extends StatefulWidget {
+  const AppShell({Key? key}) : super(key: key);
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
+  bool _locked = false;
+
+  void _setOnline(bool online) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    FirebaseFirestore.instance.collection(FirestoreConstants.pathUserCollection).doc(uid).update({
+      FirestoreConstants.isOnline: online,
+      FirestoreConstants.lastSeen: DateTime.now().millisecondsSinceEpoch,
+    }).catchError((_) {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkInitialPin();
+    _setOnline(true);
+  }
+
+  @override
+  void dispose() {
+    _setOnline(false);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _checkInitialPin() async {
+    final has = await hasPinSet();
+    if (has) setState(() => _locked = true);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _setOnline(false);
+    }
+    if (state == AppLifecycleState.resumed) {
+      _setOnline(true);
+      _checkResumePin();
+    }
+  }
+
+  Future<void> _checkResumePin() async {
+    final has = await hasPinSet();
+    if (has && mounted) setState(() => _locked = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_locked) {
+      return PinLockPage(
+        mode: PinMode.verify,
+        onSuccess: () => setState(() => _locked = false),
+      );
+    }
+    return SplashPage();
   }
 }

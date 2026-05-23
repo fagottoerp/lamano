@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -64,7 +65,7 @@ class LocationMapBubble extends StatelessWidget {
   }
 }
 
-class _MapCard extends StatelessWidget {
+class _MapCard extends StatefulWidget {
   const _MapCard({
     required this.lat,
     required this.lng,
@@ -79,10 +80,17 @@ class _MapCard extends StatelessWidget {
   final bool live;
   final bool active;
 
+  @override
+  State<_MapCard> createState() => _MapCardState();
+}
+
+class _MapCardState extends State<_MapCard> {
+  bool _expanded = true;
+
   Future<void> _open() async {
-    if (lat == null || lng == null) return;
-    final uri =
-        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (widget.lat == null || widget.lng == null) return;
+    final uri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=${widget.lat},${widget.lng}');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -90,79 +98,117 @@ class _MapCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasPos = lat != null && lng != null && (lat != 0.0 || lng != 0.0);
-    final bgColor =
-        isMe ? ColorConstants.greyColor2 : ColorConstants.primaryColor;
-    final fgColor =
-        isMe ? ColorConstants.primaryColor : Colors.white;
+    final hasPos = widget.lat != null &&
+        widget.lng != null &&
+        (widget.lat != 0.0 || widget.lng != 0.0);
 
-    return GestureDetector(
-      onTap: _open,
-      child: Container(
-        width: 230,
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: 140,
-              child: hasPos
-                  ? _MiniMap(lat: lat!, lng: lng!, live: live && active)
-                  : Container(
-                      color: Colors.black12,
-                      child: const Center(
-                        child: Icon(Icons.location_searching,
-                            color: Colors.white70, size: 32),
+    return Container(
+      width: 240,
+      decoration: BoxDecoration(
+        color: widget.isMe ? ColorConstants.bgSent : ColorConstants.bgReceived,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ColorConstants.divider, width: 1),
+        boxShadow: const [BoxShadow(color: Color(0x18000000), blurRadius: 4, offset: Offset(0, 2))],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header con toggle minimizar — tap en cualquier lado del header
+          Material(
+            color: ColorConstants.primaryColor,
+            child: InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      widget.live
+                          ? (widget.active ? Icons.location_on : Icons.location_off)
+                          : Icons.place,
+                      size: 16,
+                      color: widget.live
+                          ? (widget.active ? const Color(0xFFB9FBD4) : Colors.redAccent.shade100)
+                          : Colors.white,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        widget.live
+                            ? (widget.active ? 'Ubicación en vivo 🔴' : 'Ubicación finalizada')
+                            : 'Ubicación del motoboy',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-              child: Row(
-                children: [
-                  Icon(
-                    live
-                        ? (active ? Icons.location_on : Icons.location_off)
-                        : Icons.place,
-                    size: 16,
-                    color: live
-                        ? (active ? Colors.green : Colors.redAccent)
-                        : fgColor,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      live
-                          ? (active
-                              ? 'Ubicación en vivo'
-                              : 'Ubicación finalizada')
-                          : 'Ubicación',
-                      style: TextStyle(
-                        color: fgColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
+                    if (hasPos)
+                      GestureDetector(
+                        onTap: _open,
+                        child: const Tooltip(
+                          message: 'Abrir en Google Maps',
+                          child: Icon(Icons.open_in_new, size: 14, color: Colors.white70),
+                        ),
                       ),
-                      overflow: TextOverflow.ellipsis,
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            _expanded ? 'Ocultar' : 'Ver mapa',
+                            style: const TextStyle(color: Colors.white, fontSize: 10),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (hasPos)
-                    Icon(Icons.open_in_new,
-                        size: 14, color: fgColor.withValues(alpha: 0.7)),
-                ],
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+          // Mapa colapsable
+          AnimatedCrossFade(
+            firstChild: SizedBox(
+              height: 160,
+              child: hasPos
+                  ? _MiniMap(
+                      lat: widget.lat!,
+                      lng: widget.lng!,
+                      live: widget.live && widget.active)
+                  : Container(
+                      color: ColorConstants.surfaceLight,
+                      child: const Center(
+                        child: Icon(Icons.location_searching,
+                            color: ColorConstants.greyColor, size: 32),
+                      ),
+                    ),
+            ),
+            secondChild: const SizedBox(height: 0),
+            crossFadeState: _expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            duration: const Duration(milliseconds: 220),
+          ),
+        ],
       ),
     );
   }
 }
-
 class _MiniMap extends StatefulWidget {
   const _MiniMap({required this.lat, required this.lng, required this.live});
   final double lat;
@@ -189,17 +235,18 @@ class _MiniMapState extends State<_MiniMap> {
   @override
   Widget build(BuildContext context) {
     final point = LatLng(widget.lat, widget.lng);
-    return IgnorePointer(
-      // El mapa no se interactúa dentro de la burbuja: el tap general abre Maps.
-      child: FlutterMap(
-        mapController: _controller,
-        options: MapOptions(
-          initialCenter: point,
-          initialZoom: 15,
-          interactionOptions:
-              const InteractionOptions(flags: InteractiveFlag.none),
+    return FlutterMap(
+      mapController: _controller,
+      options: MapOptions(
+        initialCenter: point,
+        initialZoom: 15,
+        interactionOptions: const InteractionOptions(
+          flags: InteractiveFlag.pinchZoom |
+              InteractiveFlag.drag |
+              InteractiveFlag.doubleTapZoom,
         ),
-        children: [
+      ),
+      children: [
           TileLayer(
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
             userAgentPackageName: 'com.lamano.clonewhatsapp',
@@ -217,7 +264,6 @@ class _MiniMapState extends State<_MiniMap> {
             ),
           ]),
         ],
-      ),
-    );
+      );
   }
 }

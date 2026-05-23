@@ -8,8 +8,8 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:geolocator/geolocator.dart';
 
 /// Listens to physical volume-key events from the native EventChannel.
-/// - Double-tap or long-press Volume-Down → ALERTA_POLICIAL
-/// - Double-tap or long-press Volume-Up   → ALERTA_ROBO
+/// - Hold Volume-Down 3 seconds → ALERTA_POLICIAL
+/// - Hold Volume-Up   3 seconds → ALERTA_ROBO
 class PanicAlertService {
   static const _channel = EventChannel('com.lamano.app/volume_keys');
 
@@ -36,9 +36,9 @@ class PanicAlertService {
     _sub?.cancel();
     _sub = _channel.receiveBroadcastStream().listen((event) {
       final ev = event as String? ?? '';
-      if (ev == 'double_down' || ev == 'long_down') {
+      if (ev == 'long_down') {
         _trigger(alertTypePolice);
-      } else if (ev == 'double_up' || ev == 'long_up') {
+      } else if (ev == 'long_up') {
         _trigger(alertTypeRobo);
       }
     });

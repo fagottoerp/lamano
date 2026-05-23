@@ -8,4 +8,5 @@ class TypeMessage {
   static const videoCall = 6;
   static const audioCall = 7;
   static const video = 8;
+  static const alert = 9;
 }

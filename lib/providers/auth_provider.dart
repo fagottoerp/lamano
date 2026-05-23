@@ -163,7 +163,7 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
-      await _ensureUserInFirestore(firebaseUser, fallbackNickname: nickname, fallbackPhotoUrl: "", rolNombre: rolNombre);
+      await _ensureUserInFirestore(firebaseUser, fallbackNickname: nickname, fallbackPhotoUrl: "", rolNombre: rolNombre, rolId: rolId);
       if (lamanoUserId != '0' && lamanoUserId.isNotEmpty) {
         await prefs.setString(FirestoreConstants.lamanoUserId, lamanoUserId);
       }
@@ -224,6 +224,7 @@ class AuthProvider extends ChangeNotifier {
     required String fallbackNickname,
     required String fallbackPhotoUrl,
     String rolNombre = '',
+    String rolId = '',
   }) async {
     final userRef = firebaseFirestore.collection(FirestoreConstants.pathUserCollection).doc(firebaseUser.uid);
     final snapshot = await userRef.get();
@@ -236,12 +237,14 @@ class AuthProvider extends ChangeNotifier {
         FirestoreConstants.id: firebaseUser.uid,
         FirestoreConstants.createdAt: DateTime.now().millisecondsSinceEpoch.toString(),
         FirestoreConstants.chattingWith: null,
+        'rol_id': rolId,
       });
     } else {
       // Always sync nickname and role from backend on every login
       final updates = <String, dynamic>{};
       if (fallbackNickname.isNotEmpty) updates[FirestoreConstants.nickname] = fallbackNickname;
       updates[FirestoreConstants.aboutMe] = rolNombre; // always overwrite (empty = sin rol)
+      if (rolId.isNotEmpty) updates['rol_id'] = rolId;
       await userRef.update(updates);
     }
 
