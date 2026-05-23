@@ -123,9 +123,23 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _registerNotification() {
-    _firebaseMessaging.requestPermission().then((settings) {
+    _firebaseMessaging.requestPermission(
+      alert: true,
+      announcement: false,
+      badge: true,
+      carPlay: false,
+      criticalAlert: false,
+      provisional: false,
+      sound: true,
+    ).then((settings) {
       print('notification permission status: ${settings.authorizationStatus}');
     });
+
+    _firebaseMessaging.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
 
     FirebaseMessaging.onMessage.listen((message) {
       print('onMessage: $message');
@@ -238,6 +252,18 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (payload.isNotEmpty) _navigateToChatFromPayload(payload);
       },
     );
+
+      _flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(alert: true, badge: true, sound: true);
+
+      _flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<MacOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(alert: true, badge: true, sound: true);
+
+      _flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<DarwinFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(alert: true, badge: true, sound: true);
     _flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_androidChannel);
