@@ -500,7 +500,12 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       body: count > 1 ? '$count mensajes nuevos' : bodyLine,
       notificationDetails: NotificationDetails(
         android: androidDetails,
-        iOS: const DarwinNotificationDetails(),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          sound: 'default',
+        ),
       ),
       payload: payload,
     );
@@ -530,7 +535,15 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       id: 0, // ID fijo para el resumen
       title: 'La Mano',
       body: '$totalMsgs mensajes nuevos',
-      notificationDetails: NotificationDetails(android: summaryDetails),
+      notificationDetails: NotificationDetails(
+        android: summaryDetails,
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          sound: 'default',
+        ),
+      ),
     );
   }
 

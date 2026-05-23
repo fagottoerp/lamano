@@ -10,6 +10,21 @@ setGlobalOptions({
   maxInstances: 10,
 });
 
+function buildApnsConfig() {
+  return {
+    headers: {
+      "apns-priority": "10",
+      "apns-push-type": "alert",
+    },
+    payload: {
+      aps: {
+        sound: "default",
+        badge: 1,
+      },
+    },
+  };
+}
+
 exports.sendPushOnNewMessage = onDocumentCreated(
   "messages/{groupChatId}/{subCollectionId}/{messageId}",
   async (event) => {
@@ -82,6 +97,7 @@ exports.sendPushOnNewMessage = onDocumentCreated(
           ttl: 1000 * 60,
           notification: { channelId: "flutter_chat_urgent_v2", sound: "default", defaultSound: true, priority: "high" },
         },
+        apns: buildApnsConfig(),
       };
       try {
         const response = await admin.messaging().send(payload);
@@ -133,6 +149,7 @@ exports.sendPushOnNewMessage = onDocumentCreated(
           ttl: 1000 * 60,
           notification: { channelId: "flutter_chat_urgent_v2", sound: "default", defaultSound: true, priority: "high" },
         },
+        apns: buildApnsConfig(),
       });
     }
 
@@ -198,6 +215,7 @@ exports.sendPanicAlertPush = onDocumentCreated(
             defaultSound: true,
           },
         },
+        apns: buildApnsConfig(),
       });
     }
 
