@@ -1,6 +1,7 @@
 #include "AppDelegate.h"
 #include "GeneratedPluginRegistrant.h"
 #import <FirebaseCore/FirebaseCore.h>
+#import <FirebaseMessaging/FirebaseMessaging.h>
 #import <UserNotifications/UserNotifications.h>
 
 @implementation AppDelegate
@@ -31,6 +32,7 @@
     [hexToken appendFormat:@"%02x", dataBuffer[i]];
   }
   NSLog(@"APNs device token: %@", hexToken);
+  [FIRMessaging messaging].APNSToken = deviceToken;
 }
 
 - (void)application:(UIApplication *)application didFailToRegisterForRemoteNotificationsWithError:(NSError *)error {
