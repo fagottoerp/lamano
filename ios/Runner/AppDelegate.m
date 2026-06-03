@@ -12,11 +12,22 @@
     [FIRApp configure];
   }
   if (@available(iOS 10.0, *)) {
-    [UNUserNotificationCenter currentNotificationCenter].delegate = (id<UNUserNotificationCenterDelegate>) self;
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    center.delegate = self;
+    [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionBadge | UNAuthorizationOptionSound)
+                          completionHandler:^(BOOL granted, NSError * _Nullable error) {
+      if (error) {
+        NSLog(@"Notification authorization error: %@", error);
+      } else {
+        NSLog(@"Notification authorization granted: %d", granted);
+        dispatch_async(dispatch_get_main_queue(), ^{
+          [application registerForRemoteNotifications];
+        });
+      }
+    }];
+  } else {
+    [application registerForRemoteNotifications];
   }
-
-  // Ask iOS to register for remote notifications and receive an APNs token.
-  [application registerForRemoteNotifications];
 
   // Override point for customization after application launch.
   return [super application:application didFinishLaunchingWithOptions:launchOptions];

@@ -1,6 +1,7 @@
 #import <Flutter/Flutter.h>
 #import <UIKit/UIKit.h>
+#import <UserNotifications/UserNotifications.h>
 
-@interface AppDelegate : FlutterAppDelegate <FlutterImplicitEngineDelegate>
+@interface AppDelegate : FlutterAppDelegate <FlutterImplicitEngineDelegate, UNUserNotificationCenterDelegate>
 
 @end
