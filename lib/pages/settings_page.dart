@@ -16,6 +16,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'pin_lock_page.dart';
+import 'token_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -97,9 +98,9 @@ class SettingsPageState extends State<SettingsPage> {
       _aboutMe = _settingProvider.getPref(FirestoreConstants.aboutMe) ?? "";
       _avatarUrl = _settingProvider.getPref(FirestoreConstants.photoUrl) ?? "";
       _phone = _settingProvider.getPref(FirestoreConstants.motoboyPhone) ?? "";
-      _isMotoboy = (_settingProvider.getPref(FirestoreConstants.aboutMe) ?? '')
-          .toLowerCase()
-          .contains('motoboy');
+      final role = (_settingProvider.getPref(FirestoreConstants.aboutMe) ?? '')
+          .toLowerCase();
+      _isMotoboy = role.contains('motoboy') || role.contains('caminador');
     });
     _controllerPhone = TextEditingController(text: _phone);
 
@@ -418,6 +419,28 @@ class SettingsPageState extends State<SettingsPage> {
                               const SnackBar(content: Text('PIN configurado correctamente')),
                             );
                           },
+                        ),
+                      ));
+                    },
+                  ),
+                ),
+
+                // Token y estado
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  child: ListTile(
+                    leading: const Icon(Icons.vpn_key_rounded,
+                        color: ColorConstants.primaryColor),
+                    title: const Text('Token y estado'),
+                    subtitle: const Text('Ver token FCM, APNS y datos del dispositivo'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => TokenPage(
+                          userId: _userId,
+                          nickname: _nickname,
+                          role: _aboutMe,
+                          phone: _phone,
                         ),
                       ));
                     },
