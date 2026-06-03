@@ -17,7 +17,7 @@ import 'package:flutter_chat_demo/utils/foreground_gps_service.dart';
 import 'package:flutter_chat_demo/utils/location_tracker.dart';
 
 import 'package:flutter_chat_demo/utils/panic_alert_service.dart';
-import 'caminador_page.dart';
+import 'package:flutter_chat_demo/pages/caminador_page.dart';
 import 'temp_chats_page.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
