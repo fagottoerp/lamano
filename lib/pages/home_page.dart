@@ -5,7 +5,9 @@ import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/models/models.dart';
 import 'package:flutter_chat_demo/pages/pages.dart';
@@ -51,8 +53,10 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _selectedTab = 0;
   int _orderBadge = 0;
   bool _isMotoboy = false;
+  bool _isCaminador = false;
   bool _isAdmin = false;
-  bool _isAgente = false; // agente o ejecutivo (pueden ver Chat Temporales)
+  bool _canSeeTempChats = false;
+  bool _canSeeCaminadorMenu = false;
   bool _isShiftUser = false;
   bool _shiftLocked = false;
   bool _mustStartShift = false;
@@ -67,6 +71,8 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   StreamSubscription<String>? _tokenRefreshSubscription;
   PanicAlertService? _panicAlertService;
   DateTime? _lastGpsOffAlertSentAt;
+  String? _pushToken;
+  bool _pushTokenDialogShown = false;
 
   List<MenuSetting> get _dynamicMenus => [
     if (_isShiftUser) MenuSetting(title: 'Apertura y cierre', icon: Icons.manage_history),
@@ -93,11 +99,14 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final role = _authProvider.prefs.getString(FirestoreConstants.aboutMe) ?? '';
     final rolId = _authProvider.prefs.getString(FirestoreConstants.rolId) ?? '';
     final lamanoUserId = _authProvider.prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
-    _isMotoboy = role.toLowerCase().contains('motoboy');
+    final roleLower = role.toLowerCase();
+    _isCaminador = roleLower == 'caminador';
+    _isMotoboy = roleLower.contains('motoboy') || roleLower.contains('caminador');
     _isAdmin = rolId == '1' ||
-      role.toLowerCase().contains('admin') ||
+      roleLower.contains('admin') ||
       _currentUserId == AppConstants.adminFirebaseUid;
-    _isAgente = role.toLowerCase() == 'agente' || role.toLowerCase() == 'ejecutivo' || role.toLowerCase() == 'asociado' || _isAdmin;
+    _canSeeTempChats = rolId == '1' || rolId == '5' || rolId == '6' || rolId == '9';
+    _canSeeCaminadorMenu = _isCaminador || _isAdmin;
     _isShiftUser = lamanoUserId == '106';
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -190,6 +199,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _tokenRefreshSubscription?.cancel();
     _tokenRefreshSubscription = _firebaseMessaging.onTokenRefresh.listen((token) {
       print('push token refreshed: $token');
+      _updatePushToken(token);
       _homeProvider.updateDataFirestore(
         FirestoreConstants.pathUserCollection,
         _currentUserId,
@@ -198,11 +208,26 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
+  void _updatePushToken(String token) {
+    if (!mounted) return;
+    setState(() {
+      _pushToken = token;
+    });
+    if (kDebugMode && !_pushTokenDialogShown) {
+      _pushTokenDialogShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showPushTokenDialog(token);
+      });
+    }
+  }
+
   Future<void> _syncPushToken() async {
     try {
       final token = await _firebaseMessaging.getToken();
       print('push token sync: $token');
       if (token != null && token.isNotEmpty) {
+        _updatePushToken(token);
         await _homeProvider.updateDataFirestore(
           FirestoreConstants.pathUserCollection,
           _currentUserId,
@@ -221,6 +246,32 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
       Fluttertoast.showToast(msg: msg);
     }
+  }
+
+  void _showPushTokenDialog(String token) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('FCM push token'),
+        content: SingleChildScrollView(
+          child: SelectableText(token),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: token));
+              Navigator.of(context).pop();
+            },
+            child: const Text('Copiar token'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _configLocalNotification() {
@@ -707,11 +758,10 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
     }
 
-    final appBarTitles = _isMotoboy
-        ? ['Inicio', 'Estados', 'Chats', 'Mis Órdenes']
-        : _isAgente
-            ? ['Inicio', 'Estados', 'Chats', 'Chat Temporales']
-            : ['Inicio', 'Estados', 'Chats'];
+    final appBarTitles = <String>['Inicio', 'Estados', 'Chats'];
+    if (_canSeeTempChats) appBarTitles.add('Chat Temporales');
+    if (_canSeeCaminadorMenu) appBarTitles.add('Caminador');
+    if (_isMotoboy) appBarTitles.add('Mis Órdenes');
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -762,45 +812,29 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
           _buildPopupMenu(),
         ],
       ),
-      body: _isMotoboy
-          ? IndexedStack(
-              index: _selectedTab,
-              children: [
-                _buildHomeBody(),
-                _buildStoriesTab(),
-                const RecentChatsPage(),
-                const MotoboOrdersPage(),
-              ],
-            )
-          : _isAgente
-              ? IndexedStack(
-                  index: _selectedTab,
-                  children: [
-                    _buildHomeBody(),
-                    _buildStoriesTab(),
-                    const RecentChatsPage(),
-                    const TempChatsPage(),
-                  ],
-                )
-              : IndexedStack(
-                  index: _selectedTab,
-                  children: [
-                    _buildHomeBody(),
-                    _buildStoriesTab(),
-                    const RecentChatsPage(),
-                  ],
-                ),
+      body: IndexedStack(
+        index: _selectedTab,
+        children: [
+          _buildHomeBody(),
+          _buildStoriesTab(),
+          const RecentChatsPage(),
+          if (_canSeeTempChats) const TempChatsPage(),
+          if (_canSeeCaminadorMenu) _buildCaminadorTab(),
+          if (_isMotoboy) const MotoboOrdersPage(),
+        ],
+      ),
       bottomNavigationBar: _buildBottomNav(),
     );
   }
 
   Widget _buildBottomNav() {
     final items = [
-      {'icon': Icons.home_outlined, 'active': Icons.home, 'label': 'Inicio'},
-      {'icon': Icons.auto_awesome_outlined, 'active': Icons.auto_awesome, 'label': 'Estados'},
-      {'icon': Icons.chat_bubble_outline, 'active': Icons.chat_bubble, 'label': 'Chats'},
-      if (_isAgente) {'icon': Icons.forum_outlined, 'active': Icons.forum, 'label': 'Chat Temp.'},
-      if (_isMotoboy) {'icon': Icons.delivery_dining_outlined, 'active': Icons.delivery_dining, 'label': 'Mis Órdenes'},
+      {'key': 'home', 'icon': Icons.home_outlined, 'active': Icons.home, 'label': 'Inicio'},
+      {'key': 'stories', 'icon': Icons.auto_awesome_outlined, 'active': Icons.auto_awesome, 'label': 'Estados'},
+      {'key': 'chats', 'icon': Icons.chat_bubble_outline, 'active': Icons.chat_bubble, 'label': 'Chats'},
+      if (_canSeeTempChats) {'key': 'temp', 'icon': Icons.forum_outlined, 'active': Icons.forum, 'label': 'Chat Temp.'},
+      if (_canSeeCaminadorMenu) {'key': 'caminador', 'icon': Icons.directions_walk_outlined, 'active': Icons.directions_walk, 'label': 'Caminador'},
+      if (_isMotoboy) {'key': 'orders', 'icon': Icons.delivery_dining_outlined, 'active': Icons.delivery_dining, 'label': 'Mis Órdenes'},
     ];
 
     return ClipRect(
@@ -819,7 +853,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 children: List.generate(items.length, (i) {
                   final item = items[i];
                   final isActive = _selectedTab == i;
-                  final badgeCount = (_isMotoboy && i == items.length - 1) ? _orderBadge : 0;
+                  final badgeCount = (item['key'] == 'orders') ? _orderBadge : 0;
                   return Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
@@ -831,7 +865,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         }
                         setState(() {
                           _selectedTab = i;
-                          if (_isMotoboy && i == items.length - 1) _orderBadge = 0;
+                          if (item['key'] == 'orders') _orderBadge = 0;
                         });
                       },
                       child: AnimatedContainer(
@@ -911,6 +945,15 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// -------------------------------------------------------
   void _showChangelogModal() {
     final changelog = [
+      _ChangelogEntry(
+        version: 'v3.10.69',
+        date: 'Mayo 2026',
+        items: [
+          '🚶 Nuevo tab Caminador visible solo para caminador y admin',
+          '🔒 Chat Temporales más restringido por rol real del login',
+          '🛠️ Ajustes internos de navegación y permisos',
+        ],
+      ),
       _ChangelogEntry(
         version: 'v3.10.10',
         date: 'Mayo 2026',
@@ -1088,6 +1131,39 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 16),
+            if (kDebugMode && _pushToken != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.yellow.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.yellow.shade700),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Debug: FCM token',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    SelectableText(_pushToken!,
+                        style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: _pushToken));
+                          Fluttertoast.showToast(msg: 'Token copiado al portapapeles');
+                        },
+                        child: const Text('Copiar token'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // ── Burbujas de estados ───────────────────────────
             _buildStatusBubblesRow(),
@@ -1115,6 +1191,10 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  Widget _buildCaminadorTab() {
+    return CaminadorPage(isAdmin: _isAdmin, isCaminador: _isCaminador);
   }
 
   Widget _buildStoriesTab() {
