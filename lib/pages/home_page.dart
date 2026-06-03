@@ -17,6 +17,7 @@ import 'package:flutter_chat_demo/utils/foreground_gps_service.dart';
 import 'package:flutter_chat_demo/utils/location_tracker.dart';
 
 import 'package:flutter_chat_demo/utils/panic_alert_service.dart';
+import 'caminador_page.dart';
 import 'temp_chats_page.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -1153,8 +1154,11 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       alignment: Alignment.centerRight,
                       child: TextButton(
                         onPressed: () {
-                          Clipboard.setData(ClipboardData(text: _pushToken));
-                          Fluttertoast.showToast(msg: 'Token copiado al portapapeles');
+                          final token = _pushToken;
+                          if (token != null) {
+                            Clipboard.setData(ClipboardData(text: token));
+                            Fluttertoast.showToast(msg: 'Token copiado al portapapeles');
+                          }
                         },
                         child: const Text('Copiar token'),
                       ),
