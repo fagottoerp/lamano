@@ -1132,7 +1132,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 16),
-            if (kDebugMode && _pushToken != null) ...[
+            if (_pushToken != null) ...[
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -1144,7 +1144,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Debug: FCM token',
+                    const Text('FCM push token',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     const SizedBox(height: 8),
                     SelectableText(_pushToken!,
