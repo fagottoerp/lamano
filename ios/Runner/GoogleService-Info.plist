@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>494184473926-bgs3cmlrehnkpokgg3e601u76i8bt7pc.apps.googleusercontent.com</string>
+	<string>494184473926-ic2cmu3s11qg52550n7fc29ocdm00c05.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.494184473926-bgs3cmlrehnkpokgg3e601u76i8bt7pc</string>
+	<string>com.googleusercontent.apps.494184473926-ic2cmu3s11qg52550n7fc29ocdm00c05</string>
 	<key>ANDROID_CLIENT_ID</key>
 	<string>494184473926-kkpgmrjg4ni6da2b7dmif5f2ago07cs5.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
@@ -15,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.duytq.flutterchatdemo</string>
+	<string>com.avangelista.lamanochat</string>
 	<key>PROJECT_ID</key>
 	<string>lamano-e4b6c</string>
 	<key>STORAGE_BUCKET</key>
@@ -31,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:494184473926:ios:ff8d744b57a7cebcbd7147</string>
+	<string>1:494184473926:ios:c039984438b6a357bd7147</string>
 </dict>
 </plist>
