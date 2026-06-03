@@ -37,8 +37,12 @@
 		<true/>
 		<key>NSCameraUsageDescription</key>
 		<string>We need open camera for you capture a photo</string>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>Lamano usa el microfono para grabar y enviar mensajes de voz en el chat.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>We need open gallery for you choose a photo</string>
+		<key>NSCalendarsUsageDescription</key>
+		<string>Lamano usa el calendario para ayudarte a programar y recordar turnos y entregas.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>Lamano usa tu ubicación para coordinar entregas con el equipo.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
