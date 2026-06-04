@@ -56,12 +56,9 @@ class _LiveKitCallPageState extends State<LiveKitCallPage> {
       
       // Abort if still not granted
       if (!mic.isGranted || !cam.isGranted) {
-        if (mic.isPermanentlyDenied || cam.isPermanentlyDenied) {
-          await openAppSettings();
-        }
         throw Exception(widget.isVideo
-            ? 'Permisos requeridos: camara y microfono'
-            : 'Permiso requerido: microfono');
+            ? 'Necesitas activar cámara y micrófono en Ajustes'
+            : 'Necesitas activar micrófono en Ajustes');
       }
 
       final prefs = await SharedPreferences.getInstance();

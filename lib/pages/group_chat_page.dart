@@ -1006,10 +1006,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
         msg: videoMuted
             ? 'Debes permitir el micrófono para llamar'
             : 'Debes permitir cámara y micrófono para videollamar',
+        toastLength: Toast.LENGTH_LONG,
       );
-      if (micStatus.isPermanentlyDenied || camStatus.isPermanentlyDenied) {
-        await openAppSettings();
-      }
       return;
     }
 
