@@ -776,9 +776,20 @@ class ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _startJitsiCall({bool videoMuted = true}) async {
-    // Pedir permisos antes de iniciar llamada
-    await Permission.microphone.request();
-    if (!videoMuted) await Permission.camera.request();
+    final micStatus = await Permission.microphone.request();
+    final camStatus = videoMuted ? PermissionStatus.granted : await Permission.camera.request();
+    if (micStatus != PermissionStatus.granted || camStatus != PermissionStatus.granted) {
+      Fluttertoast.showToast(
+        msg: videoMuted
+            ? 'Debes permitir el micrófono para llamar'
+            : 'Debes permitir cámara y micrófono para videollamar',
+      );
+      if (micStatus == PermissionStatus.permanentlyDenied ||
+          camStatus == PermissionStatus.permanentlyDenied) {
+        await openAppSettings();
+      }
+      return;
+    }
 
     final myNickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
     final ids = [_currentUserId, widget.arguments.peerId]..sort();
@@ -859,14 +870,14 @@ class ChatPageState extends State<ChatPage> {
             children: [
               Icon(
                 isVideo ? Icons.videocam : Icons.call,
-                color: isMe ? Colors.black87 : Colors.white,
+                color: isMe ? Colors.black87 : ColorConstants.textPrimary,
                 size: 20,
               ),
               const SizedBox(width: 8),
               Text(
                 isVideo ? 'Videollamada' : 'Llamada de voz',
                 style: TextStyle(
-                  color: isMe ? Colors.black87 : Colors.white,
+                  color: isMe ? Colors.black87 : ColorConstants.textPrimary,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -934,16 +945,16 @@ class ChatPageState extends State<ChatPage> {
             child: Icon(
               isPlaying ? Icons.stop_circle : Icons.play_circle_fill,
               size: 36,
-              color: isMe ? ColorConstants.primaryColor : Colors.white,
+              color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
             ),
           ),
           const SizedBox(width: 8),
-          Icon(Icons.graphic_eq, color: isMe ? ColorConstants.greyColor : Colors.white70, size: 20),
+          Icon(Icons.graphic_eq, color: isMe ? ColorConstants.greyColor : ColorConstants.textSecondary, size: 20),
           const SizedBox(width: 4),
           Text(
             '🎤 Audio',
             style: TextStyle(
-              color: isMe ? ColorConstants.primaryColor : Colors.white,
+              color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
               fontSize: 13,
             ),
           ),
@@ -992,7 +1003,7 @@ class ChatPageState extends State<ChatPage> {
                     Text(
                       active ? 'Ubicación en vivo' : 'Ubicación finalizada',
                       style: TextStyle(
-                        color: isMe ? ColorConstants.primaryColor : Colors.white,
+                        color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),
@@ -1004,7 +1015,7 @@ class ChatPageState extends State<ChatPage> {
                   Text(
                     'Lat: ${lat!.toStringAsFixed(5)}\nLng: ${lng!.toStringAsFixed(5)}',
                     style: TextStyle(
-                      color: isMe ? ColorConstants.primaryColor : Colors.white,
+                      color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
                       fontSize: 11,
                     ),
                   ),
@@ -1012,7 +1023,7 @@ class ChatPageState extends State<ChatPage> {
                   Text(
                     'Toca para abrir en Maps',
                     style: TextStyle(
-                      color: isMe ? Colors.blue : Colors.white70,
+                      color: isMe ? Colors.blue : const Color(0xFF0B7A75),
                       decoration: TextDecoration.underline,
                       fontSize: 12,
                     ),
@@ -1024,7 +1035,7 @@ class ChatPageState extends State<ChatPage> {
                     child: Text(
                       'El usuario dejó de compartir',
                       style: TextStyle(
-                        color: isMe ? Colors.grey : Colors.white60,
+                        color: isMe ? Colors.grey : ColorConstants.textSecondary,
                         fontSize: 11,
                         fontStyle: FontStyle.italic,
                       ),
@@ -1116,7 +1127,7 @@ class ChatPageState extends State<ChatPage> {
         ),
         child: Text(
           'Ubicación no disponible',
-          style: TextStyle(color: isMe ? ColorConstants.primaryColor : Colors.white),
+          style: TextStyle(color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary),
         ),
       );
     }
@@ -1143,7 +1154,7 @@ class ChatPageState extends State<ChatPage> {
               Text(
                 'Ubicación compartida',
                 style: TextStyle(
-                  color: isMe ? ColorConstants.primaryColor : Colors.white,
+                  color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -1153,7 +1164,7 @@ class ChatPageState extends State<ChatPage> {
           Text(
             'Lat: ${lat.toStringAsFixed(5)}\nLng: ${lng.toStringAsFixed(5)}',
             style: TextStyle(
-              color: isMe ? ColorConstants.primaryColor : Colors.white,
+              color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
               fontSize: 12,
             ),
           ),
@@ -1163,7 +1174,7 @@ class ChatPageState extends State<ChatPage> {
             child: Text(
               'Abrir en Maps',
               style: TextStyle(
-                color: isMe ? Colors.blue : Colors.white70,
+                color: isMe ? Colors.blue : const Color(0xFF0B7A75),
                 decoration: TextDecoration.underline,
                 fontWeight: FontWeight.w600,
               ),
@@ -1308,7 +1319,7 @@ class ChatPageState extends State<ChatPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (replyTo != null) _buildReplyBubble(replyTo, onTap: () => _scrollToMessage(replyTo['msgId'] ?? '')),
-              _buildRichText(messageChat.content, isMe ? ColorConstants.textPrimary : Colors.white),
+              _buildRichText(messageChat.content, ColorConstants.textPrimary),
             ],
           ),
         );
@@ -1760,6 +1771,8 @@ class ChatPageState extends State<ChatPage> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
+        foregroundColor: ColorConstants.textPrimary,
+        iconTheme: const IconThemeData(color: ColorConstants.textPrimary),
         title: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
               .collection(FirestoreConstants.pathUserCollection)

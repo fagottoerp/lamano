@@ -47,15 +47,14 @@ class _LiveKitCallPageState extends State<LiveKitCallPage> {
   Future<void> _connect() async {
     try {
       final mic = await Permission.microphone.request();
-      if (!widget.isVideo) {
-        if (mic != PermissionStatus.granted) {
-          throw Exception('Permiso de microfono denegado');
+      final cam = widget.isVideo ? await Permission.camera.request() : PermissionStatus.granted;
+      if (mic != PermissionStatus.granted || cam != PermissionStatus.granted) {
+        if (mic == PermissionStatus.permanentlyDenied || cam == PermissionStatus.permanentlyDenied) {
+          await openAppSettings();
         }
-      } else {
-        final cam = await Permission.camera.request();
-        if (mic != PermissionStatus.granted || cam != PermissionStatus.granted) {
-          throw Exception('Permisos de camara/microfono denegados');
-        }
+        throw Exception(widget.isVideo
+            ? 'Permisos requeridos: camara y microfono'
+            : 'Permiso requerido: microfono');
       }
 
       final prefs = await SharedPreferences.getInstance();
@@ -111,7 +110,7 @@ class _LiveKitCallPageState extends State<LiveKitCallPage> {
         _connected = false;
         _status = 'No se pudo conectar';
       });
-      Fluttertoast.showToast(msg: 'Error LiveKit: $e');
+      Fluttertoast.showToast(msg: e.toString().replaceFirst('Exception: ', ''));
     }
   }
 

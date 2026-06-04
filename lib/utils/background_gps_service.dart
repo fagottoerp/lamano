@@ -33,8 +33,8 @@ Future<void> initBackgroundGpsService() async {
       autoStart: false,           // We start manually after login
       isForegroundMode: true,
       notificationChannelId: 'bg_location_channel',
-      initialNotificationTitle: 'Lamano activo',
-      initialNotificationContent: 'Rastreando tu ubicación',
+      initialNotificationTitle: 'Servicio en segundo plano',
+      initialNotificationContent: 'Actualizando estado de la app',
       foregroundServiceNotificationId: 888,
       autoStartOnBoot: true,      // Restart after phone reboot
     ),
@@ -120,8 +120,8 @@ void _onStart(ServiceInstance service) async {
     // Update notification
     if (service is AndroidServiceInstance) {
       service.setForegroundNotificationInfo(
-        title: 'Lamano activo',
-        content: 'GPS activo · ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2,'0')}',
+        title: 'Servicio en segundo plano',
+        content: 'Servicio activo · ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2,'0')}',
       );
     }
 

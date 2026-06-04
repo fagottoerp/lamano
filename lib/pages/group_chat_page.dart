@@ -992,8 +992,20 @@ class _GroupChatPageState extends State<GroupChatPage> {
   }
 
   Future<void> _startGroupJitsiCall({required bool videoMuted}) async {
-    await Permission.microphone.request();
-    if (!videoMuted) await Permission.camera.request();
+    final micStatus = await Permission.microphone.request();
+    final camStatus = videoMuted ? PermissionStatus.granted : await Permission.camera.request();
+    if (micStatus != PermissionStatus.granted || camStatus != PermissionStatus.granted) {
+      Fluttertoast.showToast(
+        msg: videoMuted
+            ? 'Debes permitir el micrófono para llamar'
+            : 'Debes permitir cámara y micrófono para videollamar',
+      );
+      if (micStatus == PermissionStatus.permanentlyDenied ||
+          camStatus == PermissionStatus.permanentlyDenied) {
+        await openAppSettings();
+      }
+      return;
+    }
 
     final groupId = widget.arguments.groupId;
     final groupName = widget.arguments.groupName;
@@ -1158,13 +1170,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(active ? Icons.location_on : Icons.location_off,
-                        color: active ? Colors.green : (isMe ? Colors.grey : Colors.white70),
+                      color: active ? Colors.green : (isMe ? Colors.grey : ColorConstants.textSecondary),
                         size: 18),
                     const SizedBox(width: 6),
                     Text(
                       active ? 'Ubicación en vivo' : 'Ubicación finalizada',
                       style: TextStyle(
-                        color: isMe ? ColorConstants.primaryColor : Colors.white,
+                        color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),
@@ -1175,12 +1187,12 @@ class _GroupChatPageState extends State<GroupChatPage> {
                   const SizedBox(height: 6),
                   Text(
                     'Lat: ${lat!.toStringAsFixed(5)}\nLng: ${lng!.toStringAsFixed(5)}',
-                    style: TextStyle(color: isMe ? ColorConstants.primaryColor : Colors.white, fontSize: 11),
+                    style: TextStyle(color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary, fontSize: 11),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     'Toca para abrir en Maps',
-                    style: TextStyle(color: isMe ? Colors.blue : Colors.white70, decoration: TextDecoration.underline, fontSize: 12),
+                    style: TextStyle(color: isMe ? Colors.blue : const Color(0xFF0B7A75), decoration: TextDecoration.underline, fontSize: 12),
                   ),
                 ],
                 if (!active)
@@ -1188,7 +1200,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       'El usuario dejó de compartir',
-                      style: TextStyle(color: isMe ? Colors.grey : Colors.white60, fontSize: 11, fontStyle: FontStyle.italic),
+                      style: TextStyle(color: isMe ? Colors.grey : ColorConstants.textSecondary, fontSize: 11, fontStyle: FontStyle.italic),
                     ),
                   ),
               ],
@@ -1211,7 +1223,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
         ),
         child: Text(
           'Ubicación no disponible',
-          style: TextStyle(color: isMe ? ColorConstants.primaryColor : Colors.white),
+          style: TextStyle(color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary),
         ),
       );
     }
@@ -1236,7 +1248,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
               Text(
                 'Ubicación compartida',
                 style: TextStyle(
-                  color: isMe ? ColorConstants.primaryColor : Colors.white,
+                  color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -1246,7 +1258,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
           Text(
             'Lat: ${lat.toStringAsFixed(5)}\nLng: ${lng.toStringAsFixed(5)}',
             style: TextStyle(
-              color: isMe ? ColorConstants.primaryColor : Colors.white,
+              color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
               fontSize: 12,
             ),
           ),
@@ -1256,7 +1268,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
             child: Text(
               'Abrir en Maps',
               style: TextStyle(
-                color: isMe ? Colors.blue : Colors.white70,
+                color: isMe ? Colors.blue : const Color(0xFF0B7A75),
                 decoration: TextDecoration.underline,
                 fontWeight: FontWeight.w600,
               ),
@@ -2057,6 +2069,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
+        foregroundColor: ColorConstants.textPrimary,
+        iconTheme: const IconThemeData(color: ColorConstants.textPrimary),
         titleSpacing: 0,
         title: Row(
           children: [

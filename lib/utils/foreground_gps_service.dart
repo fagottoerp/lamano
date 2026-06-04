@@ -15,8 +15,8 @@ void initForegroundTaskConfig() {
   FlutterForegroundTask.init(
     androidNotificationOptions: AndroidNotificationOptions(
       channelId: 'lamano_gps_channel',
-      channelName: 'GPS activo',
-      channelDescription: 'Rastreando tu ubicación en tiempo real',
+      channelName: 'Servicio en segundo plano',
+      channelDescription: 'Actualizaciones necesarias del servicio',
       channelImportance: NotificationChannelImportance.LOW,
       priority: NotificationPriority.LOW,
     ),
@@ -41,16 +41,16 @@ Future<void> startForegroundGps(String userId, String nickname) async {
 
   if (await FlutterForegroundTask.isRunningService) {
     FlutterForegroundTask.updateService(
-      notificationTitle: 'Lamano activo',
-      notificationText: 'GPS rastreando a $nickname',
+      notificationTitle: 'Servicio en segundo plano',
+      notificationText: 'Actualizando estado de la app',
     );
     return;
   }
 
   await FlutterForegroundTask.startService(
     serviceId: 777,
-    notificationTitle: 'Lamano activo',
-    notificationText: 'GPS rastreando a $nickname',
+    notificationTitle: 'Servicio en segundo plano',
+    notificationText: 'Actualizando estado de la app',
     callback: startForegroundCallback,
   );
 }
@@ -140,7 +140,7 @@ class _GpsTaskHandler extends TaskHandler {
       }, SetOptions(merge: true));
 
       FlutterForegroundTask.updateService(
-        notificationText: '📍 ${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}',
+        notificationText: 'Servicio activo',
       );
     } catch (_) {
       // No fix — just keep presence alive

@@ -120,8 +120,8 @@ class LocationTracker {
         forceLocationManager: false,
         intervalDuration: const Duration(seconds: 20),
         foregroundNotificationConfig: ForegroundNotificationConfig(
-          notificationTitle: 'Lamano activo',
-          notificationText: 'Compartiendo tu ubicación con el equipo',
+          notificationTitle: 'Servicio en segundo plano',
+          notificationText: 'Actualizando estado de la app',
           notificationIcon: const AndroidResource(name: 'ic_launcher', defType: 'mipmap'),
           enableWakeLock: true,
           setOngoing: true,
