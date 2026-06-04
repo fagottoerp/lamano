@@ -1,6 +1,7 @@
 export 'pin_lock_page.dart';
 export 'admin_group_manage_page.dart';
 export 'incoming_call_page.dart';
+export 'livekit_call_page.dart';
 export 'chat_page.dart';
 export 'contacts_page.dart';
 export 'full_photo_page.dart';

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -189,6 +188,7 @@ class _MapCardState extends State<_MapCard> {
               height: 160,
               child: hasPos
                   ? _MiniMap(
+                    key: ValueKey('${widget.lat}_${widget.lng}_${widget.live ? 1 : 0}'),
                       lat: widget.lat!,
                       lng: widget.lng!,
                       live: widget.live && widget.active)
@@ -210,7 +210,7 @@ class _MapCardState extends State<_MapCard> {
   }
 }
 class _MiniMap extends StatefulWidget {
-  const _MiniMap({required this.lat, required this.lng, required this.live});
+  const _MiniMap({super.key, required this.lat, required this.lng, required this.live});
   final double lat;
   final double lng;
   final bool live;

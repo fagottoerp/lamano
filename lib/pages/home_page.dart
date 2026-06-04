@@ -214,13 +214,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() {
       _pushToken = token;
     });
-    if (kDebugMode && !_pushTokenDialogShown) {
-      _pushTokenDialogShown = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _showPushTokenDialog(token);
-      });
-    }
   }
 
   Future<void> _syncPushToken() async {

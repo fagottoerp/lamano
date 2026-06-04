@@ -23,9 +23,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
-import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
@@ -76,6 +78,15 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   // Video playback
   final Map<String, VideoPlayerController> _videoControllers = {};
+
+  // Audio recording & playback
+  final _audioRecorder = AudioRecorder();
+  final _audioPlayer = AudioPlayer();
+  bool _isRecording = false;
+  String? _recordingPath;
+  int _recordSeconds = 0;
+  Timer? _recordTimer;
+  String? _playingUrl;
 
   // Live location
   StreamSubscription<Position>? _liveLocationSub;
@@ -453,8 +464,11 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _groupTypingSub?.cancel();
     _typingTimer?.cancel();
     _disappearTimer?.cancel();
+    _recordTimer?.cancel();
     _chatProvider.setTyping(widget.arguments.groupId, _currentUserId, false);
     for (final c in _videoControllers.values) { c.dispose(); }
+    _audioRecorder.dispose();
+    _audioPlayer.dispose();
     _chatInputController.dispose();
     _listScrollController
       ..removeListener(_scrollListener)
@@ -670,6 +684,62 @@ class _GroupChatPageState extends State<GroupChatPage> {
   void _getSticker() {
     _focusNode.unfocus();
     setState(() => _isShowSticker = !_isShowSticker);
+  }
+
+  Future<void> _startRecording() async {
+    if (!await _audioRecorder.hasPermission()) {
+      Fluttertoast.showToast(msg: 'Sin permiso de microfono');
+      return;
+    }
+    final dir = await getTemporaryDirectory();
+    _recordingPath = '${dir.path}/group_audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _audioRecorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 64000, sampleRate: 22050),
+      path: _recordingPath!,
+    );
+    _recordSeconds = 0;
+    _recordTimer?.cancel();
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _recordSeconds++);
+    });
+    setState(() => _isRecording = true);
+  }
+
+  Future<void> _stopAndSendRecording() async {
+    _recordTimer?.cancel();
+    final path = await _audioRecorder.stop();
+    if (!mounted) return;
+    setState(() => _isRecording = false);
+    if (path == null) return;
+    final file = File(path);
+    if (!file.existsSync()) return;
+    setState(() => _isLoading = true);
+    try {
+      final fileName = 'chat_audio/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final snap = await _chatProvider.uploadFile(file, fileName);
+      final url = await snap.ref.getDownloadURL();
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      _onSendMessage(url, TypeMessage.audio);
+      _focusNode.requestFocus();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      Fluttertoast.showToast(msg: 'Error al subir audio: $e');
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    _recordTimer?.cancel();
+    await _audioRecorder.stop();
+    if (!mounted) return;
+    setState(() {
+      _isRecording = false;
+      _recordSeconds = 0;
+    });
+    Fluttertoast.showToast(msg: 'Grabacion cancelada');
   }
 
   /// Efecto fiesta: emojis flotando + vibración al recibir KLK MANE ACTIVO
@@ -932,37 +1002,18 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _sendGroupMessage(roomName, callType);
     _sendGroupCallPush(roomName: roomName, isVideo: !videoMuted);
 
-    final jitsi = JitsiMeet();
-    final myAvatar = _authProvider.prefs.getString(FirestoreConstants.photoUrl) ?? '';
-    final options = JitsiMeetConferenceOptions(
-      serverURL: 'https://jitsi.38.247.147.220.nip.io',
-      room: roomName,
-      configOverrides: {
-        'startWithAudioMuted': false,
-        'startWithVideoMuted': videoMuted,
-        'subject': groupName,
-        'defaultRemoteDisplayName': 'Participante',
-        'enableLayerSuspension': true,
-        'disableDeepLinking': true,
-        'prejoinPageEnabled': false,
-      },
-      featureFlags: {
-        'unsaferoomwarning.enabled': false,
-        'prejoinpage.enabled': false,
-        'tile-view.enabled': true,
-        'filmstrip.enabled': true,
-        'toolbox.alwaysVisible': false,
-        'invite.enabled': false,
-        'meeting-name.enabled': true,
-        'pip.enabled': true,
-      },
-      userInfo: JitsiMeetUserInfo(
-        displayName: _currentNickname,
-        email: '',
-        avatar: myAvatar.isNotEmpty ? myAvatar : null,
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => LiveKitCallPage(
+          roomName: roomName,
+          callerName: groupName,
+          isVideo: !videoMuted,
+        ),
       ),
     );
-    await jitsi.join(options);
   }
 
   Widget _buildGroupCallBubble(String roomName, {required bool isVideo}) {
@@ -993,37 +1044,20 @@ class _GroupChatPageState extends State<GroupChatPage> {
           const SizedBox(height: 8),
           ElevatedButton.icon(
             onPressed: () {
-              final myAvatar2 = _authProvider.prefs.getString(FirestoreConstants.photoUrl) ?? '';
-              final jitsi = JitsiMeet();
-              jitsi.join(JitsiMeetConferenceOptions(
-                serverURL: 'https://jitsi.38.247.147.220.nip.io',
-                room: roomName,
-                configOverrides: {
-                  'startWithAudioMuted': false,
-                  'startWithVideoMuted': !isVideo,
-                  'subject': widget.arguments.groupName,
-                  'defaultRemoteDisplayName': 'Participante',
-                  'prejoinPageEnabled': false,
-                  'disableDeepLinking': true,
-                },
-                featureFlags: {
-                  'unsaferoomwarning.enabled': false,
-                  'prejoinpage.enabled': false,
-                  'tile-view.enabled': true,
-                  'filmstrip.enabled': true,
-                  'toolbox.alwaysVisible': false,
-                  'invite.enabled': false,
-                  'pip.enabled': true,
-                },
-                userInfo: JitsiMeetUserInfo(
-                  displayName: _currentNickname,
-                  email: '',
-                  avatar: myAvatar2.isNotEmpty ? myAvatar2 : null,
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  fullscreenDialog: true,
+                  builder: (_) => LiveKitCallPage(
+                    roomName: roomName,
+                    callerName: widget.arguments.groupName,
+                    isVideo: isVideo,
+                  ),
                 ),
-              ));
+              );
             },
             icon: const Icon(Icons.meeting_room, size: 16),
-            label: const Text('Unirse'),
+            label: const Text('Contestar'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF00E65A),
               foregroundColor: Colors.black,
@@ -1746,6 +1780,55 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
   }
 
+  Widget _buildAudioBubble(String url, {required bool isMe}) {
+    final isPlaying = _playingUrl == url;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 220),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isMe ? ColorConstants.bgSent : ColorConstants.bgReceived,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () async {
+              if (isPlaying) {
+                await _audioPlayer.stop();
+                if (mounted) setState(() => _playingUrl = null);
+              } else {
+                if (mounted) setState(() => _playingUrl = url);
+                await _audioPlayer.setUrl(url);
+                _audioPlayer.play();
+                _audioPlayer.playerStateStream.listen((state) {
+                  if (state.processingState == ProcessingState.completed && mounted) {
+                    setState(() => _playingUrl = null);
+                  }
+                });
+              }
+            },
+            child: Icon(
+              isPlaying ? Icons.stop_circle : Icons.play_circle_fill,
+              size: 36,
+              color: ColorConstants.primaryColor,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.graphic_eq, color: ColorConstants.textSecondary, size: 20),
+          const SizedBox(width: 4),
+          const Text(
+            'Audio',
+            style: TextStyle(
+              color: ColorConstants.textPrimary,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDeletedBubble(String deletedByName, bool isMe) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1831,6 +1914,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
         return LocationMapBubble(payload: content, isMe: isMe, live: false);
       } else if (type == TypeMessage.liveLocation) {
         return LocationMapBubble(payload: content, isMe: isMe, live: true);
+      } else if (type == TypeMessage.audio) {
+        return _buildAudioBubble(content, isMe: isMe);
       } else if (type == TypeMessage.videoCall || type == TypeMessage.audioCall) {
         return _buildGroupCallBubble(content, isVideo: type == TypeMessage.videoCall);
       } else if (type == TypeMessage.alert) {
@@ -1968,6 +2053,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     return Scaffold(
       backgroundColor: ColorConstants.bgChat,
       appBar: AppBar(
+        backgroundColor: const Color(0xFF075E54),
         titleSpacing: 0,
         title: Row(
           children: [
@@ -2043,13 +2129,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
                       style: const TextStyle(color: Colors.white),
                       overflow: TextOverflow.ellipsis),
                   if (_typingUsers.isNotEmpty)
-                    const Text('escribiendo...', style: TextStyle(fontSize: 10, color: Colors.green, fontStyle: FontStyle.italic))
+                    const Text('escribiendo...', style: TextStyle(fontSize: 10, color: Color(0xFFB9FBD4), fontStyle: FontStyle.italic))
                   else if (widget.arguments.groupDescription.isNotEmpty)
                     Text(widget.arguments.groupDescription,
-                        style: const TextStyle(color: ColorConstants.greyColor, fontSize: 11),
+                        style: const TextStyle(color: Colors.white70, fontSize: 11),
                         overflow: TextOverflow.ellipsis),
                   if (_isMuted)
-                    const Text('🔇 silenciado', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                    const Text('🔇 silenciado', style: TextStyle(fontSize: 10, color: Colors.white70)),
                   ],
                 ],
                 ),
@@ -2126,6 +2212,11 @@ class _GroupChatPageState extends State<GroupChatPage> {
           },
           child: Stack(
             children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(painter: _ChatBackdropPainter()),
+                ),
+              ),
               Column(
                 children: [
                   if (_disappearingSeconds > 0)
@@ -2470,7 +2561,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   Widget _buildInput() {
     return Container(
       decoration: const BoxDecoration(
-        color: ColorConstants.cardWhite,
+        color: Color(0xFFF0F2F5),
         border: Border(top: BorderSide(color: ColorConstants.divider, width: 1)),
       ),
       child: Column(
@@ -2596,33 +2687,65 @@ class _GroupChatPageState extends State<GroupChatPage> {
           Container(
             decoration: const BoxDecoration(
                 border: Border(top: BorderSide(color: ColorConstants.greyColor2, width: 0.5))),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    onTapOutside: (_) => Utilities.closeKeyboard(),
-                    onChanged: _onTypingChanged,
-                    onSubmitted: (_) => _onSendMessage(_chatInputController.text, TypeMessage.text),
-                    style: const TextStyle(color: ColorConstants.primaryColor, fontSize: 15),
-                    controller: _chatInputController,
-                    decoration: const InputDecoration.collapsed(
-                      hintText: 'Escribe un mensaje...',
-                      hintStyle: TextStyle(color: ColorConstants.greyColor),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFFE1E5E9)),
                     ),
-                    focusNode: _focusNode,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: TextField(
+                      onTapOutside: (_) => Utilities.closeKeyboard(),
+                      onChanged: _onTypingChanged,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) {
+                        _onSendMessage(_chatInputController.text, TypeMessage.text);
+                        _focusNode.requestFocus();
+                      },
+                      style: const TextStyle(color: ColorConstants.textPrimary, fontSize: 15),
+                      controller: _chatInputController,
+                      decoration: InputDecoration.collapsed(
+                        hintText: _isRecording ? 'Grabando... $_recordSeconds s' : 'Mensaje',
+                        hintStyle: TextStyle(color: _isRecording ? Colors.red : ColorConstants.greyColor),
+                      ),
+                      focusNode: _focusNode,
+                      enabled: !_isRecording,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 6),
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _chatInputController,
                   builder: (_, value, __) {
                     final hasText = value.text.trim().isNotEmpty;
-                    return IconButton(
-                      icon: Icon(hasText ? Icons.send : Icons.mic),
-                      color: ColorConstants.primaryColor,
-                      onPressed: hasText
-                          ? () => _onSendMessage(_chatInputController.text, TypeMessage.text)
-                          : null,
+                    if (_isRecording) {
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.cancel, color: Colors.grey),
+                            onPressed: _cancelRecording,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.send, color: Colors.green),
+                            onPressed: _stopAndSendRecording,
+                          ),
+                        ],
+                      );
+                    }
+                    return Container(
+                      decoration: const BoxDecoration(color: Color(0xFF25D366), shape: BoxShape.circle),
+                      child: IconButton(
+                        icon: Icon(hasText ? Icons.send : Icons.mic, color: Colors.white, size: 20),
+                        color: ColorConstants.primaryColor,
+                        onPressed: hasText
+                            ? () => _onSendMessage(_chatInputController.text, TypeMessage.text)
+                            : _startRecording,
+                      ),
                     );
                   },
                 ),
@@ -2656,6 +2779,25 @@ class GroupChatArguments {
     this.groupDescription = '',
     this.groupImage = '',
   });
+}
+
+class _ChatBackdropPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final base = Paint()..color = const Color(0xFFE9E4DA);
+    canvas.drawRect(Offset.zero & size, base);
+
+    final dot = Paint()..color = const Color(0x14FFFFFF);
+    const gap = 34.0;
+    for (double y = 0; y < size.height + gap; y += gap) {
+      for (double x = ((y ~/ gap) % 2 == 0 ? 10 : 24); x < size.width + gap; x += gap) {
+        canvas.drawCircle(Offset(x, y), 2.2, dot);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ── Overlay de fiesta para KLK MANE ACTIVO ─────────────────────────────────

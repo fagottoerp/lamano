@@ -34,6 +34,7 @@ class _GroupLiveMapPageState extends State<GroupLiveMapPage> {
   LatLng _initialCenter = const LatLng(0, 0);
   Map<String, Map<String, dynamic>> _members = {};
   bool _initialCentered = false;
+  bool _autoFollow = true;
 
   @override
   void initState() {
@@ -83,6 +84,21 @@ class _GroupLiveMapPageState extends State<GroupLiveMapPage> {
         }
       }
       setState(() => _members = updated);
+      if (_autoFollow && updated.isNotEmpty) {
+        final myData = updated[widget.currentUserId];
+        final followData = myData ?? updated.values.first;
+        final target = LatLng(
+          (followData['lat'] as num).toDouble(),
+          (followData['lng'] as num).toDouble(),
+        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          try {
+            final nextZoom = _mapController.camera.zoom < 12 ? 15.0 : _mapController.camera.zoom;
+            _mapController.move(target, nextZoom);
+          } catch (_) {}
+        });
+      }
     });
   }
 
@@ -181,6 +197,11 @@ class _GroupLiveMapPageState extends State<GroupLiveMapPage> {
             options: MapOptions(
               initialCenter: _initialCenter,
               initialZoom: _myPosition != null ? 15 : 2,
+              onPositionChanged: (position, hasGesture) {
+                if (hasGesture && _autoFollow) {
+                  setState(() => _autoFollow = false);
+                }
+              },
             ),
             children: [
               TileLayer(
@@ -265,13 +286,16 @@ class _GroupLiveMapPageState extends State<GroupLiveMapPage> {
       floatingActionButton: _myPosition != null
           ? FloatingActionButton(
               mini: true,
-              tooltip: 'Mi ubicación',
+              tooltip: _autoFollow ? 'Mi ubicación' : 'Reactivar seguimiento',
               backgroundColor: ColorConstants.primaryColor,
-              onPressed: () => _mapController.move(
-                LatLng(_myPosition!.latitude, _myPosition!.longitude),
-                16,
-              ),
-              child: const Icon(Icons.my_location, color: Colors.white),
+              onPressed: () {
+                setState(() => _autoFollow = true);
+                _mapController.move(
+                  LatLng(_myPosition!.latitude, _myPosition!.longitude),
+                  16,
+                );
+              },
+              child: Icon(_autoFollow ? Icons.my_location : Icons.gps_fixed, color: Colors.white),
             )
           : null,
     );

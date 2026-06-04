@@ -25,7 +25,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -90,7 +89,9 @@ class ChatPageState extends State<ChatPage> {
   bool _peerTyping = false;
   StreamSubscription<DocumentSnapshot>? _typingSub;
   StreamSubscription<DocumentSnapshot>? _peerPresenceSub;
+  StreamSubscription<DocumentSnapshot>? _peerUserSub;
   Timer? _typingTimer;
+  String _peerAvatarUrl = '';
 
   // Mute
   int _mutedUntil = 0; // epoch ms, 0 = not muted
@@ -175,7 +176,7 @@ class ChatPageState extends State<ChatPage> {
       return const Icon(Icons.done_all, size: 13, color: Colors.grey);
     } else {
       // read
-      return const Icon(Icons.done_all, size: 13, color: Colors.blue);
+      return const Icon(Icons.done_all, size: 13, color: Color(0xFF0A7F6F));
     }
   }
 
@@ -234,6 +235,7 @@ class ChatPageState extends State<ChatPage> {
     _gpsSub?.cancel();
     _typingSub?.cancel();
     _peerPresenceSub?.cancel();
+    _peerUserSub?.cancel();
     _typingTimer?.cancel();
     _chatProvider.setTyping(_groupChatId, _currentUserId, false);
     for (final c in _videoControllers.values) { c.dispose(); }
@@ -277,6 +279,20 @@ class ChatPageState extends State<ChatPage> {
       );
     }
     String peerId = widget.arguments.peerId;
+    _peerAvatarUrl = widget.arguments.peerAvatar;
+    _peerUserSub?.cancel();
+    _peerUserSub = FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathUserCollection)
+        .doc(peerId)
+        .snapshots()
+        .listen((snap) {
+      final data = snap.data();
+      if (!mounted || data == null) return;
+      final avatar = data[FirestoreConstants.photoUrl] as String? ?? '';
+      if (avatar != _peerAvatarUrl) {
+        setState(() => _peerAvatarUrl = avatar);
+      }
+    });
     if (widget.arguments.customGroupChatId?.isNotEmpty == true) {
       _groupChatId = widget.arguments.customGroupChatId!;
     } else if (_currentUserId.compareTo(peerId) > 0) {
@@ -304,11 +320,10 @@ class ChatPageState extends State<ChatPage> {
       if (online) _markMyMessagesDelivered();
     });
 
-    // Determine if viewer can see GPS (agente/ejecutivo/asociado/admin, not motoboy)
+    // Determine if viewer can see GPS for order chats using immutable backend role IDs.
     final role = (_authProvider.prefs.getString(FirestoreConstants.aboutMe) ?? '').toLowerCase();
     final rolId = _authProvider.prefs.getString(FirestoreConstants.rolId) ?? '';
-    _viewerIsAgente = (role == 'agente' || role == 'ejecutivo' || role == 'asociado' ||
-        role.contains('admin') || rolId == '1') && !role.contains('motoboy');
+    _viewerIsAgente = rolId == '1' || rolId == '5' || rolId == '6' || rolId == '9';
 
     // Subscribe to live GPS for order chats (only for agente/admin viewers)
     if (_groupChatId.startsWith('order-') && peerId.isNotEmpty && _viewerIsAgente) {
@@ -760,12 +775,11 @@ class ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _startJitsiCall({bool videoMuted = true}) async {
-    // Pedir permisos antes de unirse
+    // Pedir permisos antes de iniciar llamada
     await Permission.microphone.request();
     if (!videoMuted) await Permission.camera.request();
 
     final myNickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
-    final myAvatar = _authProvider.prefs.getString(FirestoreConstants.photoUrl) ?? '';
     final ids = [_currentUserId, widget.arguments.peerId]..sort();
     final roomName = 'lamano_${ids.join('_')}';
 
@@ -781,42 +795,18 @@ class ChatPageState extends State<ChatPage> {
       isVideo: !videoMuted,
     );
 
-    final jitsi = JitsiMeet();
-    final options = JitsiMeetConferenceOptions(
-      serverURL: 'https://jitsi.38.247.147.220.nip.io',
-      room: roomName,
-      configOverrides: {
-        'startWithAudioMuted': false,
-        'startWithVideoMuted': videoMuted,
-        'subject': widget.arguments.peerNickname,
-      },
-      featureFlags: {
-        'unsafeRoomWarning.enabled': false,
-        'welcomePage.enabled': false,
-        'calendar.enabled': false,
-        'recording.enabled': false,
-        'liveStreaming.enabled': false,
-        'invite.enabled': false,
-      },
-      userInfo: JitsiMeetUserInfo(
-        displayName: myNickname,
-        avatar: myAvatar.isNotEmpty ? myAvatar : null,
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => LiveKitCallPage(
+          roomName: roomName,
+          callerName: widget.arguments.peerNickname,
+          isVideo: !videoMuted,
+        ),
       ),
     );
-    try {
-      await jitsi.join(options, JitsiMeetEventListener(
-        conferenceJoined: (url) => debugPrint('JITSI joined: $url'),
-        conferenceTerminated: (url, error) => debugPrint('JITSI terminated: $url err=$error'),
-        conferenceWillJoin: (url) => debugPrint('JITSI willJoin: $url'),
-      ));
-    } catch (e) {
-      debugPrint('JITSI ERROR: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error llamada: $e'), duration: const Duration(seconds: 6)),
-        );
-      }
-    }
   }
 
   /// Sends FCM push to peer so they see an incoming-call screen even if the
@@ -857,7 +847,7 @@ class ChatPageState extends State<ChatPage> {
       constraints: const BoxConstraints(maxWidth: 220),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: isMe ? ColorConstants.greyColor2 : ColorConstants.primaryColor,
+        color: isMe ? ColorConstants.bgSent : ColorConstants.bgReceived,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -885,33 +875,20 @@ class ChatPageState extends State<ChatPage> {
             const SizedBox(height: 8),
             ElevatedButton.icon(
               onPressed: () {
-                final myNickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
-                final myAvatar = _authProvider.prefs.getString(FirestoreConstants.photoUrl) ?? '';
-                final jitsi = JitsiMeet();
-                jitsi.join(JitsiMeetConferenceOptions(
-                  serverURL: 'https://jitsi.38.247.147.220.nip.io',
-                  room: roomName,
-                  configOverrides: {
-                    'startWithAudioMuted': false,
-                    'startWithVideoMuted': !isVideo,
-                    'subject': widget.arguments.peerNickname,
-                  },
-                  featureFlags: {
-                    'unsafeRoomWarning.enabled': false,
-                    'welcomePage.enabled': false,
-                    'calendar.enabled': false,
-                    'recording.enabled': false,
-                    'liveStreaming.enabled': false,
-                    'invite.enabled': false,
-                  },
-                  userInfo: JitsiMeetUserInfo(
-                    displayName: myNickname,
-                    avatar: myAvatar.isNotEmpty ? myAvatar : null,
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => LiveKitCallPage(
+                      roomName: roomName,
+                      callerName: widget.arguments.peerNickname,
+                      isVideo: isVideo,
+                    ),
                   ),
-                ));
+                );
               },
               icon: Icon(isVideo ? Icons.videocam : Icons.call, size: 16),
-              label: const Text('Unirse'),
+              label: const Text('Contestar'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
@@ -931,7 +908,7 @@ class ChatPageState extends State<ChatPage> {
       constraints: const BoxConstraints(maxWidth: 220),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: isMe ? ColorConstants.greyColor2 : ColorConstants.primaryColor,
+        color: isMe ? ColorConstants.bgSent : ColorConstants.bgReceived,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -1322,7 +1299,7 @@ class ChatPageState extends State<ChatPage> {
           padding: const EdgeInsets.fromLTRB(15, 10, 15, 10),
           constraints: const BoxConstraints(maxWidth: 220),
           decoration: BoxDecoration(
-            color: isMe ? _myBubbleColor : ColorConstants.primaryColor,
+            color: isMe ? _myBubbleColor : ColorConstants.bgReceived,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
@@ -1330,7 +1307,7 @@ class ChatPageState extends State<ChatPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (replyTo != null) _buildReplyBubble(replyTo, onTap: () => _scrollToMessage(replyTo['msgId'] ?? '')),
-              _buildRichText(messageChat.content, isMe ? ColorConstants.primaryColor : Colors.white),
+              _buildRichText(messageChat.content, isMe ? ColorConstants.textPrimary : Colors.white),
             ],
           ),
         );
@@ -1436,9 +1413,22 @@ class ChatPageState extends State<ChatPage> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 _isLastMessageLeft(index)
-                    ? ClipOval(child: Image.network(widget.arguments.peerAvatar,
-                        width: 35, height: 35, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(Icons.account_circle, size: 35, color: ColorConstants.greyColor)))
+                    ? CircleAvatar(
+                        radius: 17.5,
+                        backgroundImage: _peerAvatarUrl.isNotEmpty ? NetworkImage(_peerAvatarUrl) : null,
+                        backgroundColor: ColorConstants.greyColor2,
+                        child: _peerAvatarUrl.isEmpty
+                            ? Text(
+                                widget.arguments.peerNickname.isNotEmpty
+                                    ? widget.arguments.peerNickname[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: ColorConstants.primaryColor,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : null,
+                      )
                     : Container(width: 35),
                 const SizedBox(width: 6),
                 bubble,
@@ -1766,6 +1756,7 @@ class ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: const Color(0xFF075E54),
         title: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
               .collection(FirestoreConstants.pathUserCollection)
@@ -1791,15 +1782,15 @@ class ChatPageState extends State<ChatPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (!_peerIsAdmin)
-                  Text(widget.arguments.peerNickname, style: const TextStyle(color: ColorConstants.primaryColor))
+                  Text(widget.arguments.peerNickname, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600))
                 else
                   RainbowText(widget.arguments.peerNickname, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                 if (_peerTyping)
-                  const Text('escribiendo...', style: TextStyle(fontSize: 11, color: Colors.green, fontStyle: FontStyle.italic))
+                  const Text('escribiendo...', style: TextStyle(fontSize: 11, color: Color(0xFFB9FBD4), fontStyle: FontStyle.italic))
                 else if (subtitle.isNotEmpty)
-                  Text(subtitle, style: TextStyle(fontSize: 11, color: isOnline ? Colors.green : Colors.grey)),
+                  Text(subtitle, style: TextStyle(fontSize: 11, color: isOnline ? const Color(0xFFB9FBD4) : Colors.white70)),
                 if (_isMuted)
-                  const Text('🔇 silenciado', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                  const Text('🔇 silenciado', style: TextStyle(fontSize: 10, color: Colors.white70)),
               ],
             );
           },
@@ -1807,17 +1798,17 @@ class ChatPageState extends State<ChatPage> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.videocam, color: ColorConstants.primaryColor),
+            icon: const Icon(Icons.videocam, color: Colors.white),
             tooltip: 'Videollamada',
             onPressed: () => _startJitsiCall(videoMuted: false),
           ),
           IconButton(
-            icon: const Icon(Icons.call, color: Colors.green),
+            icon: const Icon(Icons.call, color: Colors.white),
             tooltip: 'Llamada de voz',
             onPressed: () => _startJitsiCall(videoMuted: true),
           ),
           IconButton(
-            icon: const Icon(Icons.phone_forwarded, color: Colors.orange),
+            icon: const Icon(Icons.phone_forwarded, color: Colors.white),
             tooltip: 'Llamada anónima (Twilio)',
             onPressed: _twilioCall,
           ),
@@ -1842,6 +1833,11 @@ class ChatPageState extends State<ChatPage> {
         child: PopScope(
           child: Stack(
             children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(painter: _ChatBackdropPainter()),
+                ),
+              ),
               Column(
                 children: [
                   if (_groupChatId.startsWith('order-') && _viewerIsAgente) _buildGpsBanner(),
@@ -2071,7 +2067,7 @@ class ChatPageState extends State<ChatPage> {
     return Container(
       decoration: BoxDecoration(
           border: Border(top: BorderSide(color: ColorConstants.greyColor2, width: 0.5)),
-          color: Colors.white),
+          color: const Color(0xFFF0F2F5)),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -2149,41 +2145,58 @@ class ChatPageState extends State<ChatPage> {
           Container(
             decoration: const BoxDecoration(
                 border: Border(top: BorderSide(color: ColorConstants.greyColor2, width: 0.5))),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    onTapOutside: (_) => Utilities.closeKeyboard(),
-                    onChanged: _onTypingChanged,
-                    onSubmitted: (_) {
-                      _onSendMessage(_chatInputController.text, TypeMessage.text);
-                    },
-                    style: const TextStyle(color: ColorConstants.primaryColor, fontSize: 15),
-                    controller: _chatInputController,
-                    decoration: InputDecoration.collapsed(
-                      hintText: _isRecording ? '🔴 Grabando... $_recordSeconds s' : 'Escribe un mensaje...',
-                      hintStyle: TextStyle(color: _isRecording ? Colors.red : ColorConstants.greyColor),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFFE1E5E9)),
                     ),
-                    focusNode: _focusNode,
-                    enabled: !_isRecording,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: TextField(
+                      onTapOutside: (_) => Utilities.closeKeyboard(),
+                      onChanged: _onTypingChanged,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) {
+                        _onSendMessage(_chatInputController.text, TypeMessage.text);
+                        _focusNode.requestFocus();
+                      },
+                      style: const TextStyle(color: ColorConstants.textPrimary, fontSize: 15),
+                      controller: _chatInputController,
+                      decoration: InputDecoration.collapsed(
+                        hintText: _isRecording ? '🔴 Grabando... $_recordSeconds s' : 'Mensaje',
+                        hintStyle: TextStyle(color: _isRecording ? Colors.red : ColorConstants.greyColor),
+                      ),
+                      focusNode: _focusNode,
+                      enabled: !_isRecording,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 6),
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _chatInputController,
                   builder: (_, value, __) {
                     final hasText = value.text.trim().isNotEmpty;
                     if (_isRecording) return const SizedBox.shrink();
                     return hasText
-                        ? IconButton(
-                            icon: const Icon(Icons.send),
-                            color: ColorConstants.primaryColor,
-                            onPressed: () => _onSendMessage(_chatInputController.text, TypeMessage.text),
+                        ? Container(
+                            decoration: const BoxDecoration(color: Color(0xFF25D366), shape: BoxShape.circle),
+                            child: IconButton(
+                              icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                              color: ColorConstants.primaryColor,
+                              onPressed: () => _onSendMessage(_chatInputController.text, TypeMessage.text),
+                            ),
                           )
-                        : IconButton(
-                            icon: const Icon(Icons.mic),
-                            color: ColorConstants.primaryColor,
-                            onPressed: _startRecording,
+                        : Container(
+                            decoration: const BoxDecoration(color: Color(0xFF25D366), shape: BoxShape.circle),
+                            child: IconButton(
+                              icon: const Icon(Icons.mic, color: Colors.white, size: 20),
+                              color: ColorConstants.primaryColor,
+                              onPressed: _startRecording,
+                            ),
                           );
                   },
                 ),
@@ -2240,29 +2253,17 @@ class ChatPageState extends State<ChatPage> {
             onPressed: () {
               _callDialogVisible = false;
               Navigator.of(context, rootNavigator: true).pop();
-              final myNickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
-              final myAvatar = _authProvider.prefs.getString(FirestoreConstants.photoUrl) ?? '';
-              JitsiMeet().join(JitsiMeetConferenceOptions(
-                serverURL: 'https://jitsi.38.247.147.220.nip.io',
-                room: roomName,
-                configOverrides: {
-                  'startWithAudioMuted': false,
-                  'startWithVideoMuted': !isVideo,
-                  'subject': widget.arguments.peerNickname,
-                },
-                featureFlags: {
-                  'unsafeRoomWarning.enabled': false,
-                  'welcomePage.enabled': false,
-                  'calendar.enabled': false,
-                  'recording.enabled': false,
-                  'liveStreaming.enabled': false,
-                  'invite.enabled': false,
-                },
-                userInfo: JitsiMeetUserInfo(
-                  displayName: myNickname,
-                  avatar: myAvatar.isNotEmpty ? myAvatar : null,
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  fullscreenDialog: true,
+                  builder: (_) => LiveKitCallPage(
+                    roomName: roomName,
+                    callerName: widget.arguments.peerNickname,
+                    isVideo: isVideo,
+                  ),
                 ),
-              ));
+              );
             },
             icon: Icon(isVideo ? Icons.videocam : Icons.call, size: 16),
             label: const Text('Contestar'),
@@ -2385,6 +2386,25 @@ class _LiveMiniMapState extends State<_LiveMiniMap> {
       ],
     );
   }
+}
+
+class _ChatBackdropPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final base = Paint()..color = const Color(0xFFE9E4DA);
+    canvas.drawRect(Offset.zero & size, base);
+
+    final dot = Paint()..color = const Color(0x14FFFFFF);
+    const gap = 34.0;
+    for (double y = 0; y < size.height + gap; y += gap) {
+      for (double x = ((y ~/ gap) % 2 == 0 ? 10 : 24); x < size.width + gap; x += gap) {
+        canvas.drawCircle(Offset(x, y), 2.2, dot);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class ChatPageArguments {

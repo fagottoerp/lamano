@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
+
+import 'livekit_call_page.dart';
 
 /// Full-screen incoming call page — shown via FCM fullScreenIntent.
 /// Arguments passed via route:
@@ -9,14 +10,12 @@ class IncomingCallArgs {
   final String callerName;
   final String callerUid;
   final bool isVideo;
-  final String serverUrl;
 
   const IncomingCallArgs({
     required this.roomName,
     required this.callerName,
     required this.callerUid,
     required this.isVideo,
-    this.serverUrl = 'https://jitsi.38.247.147.220.nip.io',
   });
 }
 
@@ -53,24 +52,17 @@ class _IncomingCallPageState extends State<IncomingCallPage>
 
   Future<void> _accept() async {
     Navigator.of(context).pop();
-    final jitsi = JitsiMeet();
-    await jitsi.join(JitsiMeetConferenceOptions(
-      serverURL: widget.args.serverUrl,
-      room: widget.args.roomName,
-      configOverrides: {
-        'startWithAudioMuted': false,
-        'startWithVideoMuted': !widget.args.isVideo,
-        'subject': widget.args.callerName,
-      },
-      featureFlags: {
-        'unsafeRoomWarning.enabled': false,
-        'welcomePage.enabled': false,
-        'calendar.enabled': false,
-        'recording.enabled': false,
-        'liveStreaming.enabled': false,
-        'invite.enabled': false,
-      },
-    ));
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => LiveKitCallPage(
+          roomName: widget.args.roomName,
+          callerName: widget.args.callerName,
+          isVideo: widget.args.isVideo,
+        ),
+      ),
+    );
   }
 
   void _decline() {

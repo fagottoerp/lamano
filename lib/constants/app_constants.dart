@@ -9,4 +9,5 @@ class AppConstants {
   static const adminFirebaseUid = 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1';
   static const motoboyOrdersApiUrl = 'http://38.247.147.220/lamano/api_motoboy_orders.php';
   static const agentOrdersChatApiUrl = 'http://38.247.147.220/lamano/api_agent_orders_chat.php';
+  static const liveKitTokenApiUrl = 'http://38.247.147.220/lamano/api_livekit_token.php';
 }
