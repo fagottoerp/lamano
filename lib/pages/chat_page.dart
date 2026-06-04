@@ -57,6 +57,7 @@ class ChatPageState extends State<ChatPage> {
   File? _imageFile;
   bool _isLoading = false;
   bool _isShowSticker = false;
+  bool _showAttachPanel = false;
   String _imageUrl = "";
 
   // Live location
@@ -1756,7 +1757,9 @@ class ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF075E54),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
         title: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
               .collection(FirestoreConstants.pathUserCollection)
@@ -1778,54 +1781,99 @@ class ChatPageState extends State<ChatPage> {
               else if (diff.inDays == 1) subtitle = 'visto ayer';
               else subtitle = 'visto el ${dt.day}/${dt.month}';
             }
-            return Column(
-              mainAxisSize: MainAxisSize.min,
+            return Row(
               children: [
-                if (!_peerIsAdmin)
-                  Text(widget.arguments.peerNickname, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600))
-                else
-                  RainbowText(widget.arguments.peerNickname, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-                if (_peerTyping)
-                  const Text('escribiendo...', style: TextStyle(fontSize: 11, color: Color(0xFFB9FBD4), fontStyle: FontStyle.italic))
-                else if (subtitle.isNotEmpty)
-                  Text(subtitle, style: TextStyle(fontSize: 11, color: isOnline ? const Color(0xFFB9FBD4) : Colors.white70)),
-                if (_isMuted)
-                  const Text('🔇 silenciado', style: TextStyle(fontSize: 10, color: Colors.white70)),
+                CircleAvatar(
+                  radius: 17,
+                  backgroundColor: const Color(0xFFD9EFE7),
+                  backgroundImage: widget.arguments.peerAvatar.isNotEmpty ? NetworkImage(widget.arguments.peerAvatar) : null,
+                  child: widget.arguments.peerAvatar.isEmpty
+                      ? Text(
+                          widget.arguments.peerNickname.isNotEmpty
+                              ? widget.arguments.peerNickname[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(color: ColorConstants.primaryColor, fontWeight: FontWeight.bold),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!_peerIsAdmin)
+                        Text(widget.arguments.peerNickname,
+                            style: const TextStyle(color: ColorConstants.textPrimary, fontWeight: FontWeight.w700))
+                      else
+                        RainbowText(widget.arguments.peerNickname, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                      if (_peerTyping)
+                        const Text('escribiendo...', style: TextStyle(fontSize: 11, color: ColorConstants.textSecondary, fontStyle: FontStyle.italic))
+                      else if (subtitle.isNotEmpty)
+                        Text(subtitle, style: const TextStyle(fontSize: 11, color: ColorConstants.textSecondary)),
+                      if (_isMuted)
+                        const Text('silenciado', style: TextStyle(fontSize: 10, color: ColorConstants.textSecondary)),
+                    ],
+                  ),
+                ),
               ],
             );
           },
         ),
-        centerTitle: true,
+        centerTitle: false,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.videocam, color: Colors.white),
-            tooltip: 'Videollamada',
-            onPressed: () => _startJitsiCall(videoMuted: false),
-          ),
-          IconButton(
-            icon: const Icon(Icons.call, color: Colors.white),
+          _buildTopAction(
+            icon: Icons.call,
             tooltip: 'Llamada de voz',
-            onPressed: () => _startJitsiCall(videoMuted: true),
+            onTap: () => _startJitsiCall(videoMuted: true),
           ),
-          IconButton(
-            icon: const Icon(Icons.phone_forwarded, color: Colors.white),
-            tooltip: 'Llamada anónima (Twilio)',
-            onPressed: _twilioCall,
+          _buildTopAction(
+            icon: Icons.videocam,
+            tooltip: 'Videollamada',
+            onTap: () => _startJitsiCall(videoMuted: false),
           ),
-          PopupMenuButton<String>(
-            onSelected: (val) => _handleAppBarMenu(val),
-            itemBuilder: (_) => [
-              PopupMenuItem(value: 'mute', child: Row(children: [
-                Icon(_isMuted ? Icons.notifications_active : Icons.notifications_off, size: 18, color: Colors.grey),
-                const SizedBox(width: 8),
-                Text(_isMuted ? 'Activar notificaciones' : 'Silenciar'),
-              ])),
-              PopupMenuItem(value: 'block', child: Row(children: [
-                Icon(_isBlocked ? Icons.lock_open : Icons.block, size: 18, color: _isBlocked ? Colors.green : Colors.red),
-                const SizedBox(width: 8),
-                Text(_isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'),
-              ])),
-            ],
+          _buildTopAction(
+            icon: Icons.more_vert,
+            tooltip: 'Más opciones',
+            onTap: () {
+              showMenu<String>(
+                context: context,
+                position: const RelativeRect.fromLTRB(1000, 80, 12, 0),
+                items: [
+                  PopupMenuItem(
+                    value: 'mute',
+                    child: Row(children: [
+                      Icon(_isMuted ? Icons.notifications_active : Icons.notifications_off, size: 18, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(_isMuted ? 'Activar notificaciones' : 'Silenciar'),
+                    ]),
+                  ),
+                  PopupMenuItem(
+                    value: 'twilio',
+                    child: const Row(children: [
+                      Icon(Icons.phone_forwarded, size: 18, color: Colors.grey),
+                      SizedBox(width: 8),
+                      Text('Llamada anónima'),
+                    ]),
+                  ),
+                  PopupMenuItem(
+                    value: 'block',
+                    child: Row(children: [
+                      Icon(_isBlocked ? Icons.lock_open : Icons.block, size: 18, color: _isBlocked ? Colors.green : Colors.red),
+                      const SizedBox(width: 8),
+                      Text(_isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'),
+                    ]),
+                  ),
+                ],
+              ).then((val) {
+                if (val == null) return;
+                if (val == 'twilio') {
+                  _twilioCall();
+                } else {
+                  _handleAppBarMenu(val);
+                }
+              });
+            },
           ),
         ],
       ),
@@ -2065,86 +2113,60 @@ class ChatPageState extends State<ChatPage> {
 
   Widget _buildInput() {
     return Container(
-      decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: ColorConstants.greyColor2, width: 0.5)),
-          color: const Color(0xFFF0F2F5)),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: ColorConstants.divider, width: 1)),
+        color: Color(0xFFF6F7F9),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Reply preview bar
           if (_replyTo != null) _buildReplyPreviewBar(),
-          // Icons row
-          Row(
-            children: [
-              Material(
+          if (_showAttachPanel)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+              padding: const EdgeInsets.fromLTRB(10, 14, 10, 10),
+              decoration: BoxDecoration(
                 color: Colors.white,
-                child: IconButton(
-                  icon: const Icon(Icons.image),
-                  tooltip: 'Enviar foto de galería',
-                  onPressed: () => _pickAndSendMultipleImages(),
-                  color: ColorConstants.primaryColor,
-                ),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: const Color(0xFFE6ECEA)),
               ),
-              Material(
-                color: Colors.white,
-                child: IconButton(
-                  icon: const Icon(Icons.videocam_outlined),
-                  tooltip: 'Enviar video',
-                  onPressed: _pickAndSendVideo,
-                  color: ColorConstants.primaryColor,
-                ),
-              ),
-              Material(
-                color: Colors.white,
-                child: IconButton(
-                  icon: const Icon(Icons.camera_alt),
-                  tooltip: 'Tomar foto',
-                  onPressed: () {
+              child: GridView.count(
+                shrinkWrap: true,
+                crossAxisCount: 3,
+                childAspectRatio: 1.12,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildAttachOption(Icons.insert_drive_file_outlined, 'Documento', () {
+                    setState(() => _showAttachPanel = false);
+                    Fluttertoast.showToast(msg: 'Documentos próximamente');
+                  }),
+                  _buildAttachOption(Icons.camera_alt_outlined, 'Cámara', () {
+                    setState(() => _showAttachPanel = false);
                     _pickImage(source: ImageSource.camera).then((isSuccess) {
                       if (isSuccess) _uploadFile();
                     });
-                  },
-                  color: ColorConstants.primaryColor,
-                ),
+                  }),
+                  _buildAttachOption(Icons.photo_outlined, 'Galería', () {
+                    setState(() => _showAttachPanel = false);
+                    _pickAndSendMultipleImages();
+                  }),
+                  _buildAttachOption(Icons.headphones_outlined, 'Audio', () {
+                    setState(() => _showAttachPanel = false);
+                    _startRecording();
+                  }),
+                  _buildAttachOption(Icons.location_on_outlined, 'Ubicación', () {
+                    setState(() => _showAttachPanel = false);
+                    _shareLocation();
+                  }),
+                  _buildAttachOption(Icons.person_outline, 'Contacto', () {
+                    setState(() => _showAttachPanel = false);
+                    Fluttertoast.showToast(msg: 'Contactos próximamente');
+                  }),
+                ],
               ),
-              Material(
-                color: Colors.white,
-                child: IconButton(
-                  icon: Icon(_isSharingLiveLocation ? Icons.location_off : Icons.my_location),
-                  tooltip: _isSharingLiveLocation ? 'Detener ubicación en vivo' : 'Activar mi ubicación',
-                  onPressed: _toggleLiveLocation,
-                  color: _isSharingLiveLocation ? Colors.red : ColorConstants.primaryColor,
-                ),
-              ),
-              Material(
-                color: Colors.white,
-                child: IconButton(
-                  icon: const Icon(Icons.face),
-                  onPressed: _getSticker,
-                  color: ColorConstants.primaryColor,
-                ),
-              ),
-              const Spacer(),
-              if (_isRecording)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.cancel, color: Colors.grey),
-                      onPressed: _cancelRecording,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.send, color: Colors.green),
-                      onPressed: _stopAndSendRecording,
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          // Text input row
-          Container(
-            decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: ColorConstants.greyColor2, width: 0.5))),
+            ),
+          Padding(
             padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
             child: Row(
               children: [
@@ -2153,25 +2175,51 @@ class ChatPageState extends State<ChatPage> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: const Color(0xFFE1E5E9)),
+                      border: Border.all(color: const Color(0xFFE1E5E9), width: 1),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    child: TextField(
-                      onTapOutside: (_) => Utilities.closeKeyboard(),
-                      onChanged: _onTypingChanged,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) {
-                        _onSendMessage(_chatInputController.text, TypeMessage.text);
-                        _focusNode.requestFocus();
-                      },
-                      style: const TextStyle(color: ColorConstants.textPrimary, fontSize: 15),
-                      controller: _chatInputController,
-                      decoration: InputDecoration.collapsed(
-                        hintText: _isRecording ? '🔴 Grabando... $_recordSeconds s' : 'Mensaje',
-                        hintStyle: TextStyle(color: _isRecording ? Colors.red : ColorConstants.greyColor),
-                      ),
-                      focusNode: _focusNode,
-                      enabled: !_isRecording,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.emoji_emotions_outlined, color: ColorConstants.textSecondary, size: 21),
+                          onPressed: _getSticker,
+                        ),
+                        Expanded(
+                          child: TextField(
+                            onTapOutside: (_) => Utilities.closeKeyboard(),
+                            onTap: () => setState(() => _showAttachPanel = false),
+                            onChanged: _onTypingChanged,
+                            textInputAction: TextInputAction.send,
+                            onSubmitted: (_) {
+                              _onSendMessage(_chatInputController.text, TypeMessage.text);
+                              _focusNode.requestFocus();
+                            },
+                            style: const TextStyle(color: ColorConstants.textPrimary, fontSize: 15),
+                            controller: _chatInputController,
+                            decoration: InputDecoration.collapsed(
+                              hintText: _isRecording ? 'Grabando... $_recordSeconds s' : 'Type message ...',
+                              hintStyle: TextStyle(color: _isRecording ? Colors.red : ColorConstants.greyColor),
+                            ),
+                            focusNode: _focusNode,
+                            enabled: !_isRecording,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.attach_file_rounded, color: ColorConstants.textSecondary, size: 20),
+                          onPressed: () {
+                            _focusNode.unfocus();
+                            setState(() => _showAttachPanel = !_showAttachPanel);
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.camera_alt_outlined, color: ColorConstants.textSecondary, size: 20),
+                          onPressed: () {
+                            _pickImage(source: ImageSource.camera).then((isSuccess) {
+                              if (isSuccess) _uploadFile();
+                            });
+                          },
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -2180,29 +2228,75 @@ class ChatPageState extends State<ChatPage> {
                   valueListenable: _chatInputController,
                   builder: (_, value, __) {
                     final hasText = value.text.trim().isNotEmpty;
-                    if (_isRecording) return const SizedBox.shrink();
-                    return hasText
-                        ? Container(
-                            decoration: const BoxDecoration(color: Color(0xFF25D366), shape: BoxShape.circle),
-                            child: IconButton(
-                              icon: const Icon(Icons.send, color: Colors.white, size: 20),
-                              color: ColorConstants.primaryColor,
-                              onPressed: () => _onSendMessage(_chatInputController.text, TypeMessage.text),
-                            ),
-                          )
-                        : Container(
-                            decoration: const BoxDecoration(color: Color(0xFF25D366), shape: BoxShape.circle),
-                            child: IconButton(
-                              icon: const Icon(Icons.mic, color: Colors.white, size: 20),
-                              color: ColorConstants.primaryColor,
-                              onPressed: _startRecording,
-                            ),
-                          );
+                    if (_isRecording) {
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.cancel, color: Colors.grey),
+                            onPressed: _cancelRecording,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.send, color: Colors.green),
+                            onPressed: _stopAndSendRecording,
+                          ),
+                        ],
+                      );
+                    }
+                    return Container(
+                      decoration: const BoxDecoration(color: Color(0xFF25D366), shape: BoxShape.circle),
+                      child: IconButton(
+                        icon: Icon(hasText ? Icons.send : Icons.mic, color: Colors.white, size: 20),
+                        color: ColorConstants.primaryColor,
+                        onPressed: hasText
+                            ? () => _onSendMessage(_chatInputController.text, TypeMessage.text)
+                            : _startRecording,
+                      ),
+                    );
                   },
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopAction({required IconData icon, required VoidCallback onTap, required String tooltip}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE7F7F1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: const Color(0xFF22C58B), size: 20),
+        tooltip: tooltip,
+        splashRadius: 18,
+        onPressed: onTap,
+      ),
+    );
+  }
+
+  Widget _buildAttachOption(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE6F8F1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Color(0xFF20C788), size: 24),
+          ),
+          const SizedBox(height: 7),
+          Text(label, style: const TextStyle(fontSize: 12, color: ColorConstants.textPrimary)),
         ],
       ),
     );

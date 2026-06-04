@@ -52,6 +52,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   File? _imageFile;
   bool _isLoading = false;
   bool _isShowSticker = false;
+  bool _showAttachPanel = false;
   String _imageUrl = '';
 
   // Reply to message
@@ -2053,7 +2054,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
     return Scaffold(
       backgroundColor: ColorConstants.bgChat,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF075E54),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
         titleSpacing: 0,
         title: Row(
           children: [
@@ -2116,26 +2119,26 @@ class _GroupChatPageState extends State<GroupChatPage> {
                     TextField(
                       controller: _searchController,
                       autofocus: true,
-                      style: const TextStyle(color: Colors.white),
+                      style: const TextStyle(color: ColorConstants.textPrimary),
                       decoration: const InputDecoration(
                         hintText: 'Buscar en el chat...',
-                        hintStyle: TextStyle(color: Colors.white70),
+                        hintStyle: TextStyle(color: ColorConstants.textSecondary),
                         border: InputBorder.none,
                       ),
                       onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
                     )
                   else ...[
                   Text(widget.arguments.groupName,
-                      style: const TextStyle(color: Colors.white),
+                      style: const TextStyle(color: ColorConstants.textPrimary, fontWeight: FontWeight.w700),
                       overflow: TextOverflow.ellipsis),
                   if (_typingUsers.isNotEmpty)
-                    const Text('escribiendo...', style: TextStyle(fontSize: 10, color: Color(0xFFB9FBD4), fontStyle: FontStyle.italic))
+                    const Text('escribiendo...', style: TextStyle(fontSize: 10, color: ColorConstants.textSecondary, fontStyle: FontStyle.italic))
                   else if (widget.arguments.groupDescription.isNotEmpty)
                     Text(widget.arguments.groupDescription,
-                        style: const TextStyle(color: Colors.white70, fontSize: 11),
+                        style: const TextStyle(color: ColorConstants.textSecondary, fontSize: 11),
                         overflow: TextOverflow.ellipsis),
                   if (_isMuted)
-                    const Text('🔇 silenciado', style: TextStyle(fontSize: 10, color: Colors.white70)),
+                    const Text('silenciado', style: TextStyle(fontSize: 10, color: ColorConstants.textSecondary)),
                   ],
                 ],
                 ),
@@ -2145,62 +2148,70 @@ class _GroupChatPageState extends State<GroupChatPage> {
         ),
         centerTitle: false,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.videocam),
-            tooltip: 'Videollamada grupal',
-            color: Colors.white,
-            onPressed: () => _startGroupJitsiCall(videoMuted: false),
-          ),
-          IconButton(
-            icon: const Icon(Icons.call),
+          _buildTopAction(
+            icon: Icons.call,
             tooltip: 'Llamada grupal',
-            color: Colors.white,
-            onPressed: () => _startGroupJitsiCall(videoMuted: true),
+            onTap: () => _startGroupJitsiCall(videoMuted: true),
           ),
-          IconButton(
-            icon: const Icon(Icons.map_outlined),
-            tooltip: 'Mapa en vivo',
-            color: Colors.white,
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => GroupLiveMapPage(
-                  groupId: widget.arguments.groupId,
-                  groupName: widget.arguments.groupName,
-                  currentUserId: _currentUserId,
-                  currentUserName: _currentNickname,
-                ),
-              ),
-            ),
+          _buildTopAction(
+            icon: Icons.videocam,
+            tooltip: 'Videollamada grupal',
+            onTap: () => _startGroupJitsiCall(videoMuted: false),
           ),
-          IconButton(
-            icon: const Icon(Icons.search, color: Colors.white),
-            tooltip: 'Buscar en el chat',
-            onPressed: () => setState(() {
-              _searchMode = !_searchMode;
-              if (!_searchMode) _searchQuery = '';
-            }),
-          ),
-          PopupMenuButton<String>(
-            onSelected: _handleAppBarMenu,
-            itemBuilder: (_) => [
-              PopupMenuItem(value: 'members', child: Row(children: [
-                const Icon(Icons.group, size: 18, color: Colors.grey),
-                const SizedBox(width: 8),
-                const Text('Ver miembros'),
-              ])),
-              PopupMenuItem(value: 'mute', child: Row(children: [
-                Icon(_isMuted ? Icons.notifications_active : Icons.notifications_off, size: 18, color: Colors.grey),
-                const SizedBox(width: 8),
-                Text(_isMuted ? 'Activar notificaciones' : 'Silenciar'),
-              ])),
-              PopupMenuItem(value: 'disappearing', child: Row(children: [
-                Icon(_disappearingSeconds > 0 ? Icons.timer : Icons.timer_off_outlined,
-                    size: 18, color: _disappearingSeconds > 0 ? ColorConstants.themeColor : Colors.grey),
-                const SizedBox(width: 8),
-                Text(_disappearingSeconds > 0 ? 'Mensajes temporales ✓' : 'Mensajes temporales'),
-              ])),
-            ],
+          _buildTopAction(
+            icon: Icons.more_vert,
+            tooltip: 'Más opciones',
+            onTap: () {
+              showMenu<String>(
+                context: context,
+                position: const RelativeRect.fromLTRB(1000, 80, 12, 0),
+                items: [
+                  const PopupMenuItem(
+                    value: 'members',
+                    child: Row(children: [
+                      Icon(Icons.group, size: 18, color: Colors.grey),
+                      SizedBox(width: 8),
+                      Text('Ver miembros'),
+                    ]),
+                  ),
+                  PopupMenuItem(
+                    value: 'search',
+                    child: Row(children: [
+                      const Icon(Icons.search, size: 18, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(_searchMode ? 'Cerrar búsqueda' : 'Buscar en el chat'),
+                    ]),
+                  ),
+                  PopupMenuItem(
+                    value: 'mute',
+                    child: Row(children: [
+                      Icon(_isMuted ? Icons.notifications_active : Icons.notifications_off, size: 18, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(_isMuted ? 'Activar notificaciones' : 'Silenciar'),
+                    ]),
+                  ),
+                  PopupMenuItem(
+                    value: 'disappearing',
+                    child: Row(children: [
+                      Icon(_disappearingSeconds > 0 ? Icons.timer : Icons.timer_off_outlined,
+                          size: 18, color: _disappearingSeconds > 0 ? ColorConstants.themeColor : Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(_disappearingSeconds > 0 ? 'Mensajes temporales ✓' : 'Mensajes temporales'),
+                    ]),
+                  ),
+                ],
+              ).then((value) {
+                if (value == null) return;
+                if (value == 'search') {
+                  setState(() {
+                    _searchMode = !_searchMode;
+                    if (!_searchMode) _searchQuery = '';
+                  });
+                  return;
+                }
+                _handleAppBarMenu(value);
+              });
+            },
           ),
         ],
       ),
@@ -2561,7 +2572,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   Widget _buildInput() {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFFF0F2F5),
+        color: Color(0xFFF6F7F9),
         border: Border(top: BorderSide(color: ColorConstants.divider, width: 1)),
       ),
       child: Column(
@@ -2619,74 +2630,52 @@ class _GroupChatPageState extends State<GroupChatPage> {
             ),
           // Quick alert panel
           if (_showAlertPanel) _buildQuickAlertPanel(),
-          // Icons row
-          Row(
-            children: [
-              Material(
-                color: ColorConstants.cardWhite,
-                child: IconButton(
-                  icon: const Icon(Icons.image),
-                  tooltip: 'Foto de galería',
-                  onPressed: () => _pickAndSendMultipleImages(),
-                  color: ColorConstants.primaryColor,
-                ),
-              ),
-              Material(
+          if (_showAttachPanel)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+              padding: const EdgeInsets.fromLTRB(10, 14, 10, 10),
+              decoration: BoxDecoration(
                 color: Colors.white,
-                child: IconButton(
-                  icon: const Icon(Icons.videocam_outlined),
-                  tooltip: 'Enviar video',
-                  onPressed: _pickAndSendVideo,
-                  color: ColorConstants.primaryColor,
-                ),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: const Color(0xFFE6ECEA)),
               ),
-              Material(
-                color: Colors.white,
-                child: IconButton(
-                  icon: const Icon(Icons.camera_alt),
-                  tooltip: 'Tomar foto',
-                  onPressed: () => _pickImage(source: ImageSource.camera)
-                      .then((ok) { if (ok) _uploadFile(); }),
-                  color: ColorConstants.primaryColor,
-                ),
-              ),
-              Material(
-                color: Colors.white,
-                child: IconButton(
-                  icon: Icon(_isSharingLiveLocation ? Icons.location_off : Icons.my_location),
-                  tooltip: _isSharingLiveLocation ? 'Detener mi ubicación' : 'Activar mi ubicación',
-                  onPressed: _startGroupLiveLocation,
-                  color: _isSharingLiveLocation ? Colors.red : ColorConstants.primaryColor,
-                ),
-              ),
-              Material(
-                color: Colors.white,
-                child: IconButton(
-                  icon: const Icon(Icons.face),
-                  onPressed: _getSticker,
-                  color: ColorConstants.primaryColor,
-                ),
-              ),
-              Material(
-                color: Colors.white,
-                child: IconButton(
-                  icon: Icon(
-                    Icons.warning_amber_rounded,
-                    color: _showAlertPanel ? Colors.red : ColorConstants.primaryColor,
-                  ),
-                  tooltip: 'Alertas rápidas',
-                  onPressed: () {
+              child: GridView.count(
+                shrinkWrap: true,
+                crossAxisCount: 3,
+                childAspectRatio: 1.12,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildAttachOption(Icons.insert_drive_file_outlined, 'Documento', () {
+                    setState(() => _showAttachPanel = false);
+                    Fluttertoast.showToast(msg: 'Documentos próximamente');
+                  }),
+                  _buildAttachOption(Icons.camera_alt_outlined, 'Cámara', () {
+                    setState(() => _showAttachPanel = false);
+                    _pickImage(source: ImageSource.camera).then((ok) { if (ok) _uploadFile(); });
+                  }),
+                  _buildAttachOption(Icons.photo_outlined, 'Galería', () {
+                    setState(() => _showAttachPanel = false);
+                    _pickAndSendMultipleImages();
+                  }),
+                  _buildAttachOption(Icons.headphones_outlined, 'Audio', () {
+                    setState(() => _showAttachPanel = false);
+                    _startRecording();
+                  }),
+                  _buildAttachOption(Icons.location_on_outlined, 'Ubicación', () {
+                    setState(() => _showAttachPanel = false);
+                    _startGroupLiveLocation();
+                  }),
+                  _buildAttachOption(Icons.warning_amber_rounded, 'Alerta', () {
                     _focusNode.unfocus();
-                    setState(() => _showAlertPanel = !_showAlertPanel);
-                  },
-                ),
+                    setState(() {
+                      _showAttachPanel = false;
+                      _showAlertPanel = !_showAlertPanel;
+                    });
+                  }),
+                ],
               ),
-            ],
-          ),
-          // Text input row
-          Container(
-            decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: ColorConstants.greyColor2, width: 0.5))),
+            ),
+          Padding(
             padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
             child: Row(
               children: [
@@ -2695,25 +2684,48 @@ class _GroupChatPageState extends State<GroupChatPage> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: const Color(0xFFE1E5E9)),
+                      border: Border.all(color: const Color(0xFFE1E5E9), width: 1),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    child: TextField(
-                      onTapOutside: (_) => Utilities.closeKeyboard(),
-                      onChanged: _onTypingChanged,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) {
-                        _onSendMessage(_chatInputController.text, TypeMessage.text);
-                        _focusNode.requestFocus();
-                      },
-                      style: const TextStyle(color: ColorConstants.textPrimary, fontSize: 15),
-                      controller: _chatInputController,
-                      decoration: InputDecoration.collapsed(
-                        hintText: _isRecording ? 'Grabando... $_recordSeconds s' : 'Mensaje',
-                        hintStyle: TextStyle(color: _isRecording ? Colors.red : ColorConstants.greyColor),
-                      ),
-                      focusNode: _focusNode,
-                      enabled: !_isRecording,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.emoji_emotions_outlined, color: ColorConstants.textSecondary, size: 21),
+                          onPressed: _getSticker,
+                        ),
+                        Expanded(
+                          child: TextField(
+                            onTapOutside: (_) => Utilities.closeKeyboard(),
+                            onTap: () => setState(() => _showAttachPanel = false),
+                            onChanged: _onTypingChanged,
+                            textInputAction: TextInputAction.send,
+                            onSubmitted: (_) {
+                              _onSendMessage(_chatInputController.text, TypeMessage.text);
+                              _focusNode.requestFocus();
+                            },
+                            style: const TextStyle(color: ColorConstants.textPrimary, fontSize: 15),
+                            controller: _chatInputController,
+                            decoration: InputDecoration.collapsed(
+                              hintText: _isRecording ? 'Grabando... $_recordSeconds s' : 'Type message ...',
+                              hintStyle: TextStyle(color: _isRecording ? Colors.red : ColorConstants.greyColor),
+                            ),
+                            focusNode: _focusNode,
+                            enabled: !_isRecording,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.attach_file_rounded, color: ColorConstants.textSecondary, size: 20),
+                          onPressed: () {
+                            _focusNode.unfocus();
+                            setState(() => _showAttachPanel = !_showAttachPanel);
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.camera_alt_outlined, color: ColorConstants.textSecondary, size: 20),
+                          onPressed: () => _pickImage(source: ImageSource.camera)
+                              .then((ok) { if (ok) _uploadFile(); }),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -2752,6 +2764,45 @@ class _GroupChatPageState extends State<GroupChatPage> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopAction({required IconData icon, required VoidCallback onTap, required String tooltip}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE7F7F1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: const Color(0xFF22C58B), size: 20),
+        tooltip: tooltip,
+        splashRadius: 18,
+        onPressed: onTap,
+      ),
+    );
+  }
+
+  Widget _buildAttachOption(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE6F8F1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Color(0xFF20C788), size: 24),
+          ),
+          const SizedBox(height: 7),
+          Text(label, style: const TextStyle(fontSize: 12, color: ColorConstants.textPrimary)),
         ],
       ),
     );

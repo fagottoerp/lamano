@@ -758,9 +758,12 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_isMotoboy) appBarTitles.add('Mis Órdenes');
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
         title: Text(
           appBarTitles[_selectedTab],
-          style: TextStyle(color: ColorConstants.primaryColor),
+          style: const TextStyle(color: ColorConstants.textPrimary, fontWeight: FontWeight.w700),
         ),
         centerTitle: true,
         actions: [
@@ -773,32 +776,32 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
           // ── Refresh button (Inicio tab only) ──
           if (_selectedTab == 0)
-            IconButton(
-              icon: const Icon(Icons.refresh),
+            _buildTopAction(
+              icon: Icons.refresh,
               tooltip: 'Refrescar',
-              onPressed: () => setState(() => _refreshKey++),
+              onTap: () => setState(() => _refreshKey++),
             ),
           if (_isAdmin)
-            IconButton(
-              icon: const Icon(Icons.my_location, color: Color(0xFF1565C0)),
+            _buildTopAction(
+              icon: Icons.my_location,
               tooltip: 'GPS Vivo',
-              onPressed: () => Navigator.of(context).push(
+              onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const GpsVivoPage()),
               ),
             ),
           if (_isAdmin)
-            IconButton(
-              icon: const Icon(Icons.group_add_outlined),
+            _buildTopAction(
+              icon: Icons.group_add_outlined,
               tooltip: 'Administrar grupos',
-              onPressed: () => Navigator.push(
+              onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const AdminGroupManagePage()),
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.people_outline),
+          _buildTopAction(
+            icon: Icons.people_outline,
             tooltip: 'Contactos',
-            onPressed: () => Navigator.push(
+            onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const ContactsPage()),
             ),
@@ -930,6 +933,22 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTopAction({required IconData icon, required String tooltip, required VoidCallback onTap}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE7F7F1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: const Color(0xFF22C58B), size: 20),
+        tooltip: tooltip,
+        splashRadius: 18,
+        onPressed: onTap,
       ),
     );
   }

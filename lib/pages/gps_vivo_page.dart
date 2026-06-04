@@ -1,7 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
+
+import 'package:flutter_chat_demo/constants/constants.dart';
+import 'package:flutter_chat_demo/widgets/theme_widgets.dart';
 
 // Definición local de tipos de alerta
 class _AlertDef {
@@ -48,28 +52,67 @@ class GpsVivoPage extends StatefulWidget {
 class _GpsVivoPageState extends State<GpsVivoPage> {
   final MapController _mapController = MapController();
   String? _selectedUserId;
+  late final Future<bool> _isAdminFuture = _checkIsAdmin();
+
+  Future<bool> _checkIsAdmin() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return false;
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final data = doc.data() ?? <String, dynamic>{};
+      final rolId = (data['rol_id'] ?? '').toString();
+      final role = (data['aboutMe'] ?? '').toString().toLowerCase();
+      return rolId == '1' || role.contains('admin') || uid == AppConstants.adminFirebaseUid;
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('GPS Vivo', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1565C0),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.center_focus_strong, color: Colors.white),
-            tooltip: 'Centrar mapa',
-            onPressed: () => setState(() => _selectedUserId = null),
-          ),
-        ],
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .where('online', isEqualTo: true)
-            .snapshots(),
-        builder: (context, snap) {
+    return FutureBuilder<bool>(
+      future: _isAdminFuture,
+      builder: (context, adminSnap) {
+        if (!adminSnap.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator(color: ColorConstants.primaryColor)),
+          );
+        }
+        if (adminSnap.data != true) {
+          return const Scaffold(
+            body: Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Vista solo para admin',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return AppBackdrop(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: AppBar(
+              title: const Text('GPS Vivo', style: TextStyle(color: Colors.white)),
+              backgroundColor: ColorConstants.primaryColor,
+              iconTheme: const IconThemeData(color: Colors.white),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.center_focus_strong, color: Colors.white),
+                  tooltip: 'Centrar mapa',
+                  onPressed: () => setState(() => _selectedUserId = null),
+                ),
+              ],
+            ),
+            body: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('users_locations')
+                  .snapshots(),
+              builder: (context, snap) {
           final users = <_UserLocation>[];
           if (snap.hasData) {
             for (final doc in snap.data!.docs) {
@@ -84,6 +127,7 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
                 lat: lat,
                 lng: lng,
                 updatedAt: data['updatedAt'] as int? ?? 0,
+                online: data['online'] as bool? ?? false,
               ));
             }
           }
@@ -142,58 +186,59 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
             children: [
               // User chips bar
               if (users.isNotEmpty)
-                Container(
-                  height: 56,
-                  color: const Color(0xFFF5F5F5),
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: users.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 6),
-                    itemBuilder: (ctx, i) {
-                      final u = users[i];
-                      final selected = _selectedUserId == u.uid;
-                      return GestureDetector(
-                        onTap: () => setState(() {
-                          _selectedUserId = selected ? null : u.uid;
-                        }),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: selected ? const Color(0xFF1565C0) : Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: selected ? const Color(0xFF1565C0) : Colors.grey.shade300,
+                AppSectionCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  child: SizedBox(
+                    height: 44,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: users.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 6),
+                      itemBuilder: (ctx, i) {
+                        final u = users[i];
+                        final selected = _selectedUserId == u.uid;
+                        return GestureDetector(
+                          onTap: () => setState(() {
+                            _selectedUserId = selected ? null : u.uid;
+                          }),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: selected ? ColorConstants.primaryColor : Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: selected ? ColorConstants.primaryColor : ColorConstants.divider,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircleAvatar(
+                                  radius: 12,
+                                  backgroundImage: u.photoUrl.isNotEmpty
+                                      ? NetworkImage(u.photoUrl)
+                                      : null,
+                                  backgroundColor: Colors.grey.shade300,
+                                  child: u.photoUrl.isEmpty
+                                      ? Text(u.nickname[0].toUpperCase(),
+                                          style: const TextStyle(fontSize: 11))
+                                      : null,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  u.nickname,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: selected ? Colors.white : ColorConstants.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircleAvatar(
-                                radius: 12,
-                                backgroundImage: u.photoUrl.isNotEmpty
-                                    ? NetworkImage(u.photoUrl)
-                                    : null,
-                                backgroundColor: Colors.grey.shade300,
-                                child: u.photoUrl.isEmpty
-                                    ? Text(u.nickname[0].toUpperCase(),
-                                        style: const TextStyle(fontSize: 11))
-                                    : null,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                u.nickname,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: selected ? Colors.white : Colors.black87,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
               // Map
@@ -255,7 +300,7 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
                                   Icons.location_on,
                                   color: isSelected
                                       ? const Color(0xFF1565C0)
-                                      : Colors.redAccent,
+                                      : (u.online ? Colors.redAccent : Colors.grey),
                                   size: isSelected ? 30 : 24,
                                 ),
                                 if (isSelected && ago.isNotEmpty)
@@ -331,9 +376,8 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
               ),
               // Barra inferior con conteo de alertas
               if (alerts.isNotEmpty)
-                Container(
-                  color: const Color(0xFFFFF3E0),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                AppSectionCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Row(
                     children: [
                       const Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFFF97316)),
@@ -354,11 +398,14 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
       ),
       floatingActionButton: FloatingActionButton(
         mini: true,
-        backgroundColor: const Color(0xFF1565C0),
+        backgroundColor: ColorConstants.primaryColor,
         tooltip: 'Ver todos',
         onPressed: () => setState(() => _selectedUserId = null),
         child: const Icon(Icons.people, color: Colors.white),
       ),
+          ),
+        );
+      },
     );
   }
 
@@ -378,6 +425,7 @@ class _UserLocation {
   final double lat;
   final double lng;
   final int updatedAt;
+  final bool online;
 
   const _UserLocation({
     required this.uid,
@@ -386,5 +434,6 @@ class _UserLocation {
     required this.lat,
     required this.lng,
     required this.updatedAt,
+    required this.online,
   });
 }

@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
+import 'package:flutter_chat_demo/constants/constants.dart';
+import 'package:flutter_chat_demo/widgets/theme_widgets.dart';
+
 class ShiftOpenClosePage extends StatefulWidget {
   final String lamanoUserId;
   final VoidCallback? onStatusChanged;
@@ -349,113 +352,118 @@ class _ShiftOpenClosePageState extends State<ShiftOpenClosePage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppBackdrop(
+        child: Center(child: CircularProgressIndicator(color: ColorConstants.primaryColor)),
+      );
     }
 
     final openTurn = _status?['open_turn'] as Map<String, dynamic>?;
     final liveSummary = openTurn?['live_summary'] as Map<String, dynamic>?;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _status?['message']?.toString() ?? 'Apertura y cierre',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          if (_lockRequired)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 10),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                border: Border.all(color: Colors.red.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                'Debes cerrar el turno anterior para desbloquear el sistema.',
-                style: TextStyle(fontWeight: FontWeight.w700, color: Colors.red),
+    return AppBackdrop(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppSectionCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _status?['message']?.toString() ?? 'Apertura y cierre',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                  if (_lockRequired)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        border: Border.all(color: Colors.red.shade300),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'Debes cerrar el turno anterior para desbloquear el sistema.',
+                        style: TextStyle(fontWeight: FontWeight.w700, color: Colors.red),
+                      ),
+                    ),
+                ],
               ),
             ),
-          const SizedBox(height: 14),
+            const SizedBox(height: 14),
 
-          if (openTurn == null) ...[
-            const Text('Apertura', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _openCashCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Inicio de caja (opcional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _openNoteCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Comentario (opcional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            _buildItemLines(_openItems),
-            const Text('Fotos de apertura (obligatorio):'),
-            const SizedBox(height: 6),
-            _buildPhotos(_openPhotos),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _saving ? null : _submitOpen,
-                icon: const Icon(Icons.login),
-                label: Text(_saving ? 'Guardando...' : 'Iniciar turno'),
-              ),
-            ),
-          ] else ...[
-            const Text('Cerrar turno', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
-            Text(
-              'Iniciaste el turno a las ${DateTime.fromMillisecondsSinceEpoch(((openTurn['opened_at'] ?? 0) as int) * 1000).toLocal().toString().substring(11, 16)}. '
-              'Ordenes completadas: ${liveSummary?['orders_completed'] ?? 0}. '
-              'Dinero: ${liveSummary?['money_total'] ?? 0}. '
-              'Gastos: ${liveSummary?['expenses_total'] ?? 0}.',
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _closeCashCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Caja al cierre (opcional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _closeNoteCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Comentario cierre (opcional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            _buildItemLines(_closeItems),
-            const Text('Fotos de cierre (obligatorio):'),
-            const SizedBox(height: 6),
-            _buildPhotos(_closePhotos),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _saving ? null : _submitClose,
-                icon: const Icon(Icons.logout),
-                label: Text(_saving ? 'Guardando...' : 'Cerrar turno'),
-              ),
+            AppSectionCard(
+              child: openTurn == null
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Apertura', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 10),
+                        AppTextField(
+                          controller: _openCashCtrl,
+                          labelText: 'Inicio de caja (opcional)',
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        ),
+                        const SizedBox(height: 8),
+                        AppTextField(
+                          controller: _openNoteCtrl,
+                          labelText: 'Comentario (opcional)',
+                        ),
+                        const SizedBox(height: 10),
+                        _buildItemLines(_openItems),
+                        const SizedBox(height: 8),
+                        const Text('Fotos de apertura (obligatorio):', style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 6),
+                        _buildPhotos(_openPhotos),
+                        const SizedBox(height: 12),
+                        AppPrimaryButton(
+                          label: _saving ? 'Guardando...' : 'Iniciar turno',
+                          icon: Icons.login,
+                          onPressed: _saving ? null : _submitOpen,
+                        ),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Cerrar turno', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Iniciaste el turno a las ${DateTime.fromMillisecondsSinceEpoch(((openTurn['opened_at'] ?? 0) as int) * 1000).toLocal().toString().substring(11, 16)}. '
+                          'Ordenes completadas: ${liveSummary?['orders_completed'] ?? 0}. '
+                          'Dinero: ${liveSummary?['money_total'] ?? 0}. '
+                          'Gastos: ${liveSummary?['expenses_total'] ?? 0}.',
+                        ),
+                        const SizedBox(height: 10),
+                        AppTextField(
+                          controller: _closeCashCtrl,
+                          labelText: 'Caja al cierre (opcional)',
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        ),
+                        const SizedBox(height: 8),
+                        AppTextField(
+                          controller: _closeNoteCtrl,
+                          labelText: 'Comentario cierre (opcional)',
+                        ),
+                        const SizedBox(height: 10),
+                        _buildItemLines(_closeItems),
+                        const SizedBox(height: 8),
+                        const Text('Fotos de cierre (obligatorio):', style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 6),
+                        _buildPhotos(_closePhotos),
+                        const SizedBox(height: 12),
+                        AppPrimaryButton(
+                          label: _saving ? 'Guardando...' : 'Cerrar turno',
+                          icon: Icons.logout,
+                          onPressed: _saving ? null : _submitClose,
+                        ),
+                      ],
+                    ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }
