@@ -70,7 +70,9 @@ exports.sendPushOnNewMessage = onDocumentCreated(
     }
 
     // --- 1-on-1 chat push ---
-    if (idTo && idTo !== "") {
+    // Group/system messages can arrive with idTo == groupChatId.
+    // In that case we must fan-out to group members (handled below), not 1-on-1.
+    if (idTo && idTo !== "" && idTo !== groupChatId) {
       const receiverDoc = await admin.firestore().collection("users").doc(idTo).get();
       if (!receiverDoc.exists) {
         logger.warn("Recipient user doc not found", {idTo});
