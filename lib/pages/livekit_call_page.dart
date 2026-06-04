@@ -46,10 +46,17 @@ class _LiveKitCallPageState extends State<LiveKitCallPage> {
 
   Future<void> _connect() async {
     try {
-      final mic = await Permission.microphone.request();
-      final cam = widget.isVideo ? await Permission.camera.request() : PermissionStatus.granted;
-      if (mic != PermissionStatus.granted || cam != PermissionStatus.granted) {
-        if (mic == PermissionStatus.permanentlyDenied || cam == PermissionStatus.permanentlyDenied) {
+      // Check current permission status first
+      var mic = await Permission.microphone.status;
+      var cam = widget.isVideo ? await Permission.camera.status : PermissionStatus.granted;
+      
+      // Request only if not already granted
+      if (!mic.isGranted) mic = await Permission.microphone.request();
+      if (widget.isVideo && !cam.isGranted) cam = await Permission.camera.request();
+      
+      // Abort if still not granted
+      if (!mic.isGranted || !cam.isGranted) {
+        if (mic.isPermanentlyDenied || cam.isPermanentlyDenied) {
           await openAppSettings();
         }
         throw Exception(widget.isVideo

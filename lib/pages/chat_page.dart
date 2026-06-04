@@ -776,16 +776,22 @@ class ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _startJitsiCall({bool videoMuted = true}) async {
-    final micStatus = await Permission.microphone.request();
-    final camStatus = videoMuted ? PermissionStatus.granted : await Permission.camera.request();
-    if (micStatus != PermissionStatus.granted || camStatus != PermissionStatus.granted) {
+    // Check current permission status first
+    var micStatus = await Permission.microphone.status;
+    var camStatus = videoMuted ? PermissionStatus.granted : await Permission.camera.status;
+    
+    // Request only if not already granted
+    if (!micStatus.isGranted) micStatus = await Permission.microphone.request();
+    if (!videoMuted && !camStatus.isGranted) camStatus = await Permission.camera.request();
+    
+    // Abort if still not granted
+    if (!micStatus.isGranted || !camStatus.isGranted) {
       Fluttertoast.showToast(
         msg: videoMuted
             ? 'Debes permitir el micrófono para llamar'
             : 'Debes permitir cámara y micrófono para videollamar',
       );
-      if (micStatus == PermissionStatus.permanentlyDenied ||
-          camStatus == PermissionStatus.permanentlyDenied) {
+      if (micStatus.isPermanentlyDenied || camStatus.isPermanentlyDenied) {
         await openAppSettings();
       }
       return;
