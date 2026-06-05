@@ -307,24 +307,6 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
 
           // Bottom controls
           _buildControls(),
-
-          // Debug log overlay (últimas 6 líneas)
-          Positioned(
-            bottom: 130,
-            left: 8,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.6),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                _logLines.reversed.take(6).toList().reversed.join('\n'),
-                style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontFamily: 'monospace'),
-              ),
-            ),
-          ),
         ],
       ),
     );
