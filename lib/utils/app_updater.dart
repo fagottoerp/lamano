@@ -144,7 +144,12 @@ class AppUpdater {
     );
 
     try {
-      final dir = await getTemporaryDirectory();
+      // Use external downloads dir for APK install (required on Android 10+)
+      Directory? dir;
+      try {
+        dir = await getExternalStorageDirectory();
+      } catch (_) {}
+      dir ??= await getTemporaryDirectory();
       final savePath = '${dir.path}/lamano-update-v$version.apk';
       final file = File(savePath);
 
