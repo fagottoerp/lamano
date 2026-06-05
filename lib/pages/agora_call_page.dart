@@ -173,11 +173,8 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         await _engine.enableVideo();
         await _engine.startPreview();
         _log('video OK');
-      } else {
-        await _engine.disableVideo();
       }
-
-      await _engine.setEnableSpeakerphone(_speakerOn);
+      // disableVideo y speakerphone se configuran después del join
 
       final token = await _fetchToken(widget.callId);
       final tokenArg = token.isEmpty ? null : token;
@@ -197,6 +194,11 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         ),
       );
       _log('joinChannel llamado (esperando callback)...');
+
+      // Configurar speaker/video después del join
+      if (!widget.isVideo) await _engine.disableVideo();
+      await _engine.setEnableSpeakerphone(_speakerOn);
+      _log('speaker OK');
     } catch (e) {
       _log('EXCEPCION _initAgora: $e');
       if (mounted) setState(() => _errorMessage = 'Init error: $e');
