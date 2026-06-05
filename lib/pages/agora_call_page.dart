@@ -93,6 +93,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       channelProfile: ChannelProfileType.channelProfileCommunication,
     ));
 
+    // Register BEFORE joinChannel (Agora 6.x requirement)
     _engine.registerEventHandler(RtcEngineEventHandler(
       onJoinChannelSuccess: (connection, elapsed) {
         if (mounted) setState(() {
@@ -117,7 +118,6 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
             }
             _remoteJoined = _remoteUids.isNotEmpty;
           });
-          // In 1:1, hang up when the other side leaves
           if (!widget.isGroup && _remoteUids.isEmpty) _hangUp();
         }
       },
@@ -135,7 +135,21 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
           }
         }
       },
+      onTokenPrivilegeWillExpire: (connection, token) async {
+        // Renew token before it expires
+        final newToken = await _fetchToken(widget.callId);
+        if (newToken.isNotEmpty) {
+          await _engine.renewToken(newToken);
+        }
+      },
     ));
+
+    // Enable audio FIRST (required in Agora 6.x — disabled by default)
+    await _engine.enableAudio();
+    await _engine.setAudioProfile(
+      profile: AudioProfileType.audioProfileDefault,
+      scenario: AudioScenarioType.audioScenarioChatroom,
+    );
 
     if (widget.isVideo) {
       await _engine.enableVideo();
@@ -143,19 +157,24 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
     } else {
       await _engine.disableVideo();
     }
-    // Audio must be explicitly enabled in Agora 6.x (off by default)
-    await _engine.enableAudio();
+
     await _engine.setEnableSpeakerphone(_speakerOn);
 
     final token = await _fetchToken(widget.callId);
+    // Agora expects null token when auth is disabled, empty string causes error
+    final tokenArg = token.isEmpty ? null : token;
 
     await _engine.joinChannel(
-      token: token,
+      token: tokenArg ?? '',
       channelId: widget.callId,
-      uid: 0,      // 0 = auto-assigned by Agora
-      options: const ChannelMediaOptions(
-        clientRoleType: ClientRoleType.clientRoleBroadcaster,
+      uid: 0,
+      options: ChannelMediaOptions(
         channelProfile: ChannelProfileType.channelProfileCommunication,
+        clientRoleType: ClientRoleType.clientRoleBroadcaster,
+        publishMicrophoneTrack: true,
+        publishCameraTrack: widget.isVideo,
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: widget.isVideo,
       ),
     );
   }
@@ -229,6 +248,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   void dispose() {
     _durationTimer?.cancel();
     _callStatusSub?.cancel();
+    _engine.unregisterEventHandler(RtcEngineEventHandler());
     try { _engine.leaveChannel(); } catch (_) {}
     try { _engine.release(); } catch (_) {}
     super.dispose();
