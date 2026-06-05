@@ -31,6 +31,9 @@ import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
+import '../services/call_service.dart';
+import 'agora_call_page.dart';
+import 'incoming_call_screen.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key, required this.arguments});
@@ -647,6 +650,35 @@ class ChatPageState extends State<ChatPage> {
     Fluttertoast.showToast(msg: 'Grabación cancelada');
   }
 
+  Future<void> _makeAgoraCall({required bool isVideo}) async {
+    try {
+      final callId = await CallService.startCall(
+        callerId: _currentUserId,
+        callerName: _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario',
+        calleeId: widget.arguments.peerId,
+        isVideo: isVideo,
+      );
+      if (!mounted) return;
+      // Caller joins the Agora channel immediately
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AgoraCallPage(
+            callId: callId,
+            peerName: widget.arguments.peerNickname,
+            peerAvatar: widget.arguments.peerAvatar,
+            isVideo: isVideo,
+            isCaller: true,
+          ),
+        ),
+      );
+      // After call ends, save message in chat
+      _onSendMessage(callId, isVideo ? TypeMessage.videoCall : TypeMessage.audioCall);
+    } catch (e) {
+      Fluttertoast.showToast(msg: 'Error al iniciar llamada: $e');
+    }
+  }
+
   Future<void> _sendDirectCallPush({required String roomName, required String callerName, required bool isVideo}) async {}
 
   Widget _buildCallBubble(String roomName, {required bool isVideo, required bool isMe}) {
@@ -657,12 +689,13 @@ class ChatPageState extends State<ChatPage> {
         color: isMe ? ColorConstants.bgSent : ColorConstants.bgReceived,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.phone_disabled, color: Colors.grey, size: 18),
-          SizedBox(width: 8),
-          Text('Llamadas — Próximamente', style: TextStyle(color: Colors.grey, fontSize: 13)),
+          Icon(isVideo ? Icons.videocam : Icons.call, color: isMe ? Colors.green : Colors.grey, size: 18),
+          const SizedBox(width: 8),
+          Text(isVideo ? 'Videollamada' : 'Llamada de voz',
+              style: const TextStyle(fontSize: 13)),
         ],
       ),
     );
@@ -1561,6 +1594,16 @@ class ChatPageState extends State<ChatPage> {
         ),
         centerTitle: false,
         actions: [
+          _buildTopAction(
+            icon: Icons.call,
+            tooltip: 'Llamada de voz',
+            onTap: () => _makeAgoraCall(isVideo: false),
+          ),
+          _buildTopAction(
+            icon: Icons.videocam,
+            tooltip: 'Videollamada',
+            onTap: () => _makeAgoraCall(isVideo: true),
+          ),
           _buildTopAction(
             icon: Icons.more_vert,
             tooltip: 'Más opciones',

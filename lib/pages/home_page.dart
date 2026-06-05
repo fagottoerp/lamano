@@ -34,6 +34,8 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'shift_open_close_page.dart';
+import 'incoming_call_screen.dart';
+import 'agora_call_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -165,6 +167,24 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     FirebaseMessaging.onMessage.listen((message) {
       print('onMessage: $message');
+      // ── Incoming call (Agora) ──────────────────────────────────────────────
+      if (message.data['type'] == 'incoming_call') {
+        final callId = message.data['room_name'] ?? '';
+        final callerName = message.data['caller_name'] ?? 'Desconocido';
+        final isVideo = message.data['is_video'] == 'true';
+        if (callId.isNotEmpty && mounted) {
+          Navigator.of(context).push(MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => IncomingCallScreen(
+              callId: callId,
+              callerName: callerName,
+              callerAvatar: '',
+              isVideo: isVideo,
+            ),
+          ));
+        }
+        return;
+      }
       final sentAtRaw = message.data['sentAtMs'];
       final dispatchedAtRaw = message.data['dispatchedAtMs'];
       final sentAtMs = int.tryParse(sentAtRaw?.toString() ?? '');
