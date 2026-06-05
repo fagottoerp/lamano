@@ -37,7 +37,7 @@ dependencies:
   record: ^6.0.0
   just_audio: ^0.9.42
   permission_handler: ^11.3.1
-  agora_rtc_engine: ^6.3.2
+  agora_rtc_engine: 6.3.2
   youtube_player_iframe: ^5.2.0
   connectivity_plus: ^6.0.5
   file_picker: ^8.1.4
