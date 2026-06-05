@@ -7,10 +7,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/models/models.dart';
-import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/providers.dart';
 import 'package:flutter_chat_demo/utils/app_updater.dart';
 import 'package:flutter_chat_demo/utils/foreground_gps_service.dart';
@@ -18,6 +16,17 @@ import 'package:flutter_chat_demo/utils/location_tracker.dart';
 
 import 'package:flutter_chat_demo/utils/panic_alert_service.dart';
 import 'package:flutter_chat_demo/pages/caminador_page.dart';
+import 'package:flutter_chat_demo/pages/chat_page.dart' show ChatPage, ChatPageArguments;
+import 'package:flutter_chat_demo/pages/group_chat_page.dart';
+import 'package:flutter_chat_demo/pages/incoming_call_page.dart';
+import 'package:flutter_chat_demo/pages/login_page.dart';
+import 'package:flutter_chat_demo/pages/settings_page.dart';
+import 'package:flutter_chat_demo/pages/stories_page.dart' show StoriesPage, StoryViewPage;
+import 'package:flutter_chat_demo/pages/gps_vivo_page.dart';
+import 'package:flutter_chat_demo/pages/admin_group_manage_page.dart';
+import 'package:flutter_chat_demo/pages/contacts_page.dart';
+import 'package:flutter_chat_demo/pages/recent_chats_page.dart';
+import 'motoboy_orders_page.dart';
 import 'temp_chats_page.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -51,7 +60,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // clave: senderId, valor: {name, messages: List<String>, notifId: int}
   final Map<String, Map<String, dynamic>> _pendingNotifs = {};
   static const String _notifGroupKey = 'com.lamano.chat.MSG_GROUP';
-  int _selectedTab = 0;
+  int _selectedTab = 1;
   int _orderBadge = 0;
   bool _isMotoboy = false;
   bool _isCaminador = false;
@@ -72,8 +81,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   StreamSubscription<String>? _tokenRefreshSubscription;
   PanicAlertService? _panicAlertService;
   DateTime? _lastGpsOffAlertSentAt;
-  String? _pushToken;
-  bool _pushTokenDialogShown = false;
 
   List<MenuSetting> get _dynamicMenus => [
     if (_isShiftUser) MenuSetting(title: 'Apertura y cierre', icon: Icons.manage_history),
@@ -107,7 +114,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       roleLower.contains('admin') ||
       _currentUserId == AppConstants.adminFirebaseUid;
     _canSeeTempChats = rolId == '1' || rolId == '5' || rolId == '6' || rolId == '9';
-    _canSeeCaminadorMenu = _isCaminador || _isAdmin;
+    _canSeeCaminadorMenu = _isCaminador;
     _isShiftUser = lamanoUserId == '106';
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -151,6 +158,12 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       sound: true,
     );
 
+    _syncPushToken();
+    _tokenRefreshSubscription?.cancel();
+    _tokenRefreshSubscription = _firebaseMessaging.onTokenRefresh.listen((token) {
+      _updatePushToken(token);
+    });
+
     FirebaseMessaging.onMessage.listen((message) {
       print('onMessage: $message');
       final sentAtRaw = message.data['sentAtMs'];
@@ -181,7 +194,8 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         final groupChatId = message.data['groupChatId'] ?? '';
         final senderName = message.data['senderName'] as String? ?? '';
         // If from admin → it's an order notification → increment badge on Mis Órdenes tab
-        if (_isMotoboy && idFrom == AppConstants.adminFirebaseUid && _selectedTab != 3) {
+        final orderTabIndex = 3 + (_canSeeTempChats ? 1 : 0) + (_canSeeCaminadorMenu ? 1 : 0);
+        if (_isMotoboy && idFrom == AppConstants.adminFirebaseUid && _selectedTab != orderTabIndex) {
           setState(() => _orderBadge++);
         }
         _showNotificationWithPayload(
@@ -195,77 +209,38 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return;
     });
 
-    _syncPushToken();
-
-    _tokenRefreshSubscription?.cancel();
-    _tokenRefreshSubscription = _firebaseMessaging.onTokenRefresh.listen((token) {
-      print('push token refreshed: $token');
-      _updatePushToken(token);
-      _homeProvider.updateDataFirestore(
-        FirestoreConstants.pathUserCollection,
-        _currentUserId,
-        {'pushToken': token},
-      );
-    });
-  }
-
-  void _updatePushToken(String token) {
-    if (!mounted) return;
-    setState(() {
-      _pushToken = token;
-    });
   }
 
   Future<void> _syncPushToken() async {
     try {
       final token = await _firebaseMessaging.getToken();
-      print('push token sync: $token');
-      if (token != null && token.isNotEmpty) {
-        _updatePushToken(token);
-        await _homeProvider.updateDataFirestore(
-          FirestoreConstants.pathUserCollection,
-          _currentUserId,
-          {'pushToken': token},
-        );
-      }
-    } catch (err) {
-      final msg = err.toString();
-      // On iOS sideload/no-signing builds APNS token may be unavailable.
-      // Suppress this non-critical warning to avoid noisy toast in production UI.
-      if (Platform.isIOS &&
-          (msg.contains('apns-token-not-set') ||
-              msg.contains('APNS token has not been set'))) {
-        print('push token skipped on iOS (APNS unavailable): $msg');
-        return;
-      }
-      Fluttertoast.showToast(msg: msg);
-    }
+      if (token == null || token.isEmpty) return;
+      await _updatePushToken(token);
+    } catch (_) {}
   }
 
-  void _showPushTokenDialog(String token) {
-    if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('FCM push token'),
-        content: SingleChildScrollView(
-          child: SelectableText(token),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: token));
-              Navigator.of(context).pop();
-            },
-            child: const Text('Copiar token'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _updatePushToken(String token) async {
+    if (_authProvider.userFirebaseId?.isNotEmpty != true) return;
+    try {
+      await _homeProvider.updateDataFirestore(
+        FirestoreConstants.pathUserCollection,
+        _currentUserId,
+        {
+          'pushToken': token,
+          'pushTokenUpdatedAt': DateTime.now().millisecondsSinceEpoch,
+        },
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _removePushTokenFromProfile() async {
+    try {
+      await _homeProvider.updateDataFirestore(
+        FirestoreConstants.pathUserCollection,
+        _currentUserId,
+        {'pushToken': FieldValue.delete()},
+      );
+    } catch (_) {}
   }
 
   void _configLocalNotification() {
@@ -616,6 +591,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _handleSignOut() async {
     await _setUserPresence(false);
+    await _removePushTokenFromProfile();
     await _authProvider.handleSignOut();
     await Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => LoginPage()),
@@ -643,7 +619,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         _setUserPresence(true);
-        _syncPushToken();
         _checkGpsGate();
         break;
       case AppLifecycleState.inactive:
@@ -752,7 +727,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
     }
 
-    final appBarTitles = <String>['Inicio', 'Estados', 'Chats'];
+    final appBarTitles = <String>['Estados', 'Inicio', 'Chats'];
     if (_canSeeTempChats) appBarTitles.add('Chat Temporales');
     if (_canSeeCaminadorMenu) appBarTitles.add('Caminador');
     if (_isMotoboy) appBarTitles.add('Mis Órdenes');
@@ -775,7 +750,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
             ),
           // ── Refresh button (Inicio tab only) ──
-          if (_selectedTab == 0)
+          if (_selectedTab == 1)
             _buildTopAction(
               icon: Icons.refresh,
               tooltip: 'Refrescar',
@@ -812,8 +787,8 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       body: IndexedStack(
         index: _selectedTab,
         children: [
-          _buildHomeBody(),
           _buildStoriesTab(),
+          _buildHomeBody(),
           const RecentChatsPage(),
           if (_canSeeTempChats) const TempChatsPage(),
           if (_canSeeCaminadorMenu) _buildCaminadorTab(),
@@ -826,114 +801,142 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildBottomNav() {
     final items = [
-      {'key': 'home', 'icon': Icons.home_outlined, 'active': Icons.home, 'label': 'Inicio'},
       {'key': 'stories', 'icon': Icons.auto_awesome_outlined, 'active': Icons.auto_awesome, 'label': 'Estados'},
+      {'key': 'home', 'icon': Icons.home_outlined, 'active': Icons.home, 'label': 'Inicio'},
       {'key': 'chats', 'icon': Icons.chat_bubble_outline, 'active': Icons.chat_bubble, 'label': 'Chats'},
       if (_canSeeTempChats) {'key': 'temp', 'icon': Icons.forum_outlined, 'active': Icons.forum, 'label': 'Chat Temp.'},
       if (_canSeeCaminadorMenu) {'key': 'caminador', 'icon': Icons.directions_walk_outlined, 'active': Icons.directions_walk, 'label': 'Caminador'},
       if (_isMotoboy) {'key': 'orders', 'icon': Icons.delivery_dining_outlined, 'active': Icons.delivery_dining, 'label': 'Mis Órdenes'},
     ];
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          decoration: const BoxDecoration(
-            color: ColorConstants.cardWhite,
-            border: Border(top: BorderSide(color: ColorConstants.divider, width: 1)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: SizedBox(
-              height: 60,
-              child: Row(
-                children: List.generate(items.length, (i) {
-                  final item = items[i];
-                  final isActive = _selectedTab == i;
-                  final badgeCount = (item['key'] == 'orders') ? _orderBadge : 0;
-                  return Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        if (_isShiftUser && _mustStartShift) {
-                          final lamanoUserId = _authProvider.prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
-                          _showShiftLockDialog(lamanoUserId, mustStart: true);
-                          return;
-                        }
-                        setState(() {
-                          _selectedTab = i;
-                          if (item['key'] == 'orders') _orderBadge = 0;
-                        });
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Active indicator dot
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              width: isActive ? 20 : 0,
-                              height: 3,
-                              margin: const EdgeInsets.only(bottom: 4),
-                              decoration: BoxDecoration(
-                                color: ColorConstants.themeColor,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                            Stack(
-                              clipBehavior: Clip.none,
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('user_conversations')
+          .doc(_currentUserId)
+          .collection('chats')
+          .snapshots(),
+      builder: (_, snap) {
+        int chatsUnread = 0;
+        int tempUnread = 0;
+        if (snap.hasData) {
+          for (final doc in snap.data!.docs) {
+            final data = doc.data() as Map<String, dynamic>? ?? const {};
+            final unread = (data['unreadCount'] as num?)?.toInt() ?? 0;
+            if (unread <= 0) continue;
+            final groupChatId = (data['groupChatId'] as String? ?? '');
+            if (_canSeeTempChats && groupChatId.startsWith('order-')) {
+              tempUnread += unread;
+            } else {
+              chatsUnread += unread;
+            }
+          }
+        }
+
+        return ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              decoration: const BoxDecoration(
+                color: ColorConstants.cardWhite,
+                border: Border(top: BorderSide(color: ColorConstants.divider, width: 1)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: SizedBox(
+                  height: 60,
+                  child: Row(
+                    children: List.generate(items.length, (i) {
+                      final item = items[i];
+                      final isActive = _selectedTab == i;
+                      int badgeCount = 0;
+                      if (item['key'] == 'orders') badgeCount = _orderBadge;
+                      if (item['key'] == 'chats') badgeCount = chatsUnread;
+                      if (item['key'] == 'temp') badgeCount = tempUnread;
+                      return Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (_isShiftUser && _mustStartShift) {
+                              final lamanoUserId = _authProvider.prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
+                              _showShiftLockDialog(lamanoUserId, mustStart: true);
+                              return;
+                            }
+                            setState(() {
+                              _selectedTab = i;
+                              if (item['key'] == 'orders') _orderBadge = 0;
+                            });
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(
-                                  isActive
-                                      ? item['active'] as IconData
-                                      : item['icon'] as IconData,
-                                  color: isActive
-                                      ? ColorConstants.themeColor
-                                      : ColorConstants.greyColor,
-                                  size: 22,
-                                ),
-                                if (badgeCount > 0)
-                                  Positioned(
-                                    top: -4,
-                                    right: -8,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(3),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.red,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                                      child: Text(
-                                        '$badgeCount',
-                                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
+                                // Active indicator dot
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  width: isActive ? 20 : 0,
+                                  height: 3,
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  decoration: BoxDecoration(
+                                    color: ColorConstants.themeColor,
+                                    borderRadius: BorderRadius.circular(2),
                                   ),
+                                ),
+                                Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Icon(
+                                      isActive
+                                          ? item['active'] as IconData
+                                          : item['icon'] as IconData,
+                                      color: isActive
+                                          ? ColorConstants.themeColor
+                                          : ColorConstants.greyColor,
+                                      size: 22,
+                                    ),
+                                    if (badgeCount > 0)
+                                      Positioned(
+                                        top: -4,
+                                        right: -8,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(3),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.red,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                                          child: Text(
+                                            badgeCount > 99 ? '99+' : '$badgeCount',
+                                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  item['label'] as String,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                                    color: isActive ? ColorConstants.themeColor : ColorConstants.greyColor,
+                                  ),
+                                ),
                               ],
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              item['label'] as String,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                                color: isActive ? ColorConstants.themeColor : ColorConstants.greyColor,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                  );
-                }),
+                      );
+                    }),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -959,7 +962,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _showChangelogModal() {
     final changelog = [
       _ChangelogEntry(
-        version: 'v3.10.69',
+        version: 'v3.10.75',
         date: 'Mayo 2026',
         items: [
           '🚶 Nuevo tab Caminador visible solo para caminador y admin',
@@ -1116,71 +1119,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         child: ListView(
           padding: const EdgeInsets.all(14),
           children: [
-            // ── Chip changelog ────────────────────────────────
-            Align(
-              alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onTap: _showChangelogModal,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: ColorConstants.surfaceLight,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: ColorConstants.primaryColor, width: 1),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.android, color: ColorConstants.primaryColor, size: 14),
-                      SizedBox(width: 4),
-                      Text('APK La Mano · Beta',
-                          style: TextStyle(
-                              color: ColorConstants.primaryColor,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
             const SizedBox(height: 16),
-            if (_pushToken != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.yellow.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.yellow.shade700),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('FCM push token',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    SelectableText(_pushToken!,
-                        style: const TextStyle(fontSize: 12, color: Colors.black87)),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () {
-                          final token = _pushToken;
-                          if (token != null) {
-                            Clipboard.setData(ClipboardData(text: token));
-                            Fluttertoast.showToast(msg: 'Token copiado al portapapeles');
-                          }
-                        },
-                        child: const Text('Copiar token'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
             // ── Burbujas de estados ───────────────────────────
             _buildStatusBubblesRow(),
             const SizedBox(height: 16),
@@ -1231,99 +1170,29 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
           .orderBy('expiresAt', descending: true)
           .snapshots(),
       builder: (_, snap) {
-        // Agrupar: mis stories + otros usuarios (max 4)
-        List<QueryDocumentSnapshot> myStoriesDocs = [];
+        // Agrupar otros usuarios (max 4)
         final Map<String, Map<String, dynamic>> byUser = {};
         if (snap.hasData) {
           for (final doc in snap.data!.docs) {
             final d = doc.data() as Map<String, dynamic>;
             final uid = d['userId'] as String? ?? '';
-            if (uid == _currentUserId) {
-              myStoriesDocs.add(doc);
-            } else {
+            if (uid != _currentUserId) {
               byUser.putIfAbsent(uid, () => d);
             }
           }
         }
 
         final entries = byUser.entries.take(4).toList();
-        final hasAnyStory = myStoriesDocs.isNotEmpty || entries.isNotEmpty;
+        final hasAnyStory = entries.isNotEmpty;
 
         if (!hasAnyStory) {
-          // Sin estados: botón de subir
-          return GestureDetector(
-            onTap: () => setState(() => _selectedTab = 1),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: ColorConstants.surfaceLight,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: ColorConstants.divider),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.add_circle_outline, color: ColorConstants.themeColor, size: 20),
-                  SizedBox(width: 8),
-                  Text('Subir estado', style: TextStyle(color: ColorConstants.themeColor, fontWeight: FontWeight.w600, fontSize: 13)),
-                ],
-              ),
-            ),
-          );
+          return const SizedBox.shrink();
         }
 
         return SizedBox(
           height: 84,
           child: Row(
             children: [
-              // Burbuja "Mi estado" — anillo verde si tengo stories, "+" si no
-              GestureDetector(
-                onTap: () {
-                  if (myStoriesDocs.isNotEmpty) {
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => StoryViewPage(stories: myStoriesDocs, currentUserId: _currentUserId),
-                    ));
-                  } else {
-                    setState(() => _selectedTab = 1);
-                  }
-                },
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: myStoriesDocs.isNotEmpty
-                            ? const LinearGradient(
-                                colors: [Color(0xFF00E65A), Color(0xFF00B347)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight)
-                            : null,
-                        border: myStoriesDocs.isEmpty
-                            ? Border.all(color: ColorConstants.divider, width: 1.5)
-                            : null,
-                        color: myStoriesDocs.isEmpty ? ColorConstants.surfaceLight : null,
-                      ),
-                      padding: const EdgeInsets.all(2.5),
-                      child: CircleAvatar(
-                        backgroundColor: ColorConstants.primaryColor.withOpacity(0.15),
-                        child: myStoriesDocs.isEmpty
-                            ? const Icon(Icons.add, color: ColorConstants.themeColor, size: 22)
-                            : Text(
-                                (_authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Y').isNotEmpty
-                                    ? (_authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Y')[0].toUpperCase()
-                                    : 'Y',
-                                style: const TextStyle(color: ColorConstants.primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text('Mi estado', style: TextStyle(fontSize: 10, color: ColorConstants.greyColor)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
               // Burbujas de usuarios con estados
               ...entries.map((e) {
                 final uid = e.key;
@@ -1733,19 +1602,30 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final avatarColor = avatarColors[name.length % avatarColors.length];
 
             return GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => GroupChatPage(
-                    arguments: GroupChatArguments(
-                      groupId: doc.id,
-                      groupName: name,
-                      groupDescription: description,
-                      groupImage: groupImage,
+              onTap: () async {
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('groups')
+                      .doc(doc.id)
+                      .set({
+                    'unreadCounts': {_currentUserId: 0},
+                  }, SetOptions(merge: true));
+                } catch (_) {}
+                if (!context.mounted) return;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => GroupChatPage(
+                      arguments: GroupChatArguments(
+                        groupId: doc.id,
+                        groupName: name,
+                        groupDescription: description,
+                        groupImage: groupImage,
+                      ),
                     ),
                   ),
-                ),
-              ),
+                );
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 margin: const EdgeInsets.only(bottom: 8),
@@ -1892,6 +1772,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildPopupMenu() {
     return PopupMenuButton<MenuSetting>(
+      icon: const Icon(Icons.more_vert, color: Colors.black),
       onSelected: _onItemMenuPress,
       itemBuilder: (_) {
         return _dynamicMenus.map(

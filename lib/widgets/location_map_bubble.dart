@@ -4,9 +4,9 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
+import 'package:flutter_chat_demo/pages/group_live_map_page.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// Burbuja con mini mapa para mensajes de ubicación.
 ///
@@ -19,6 +19,10 @@ class LocationMapBubble extends StatelessWidget {
     required this.payload,
     required this.isMe,
     required this.live,
+    this.groupId,
+    this.groupName,
+    this.currentUserId,
+    this.currentUserName,
   });
 
   /// Para `live=false` el payload es el JSON `{"lat":..,"lng":..}`.
@@ -26,6 +30,10 @@ class LocationMapBubble extends StatelessWidget {
   final String payload;
   final bool isMe;
   final bool live;
+  final String? groupId;
+  final String? groupName;
+  final String? currentUserId;
+  final String? currentUserName;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +54,10 @@ class LocationMapBubble extends StatelessWidget {
             isMe: isMe,
             live: true,
             active: active,
+            groupId: groupId,
+            groupName: groupName,
+            currentUserId: currentUserId,
+            currentUserName: currentUserName,
           );
         },
       );
@@ -60,7 +72,17 @@ class LocationMapBubble extends StatelessWidget {
         lng = (raw['lng'] as num?)?.toDouble();
       }
     } catch (_) {}
-    return _MapCard(lat: lat, lng: lng, isMe: isMe, live: false, active: true);
+    return _MapCard(
+      lat: lat,
+      lng: lng,
+      isMe: isMe,
+      live: false,
+      active: true,
+      groupId: groupId,
+      groupName: groupName,
+      currentUserId: currentUserId,
+      currentUserName: currentUserName,
+    );
   }
 }
 
@@ -71,6 +93,10 @@ class _MapCard extends StatefulWidget {
     required this.isMe,
     required this.live,
     required this.active,
+    this.groupId,
+    this.groupName,
+    this.currentUserId,
+    this.currentUserName,
   });
 
   final double? lat;
@@ -78,6 +104,10 @@ class _MapCard extends StatefulWidget {
   final bool isMe;
   final bool live;
   final bool active;
+  final String? groupId;
+  final String? groupName;
+  final String? currentUserId;
+  final String? currentUserName;
 
   @override
   State<_MapCard> createState() => _MapCardState();
@@ -86,13 +116,41 @@ class _MapCard extends StatefulWidget {
 class _MapCardState extends State<_MapCard> {
   bool _expanded = true;
 
+  bool get _canOpenGroupLiveMap {
+    return widget.live &&
+        widget.groupId?.isNotEmpty == true &&
+        widget.groupName?.isNotEmpty == true &&
+        widget.currentUserId?.isNotEmpty == true &&
+        widget.currentUserName?.isNotEmpty == true;
+  }
+
   Future<void> _open() async {
-    if (widget.lat == null || widget.lng == null) return;
-    final uri = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=${widget.lat},${widget.lng}');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (_canOpenGroupLiveMap) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GroupLiveMapPage(
+            groupId: widget.groupId!,
+            groupName: widget.groupName!,
+            currentUserId: widget.currentUserId!,
+            currentUserName: widget.currentUserName!,
+          ),
+        ),
+      );
+      return;
     }
+
+    if (widget.lat == null || widget.lng == null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _FullscreenLocationMapPage(
+          lat: widget.lat!,
+          lng: widget.lng!,
+          isLive: widget.live && widget.active,
+        ),
+      ),
+    );
   }
 
   @override
@@ -100,6 +158,7 @@ class _MapCardState extends State<_MapCard> {
     final hasPos = widget.lat != null &&
         widget.lng != null &&
         (widget.lat != 0.0 || widget.lng != 0.0);
+    final canOpen = _canOpenGroupLiveMap || hasPos;
 
     return Container(
       width: 240,
@@ -137,7 +196,7 @@ class _MapCardState extends State<_MapCard> {
                       child: Text(
                         widget.live
                             ? (widget.active ? 'Ubicación en vivo 🔴' : 'Ubicación finalizada')
-                            : 'Ubicación del motoboy',
+                          : 'Ubicación compartida',
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
@@ -146,14 +205,6 @@ class _MapCardState extends State<_MapCard> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (hasPos)
-                      GestureDetector(
-                        onTap: _open,
-                        child: const Tooltip(
-                          message: 'Abrir en Google Maps',
-                          child: Icon(Icons.open_in_new, size: 14, color: Colors.white70),
-                        ),
-                      ),
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -184,21 +235,56 @@ class _MapCardState extends State<_MapCard> {
           ),
           // Mapa colapsable
           AnimatedCrossFade(
-            firstChild: SizedBox(
-              height: 160,
-              child: hasPos
-                  ? _MiniMap(
-                    key: ValueKey('${widget.lat}_${widget.lng}_${widget.live ? 1 : 0}'),
-                      lat: widget.lat!,
-                      lng: widget.lng!,
-                      live: widget.live && widget.active)
-                  : Container(
-                      color: ColorConstants.surfaceLight,
-                      child: const Center(
-                        child: Icon(Icons.location_searching,
-                            color: ColorConstants.greyColor, size: 32),
-                      ),
+            firstChild: InkWell(
+              onTap: canOpen ? _open : null,
+              child: SizedBox(
+                height: 160,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: hasPos
+                          ? _MiniMap(
+                              key: ValueKey('${widget.lat}_${widget.lng}_${widget.live ? 1 : 0}'),
+                              lat: widget.lat!,
+                              lng: widget.lng!,
+                              live: widget.live && widget.active,
+                            )
+                          : Container(
+                              color: ColorConstants.surfaceLight,
+                              child: const Center(
+                                child: Icon(Icons.location_searching,
+                                    color: ColorConstants.greyColor, size: 32),
+                              ),
+                            ),
                     ),
+                    if (canOpen)
+                      const Positioned(
+                        right: 8,
+                        bottom: 8,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Color(0xB3000000),
+                            borderRadius: BorderRadius.all(Radius.circular(10)),
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.zoom_out_map, color: Colors.white, size: 13),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Tocar para ampliar',
+                                  style: TextStyle(color: Colors.white, fontSize: 10),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
             secondChild: const SizedBox(height: 0),
             crossFadeState: _expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
@@ -265,5 +351,57 @@ class _MiniMapState extends State<_MiniMap> {
           ]),
         ],
       );
+  }
+}
+
+class _FullscreenLocationMapPage extends StatelessWidget {
+  const _FullscreenLocationMapPage({
+    required this.lat,
+    required this.lng,
+    required this.isLive,
+  });
+
+  final double lat;
+  final double lng;
+  final bool isLive;
+
+  @override
+  Widget build(BuildContext context) {
+    final point = LatLng(lat, lng);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(isLive ? 'Ubicación en vivo' : 'Ubicación compartida'),
+      ),
+      body: FlutterMap(
+        options: MapOptions(
+          initialCenter: point,
+          initialZoom: 16,
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.pinchZoom |
+                InteractiveFlag.drag |
+                InteractiveFlag.doubleTapZoom |
+                InteractiveFlag.flingAnimation,
+          ),
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.lamano.clonewhatsapp',
+          ),
+          MarkerLayer(markers: [
+            Marker(
+              point: point,
+              width: 44,
+              height: 44,
+              child: Icon(
+                Icons.location_pin,
+                color: isLive ? Colors.red : Colors.redAccent.shade700,
+                size: 44,
+              ),
+            ),
+          ]),
+        ],
+      ),
+    );
   }
 }
