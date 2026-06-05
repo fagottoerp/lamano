@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
@@ -21,6 +22,7 @@ import 'pages/pages.dart';
 import 'pages/pin_lock_page.dart';
 import 'providers/providers.dart';
 import 'utils/foreground_gps_service.dart';
+import 'services/shared_sticker_share_service.dart';
 
 
 // ── Global navigator key so background handler can push routes ────────────────
@@ -94,6 +96,21 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    Zone.current.handleUncaughtError(
+      details.exception,
+      details.stack ?? StackTrace.current,
+    );
+  };
+
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    debugPrint('Uncaught platform error: $error');
+    debugPrintStack(stackTrace: stack);
+    return true;
+  };
+
   try {
     if (kIsWeb) {
       await Firebase.initializeApp(
@@ -120,10 +137,24 @@ void main() async {
   }
 
   // Register background FCM handler BEFORE runApp
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  try {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  } catch (e) {
+    debugPrint('FCM background handler registration failed: $e');
+  }
 
   // Init foreground GPS task config (no-op if already configured)
-  initForegroundTaskConfig();
+  try {
+    initForegroundTaskConfig();
+  } catch (e) {
+    debugPrint('Foreground task init failed: $e');
+  }
+
+  try {
+    await SharedStickerShareService.instance.init();
+  } catch (e) {
+    debugPrint('Shared sticker service init failed: $e');
+  }
 
   SharedPreferences prefs = await SharedPreferences.getInstance();
   runApp(MyApp(prefs: prefs));
