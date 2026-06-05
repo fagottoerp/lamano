@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -78,13 +79,21 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   }
 
   Future<String> _fetchToken(String channelName) async {
-    _log('Obteniendo token para canal: $channelName');
+    final isIos = Platform.isIOS;
+    _log('Obteniendo token para canal: $channelName [${isIos ? 'iOS' : 'Android'}]');
+    if (isIos && AppConstants.agoraTokenApiUrl.startsWith('http://')) {
+      _log('iOS DIAG: endpoint token usa HTTP (ATS debe permitir este dominio)');
+    }
     try {
       final resp = await http.post(
         Uri.parse(AppConstants.agoraTokenApiUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'channel_name': channelName, 'uid': 0, 'role': 'publisher'}),
       ).timeout(const Duration(seconds: 8));
+      _log('Token API status=${resp.statusCode}');
+      if (resp.statusCode != 200) {
+        _log('iOS DIAG: fallo token API body=${resp.body}');
+      }
       final data = jsonDecode(resp.body);
       final token = (data['token'] as String?) ?? '';
       if (token.isEmpty) {

@@ -227,8 +227,20 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _syncPushToken() async {
     try {
+      if (Platform.isIOS) {
+        final apns = await _firebaseMessaging.getAPNSToken();
+        if (apns == null || apns.isEmpty) {
+          print('[PUSH][iOS] APNs token vacío o no disponible');
+        } else {
+          print('[PUSH][iOS] APNs token OK len=${apns.length}');
+        }
+      }
       final token = await _firebaseMessaging.getToken();
-      if (token == null || token.isEmpty) return;
+      if (token == null || token.isEmpty) {
+        print('[PUSH] FCM token vacío');
+        return;
+      }
+      print('[PUSH] FCM token OK len=${token.length}');
       await _updatePushToken(token);
     } catch (_) {}
   }

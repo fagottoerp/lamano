@@ -135,7 +135,7 @@ class CallService {
     String? groupName,
   }) async {
     try {
-      await http.post(
+      final resp = await http.post(
         Uri.parse(AppConstants.callPushApiUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -147,8 +147,14 @@ class CallService {
           if (groupName != null) 'group_name': groupName,
         }),
       );
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        print('[CALL_PUSH] HTTP ${resp.statusCode} body=${resp.body}');
+      } else {
+        print('[CALL_PUSH] OK ${resp.statusCode}');
+      }
     } catch (_) {
       // Push is best-effort; call proceeds via Firestore signaling anyway
+      print('[CALL_PUSH] Exception sending push');
     }
   }
 }
