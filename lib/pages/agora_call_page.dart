@@ -87,16 +87,13 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   }
 
   Future<void> _initAgora() async {
+    // Wrap entire init in try/catch to surface errors visibly
+    try {
     _engine = createAgoraRtcEngine();
     await _engine.initialize(RtcEngineContext(
       appId: kAgoraAppId,
       channelProfile: ChannelProfileType.channelProfileCommunication,
     ));
-
-    // Force TCP fallback so UDP-restricted networks (emulators, strict firewalls) work
-    await _engine.setParameters('{"rtc.enable_proxy":true}');
-    // Enable Agora Cloud Proxy in TCP mode (mode 3 = TCP, works through firewalls/emulators)
-    await _engine.setCloudProxy(CloudProxyType.tcpProxy);
 
     // Register BEFORE joinChannel (Agora 6.x requirement)
     _engine.registerEventHandler(RtcEngineEventHandler(
@@ -182,6 +179,9 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         autoSubscribeVideo: widget.isVideo,
       ),
     );
+    } catch (e) {
+      if (mounted) setState(() => _errorMessage = 'Init error: $e');
+    }
   }
 
   void _startTimer() {
