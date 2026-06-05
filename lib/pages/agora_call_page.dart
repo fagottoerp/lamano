@@ -143,7 +143,8 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
     } else {
       await _engine.disableVideo();
     }
-
+    // Audio must be explicitly enabled in Agora 6.x (off by default)
+    await _engine.enableAudio();
     await _engine.setEnableSpeakerphone(_speakerOn);
 
     final token = await _fetchToken(widget.callId);
