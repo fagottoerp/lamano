@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
 class FullVideoPage extends StatefulWidget {
@@ -13,6 +16,21 @@ class FullVideoPage extends StatefulWidget {
 class _FullVideoPageState extends State<FullVideoPage> {
   late VideoPlayerController _ctrl;
   bool _showControls = true;
+
+  Future<void> _downloadVideo() async {
+    try {
+      Fluttertoast.showToast(msg: 'Descargando video...');
+      final response = await http.get(Uri.parse(widget.url));
+      final fileName = 'lamano_${DateTime.now().millisecondsSinceEpoch}.mp4';
+      final dir = Directory('/storage/emulated/0/Download');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(response.bodyBytes);
+      Fluttertoast.showToast(msg: 'Video guardado en Downloads');
+    } catch (e) {
+      Fluttertoast.showToast(msg: 'Error al descargar');
+    }
+  }
 
   @override
   void initState() {
@@ -93,6 +111,12 @@ class _FullVideoPageState extends State<FullVideoPage> {
                       IconButton(
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
                         onPressed: () => Navigator.pop(context),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.download, color: Colors.white),
+                        tooltip: 'Descargar video',
+                        onPressed: _downloadVideo,
                       ),
                     ],
                   ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -32,6 +33,7 @@ import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import '../services/call_service.dart';
+import '../services/live_location_service.dart';
 import 'agora_call_page.dart';
 import 'incoming_call_screen.dart';
 
@@ -64,7 +66,6 @@ class ChatPageState extends State<ChatPage> {
   String _imageUrl = "";
 
   // Live location
-  StreamSubscription<Position>? _liveLocationSub;
   String? _activeLiveLocationDocId;
   bool _isSharingLiveLocation = false;
 
@@ -79,6 +80,7 @@ class ChatPageState extends State<ChatPage> {
   final _audioPlayer = AudioPlayer();
   StreamSubscription<PlayerState>? _audioStateSub;
   String? _playingUrl;
+  double _audioSpeed = 1.0;
 
   // Incoming call detection
   String? _lastShownCallId;
@@ -240,7 +242,6 @@ class ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
-    _stopLiveLocation();
     _recordTimer?.cancel();
     _gpsSub?.cancel();
     _typingSub?.cancel();
@@ -304,6 +305,15 @@ class ChatPageState extends State<ChatPage> {
       _groupChatId = '$_currentUserId-$peerId';
     } else {
       _groupChatId = '$peerId-$_currentUserId';
+    }
+
+    if (LiveLocationService.instance.isSharing &&
+        LiveLocationService.instance.activeGroupId == _groupChatId) {
+      _isSharingLiveLocation = true;
+      _activeLiveLocationDocId = LiveLocationService.instance.activeDocId;
+    } else {
+      _isSharingLiveLocation = false;
+      _activeLiveLocationDocId = null;
     }
 
     _chatProvider.updateDataFirestore(
@@ -527,6 +537,11 @@ class ChatPageState extends State<ChatPage> {
         await _stopLiveLocation();
         return;
       }
+      if (LiveLocationService.instance.isSharing &&
+          LiveLocationService.instance.activeGroupId != _groupChatId) {
+        Fluttertoast.showToast(msg: 'Ya compartes ubicación en otro chat');
+        return;
+      }
       Fluttertoast.showToast(msg: 'Verificando GPS...');
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -550,30 +565,21 @@ class ChatPageState extends State<ChatPage> {
       return;
     }
     try {
-      // Create live location doc in Firestore
-      final docId = '${_groupChatId}_$_currentUserId';
-      await FirebaseFirestore.instance
-          .collection(FirestoreConstants.pathLiveLocations)
-          .doc(docId)
-          .set({'active': true, 'lat': 0.0, 'lng': 0.0, 'fromId': _currentUserId, 'chatId': _groupChatId});
+      final docId = await LiveLocationService.instance.start(
+        userId: _currentUserId,
+        nickname: _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario',
+        groupId: _groupChatId,
+      );
+      if (docId == null) {
+        Fluttertoast.showToast(msg: 'Error al iniciar ubicación en vivo');
+        return;
+      }
 
-      // Send a message of type liveLocation (content = docId)
       _onSendMessage(docId, TypeMessage.liveLocation);
 
       setState(() {
         _isSharingLiveLocation = true;
         _activeLiveLocationDocId = docId;
-      });
-
-      _liveLocationSub = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
-      ).listen((pos) {
-        FirebaseFirestore.instance
-            .collection(FirestoreConstants.pathLiveLocations)
-            .doc(docId)
-            .update({'lat': pos.latitude, 'lng': pos.longitude});
-      }, onError: (e) {
-        Fluttertoast.showToast(msg: 'Error GPS stream: $e');
       });
 
       Fluttertoast.showToast(msg: 'Compartiendo ubicación en vivo...');
@@ -583,21 +589,13 @@ class ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _stopLiveLocation() async {
-    await _liveLocationSub?.cancel();
-    _liveLocationSub = null;
-    if (_activeLiveLocationDocId != null) {
-      await FirebaseFirestore.instance
-          .collection(FirestoreConstants.pathLiveLocations)
-          .doc(_activeLiveLocationDocId)
-          .update({'active': false});
-    }
+    await LiveLocationService.instance.stop();
     if (mounted) {
       setState(() {
         _isSharingLiveLocation = false;
         _activeLiveLocationDocId = null;
       });
     }
-    // Silencioso — el tracking de fondo continúa sin avisar al usuario
   }
 
   // ── Audio recording ──────────────────────────────────
@@ -699,47 +697,165 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
+  List<double> _generateWaveform(String seed, int count) {
+    final hash = seed.hashCode.abs();
+    return List.generate(count, (i) {
+      final val = ((hash * (i + 1) * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+      return 0.15 + val * 0.85;
+    });
+  }
+
+  Future<void> _downloadMedia(String url, {bool isVideo = false}) async {
+    try {
+      Fluttertoast.showToast(msg: 'Descargando...');
+      final response = await http.get(Uri.parse(url));
+      final ext = isVideo ? 'mp4' : 'jpg';
+      final fileName = 'lamano_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final dir = Directory('/storage/emulated/0/Download');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(response.bodyBytes);
+      Fluttertoast.showToast(msg: 'Guardado en Downloads: $fileName');
+    } catch (e) {
+      Fluttertoast.showToast(msg: 'Error al descargar');
+    }
+  }
+
   Widget _buildAudioBubble(String url, {required bool isMe}) {
     final isPlaying = _playingUrl == url;
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 220),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isMe ? ColorConstants.bgSent : ColorConstants.bgReceived,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GestureDetector(
-            onTap: () async {
-              if (isPlaying) {
-                await _audioPlayer.stop();
-                setState(() => _playingUrl = null);
-              } else {
-                setState(() => _playingUrl = url);
-                await _audioPlayer.setUrl(url);
-                  await _audioPlayer.play();
-              }
-            },
-            child: Icon(
-              isPlaying ? Icons.stop_circle : Icons.play_circle_fill,
-              size: 36,
-              color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Icon(Icons.graphic_eq, color: isMe ? ColorConstants.greyColor : ColorConstants.textSecondary, size: 20),
-          const SizedBox(width: 4),
-          Text(
-            '🎤 Audio',
-            style: TextStyle(
-              color: isMe ? ColorConstants.primaryColor : ColorConstants.textPrimary,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
+    const barCount = 28;
+    final waveHeights = _generateWaveform(url, barCount);
+    final bgColor = isMe ? const Color(0xFFDCF8C6) : Colors.white;
+    final playedColor = const Color(0xFF25D366);
+    final unplayedColor = isMe ? const Color(0xFFA8D5A2) : const Color(0xFFB0BEC5);
+
+    return StreamBuilder<Duration>(
+      stream: isPlaying ? _audioPlayer.positionStream : Stream.value(Duration.zero),
+      builder: (context, posSnap) {
+        final position = posSnap.data ?? Duration.zero;
+        return StreamBuilder<Duration?>(
+          stream: isPlaying ? _audioPlayer.durationStream : Stream.value(null),
+          builder: (context, durSnap) {
+            final duration = durSnap.data;
+            final totalMs = duration?.inMilliseconds ?? 0;
+            final posMs = position.inMilliseconds;
+            final progress = totalMs > 0 ? (posMs / totalMs).clamp(0.0, 1.0) : 0.0;
+            String fmt(Duration d) {
+              final m = d.inMinutes.remainder(60).toString();
+              final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+              return '$m:$s';
+            }
+            final timeStr = duration != null
+                ? (isPlaying ? fmt(position) : fmt(duration))
+                : '0:00';
+
+            return Container(
+              constraints: const BoxConstraints(maxWidth: 270),
+              padding: const EdgeInsets.fromLTRB(10, 10, 12, 8),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      GestureDetector(
+                        onTap: () async {
+                          if (isPlaying) {
+                            await _audioPlayer.pause();
+                            setState(() => _playingUrl = null);
+                          } else {
+                            if (_playingUrl != null) await _audioPlayer.stop();
+                            setState(() => _playingUrl = url);
+                            _audioPlayer.setUrl(url);
+                            _audioPlayer.setSpeed(_audioSpeed);
+                            _audioPlayer.play();
+                          }
+                        },
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF25D366),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            isPlaying ? Icons.pause : Icons.play_arrow,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 150,
+                        height: 36,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: List.generate(barCount, (i) {
+                            final played = (i / barCount) <= progress;
+                            return Expanded(
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 1),
+                                height: (4 + waveHeights[i] * 26).toDouble(),
+                                decoration: BoxDecoration(
+                                  color: played ? playedColor : unplayedColor,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.mic, color: Color(0xFF25D366), size: 16),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          setState(() => _audioSpeed = _audioSpeed == 1.0 ? 2.0 : 1.0);
+                          if (isPlaying) _audioPlayer.setSpeed(_audioSpeed);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF25D366).withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            _audioSpeed == 1.0 ? '1x' : '2x',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF25D366),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        timeStr,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isMe ? const Color(0xFF666666) : ColorConstants.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1081,21 +1197,37 @@ class ChatPageState extends State<ChatPage> {
           ),
         );
       } else if (messageChat.type == TypeMessage.image) {
-        return Container(
-          clipBehavior: Clip.hardEdge,
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
-          child: GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullPhotoPage(url: messageChat.content))),
-            child: Image.network(messageChat.content,
-              loadingBuilder: (_, child, prog) {
-                if (prog == null) return child;
-                return Container(width: 200, height: 200, color: ColorConstants.greyColor2,
-                  child: Center(child: CircularProgressIndicator(color: ColorConstants.themeColor,
-                    value: prog.expectedTotalBytes != null ? prog.cumulativeBytesLoaded / prog.expectedTotalBytes! : null)));
-              },
-              errorBuilder: (_, __, ___) => Image.asset('images/img_not_available.jpeg', width: 200, height: 200, fit: BoxFit.cover),
-              width: 200, height: 200, fit: BoxFit.cover),
-          ),
+        return Stack(
+          children: [
+            Container(
+              clipBehavior: Clip.hardEdge,
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
+              child: GestureDetector(
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullPhotoPage(url: messageChat.content))),
+                child: Image.network(messageChat.content,
+                  loadingBuilder: (_, child, prog) {
+                    if (prog == null) return child;
+                    return Container(width: 200, height: 200, color: ColorConstants.greyColor2,
+                      child: Center(child: CircularProgressIndicator(color: ColorConstants.themeColor,
+                        value: prog.expectedTotalBytes != null ? prog.cumulativeBytesLoaded / prog.expectedTotalBytes! : null)));
+                  },
+                  errorBuilder: (_, __, ___) => Image.asset('images/img_not_available.jpeg', width: 200, height: 200, fit: BoxFit.cover),
+                  width: 200, height: 200, fit: BoxFit.cover),
+              ),
+            ),
+            Positioned(
+              bottom: 6,
+              right: 6,
+              child: GestureDetector(
+                onTap: () => _downloadMedia(messageChat.content),
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                  child: const Icon(Icons.download, color: Colors.white, size: 16),
+                ),
+              ),
+            ),
+          ],
         );
       } else if (messageChat.type == TypeMessage.video) {
         return _buildVideoBubble(messageChat.content);
@@ -1509,6 +1641,19 @@ class ChatPageState extends State<ChatPage> {
                 child: const Icon(Icons.play_arrow, color: Colors.white, size: 36),
               ),
             ),
+            // Download button
+            Positioned(
+              bottom: 6,
+              left: 6,
+              child: GestureDetector(
+                onTap: () => _downloadMedia(url, isVideo: true),
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                  child: const Icon(Icons.download, color: Colors.white, size: 16),
+                ),
+              ),
+            ),
             // Fullscreen hint
             Positioned(
               top: 6,
@@ -1871,6 +2016,44 @@ class ChatPageState extends State<ChatPage> {
         children: [
           // Reply preview bar
           if (_replyTo != null) _buildReplyPreviewBar(),
+          if (_isSharingLiveLocation)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              color: const Color(0xFFEFFAF5),
+              child: Row(
+                children: [
+                  const Icon(Icons.near_me, size: 16, color: Color(0xFF128C7E)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Compartiendo ubicación en vivo',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF0F5132),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _stopLiveLocation,
+                    style: TextButton.styleFrom(
+                      minimumSize: Size.zero,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      'Dejar de compartir',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFFC62828),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_showStickerPanel)
             StickerPicker(
               onStickerSelected: (stickerUrl) {
