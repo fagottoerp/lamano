@@ -14,10 +14,11 @@ const String kAgoraAppId = '41b0a5f3844441c3abf9e4c5fdc2eca9';
 
 class AgoraCallPage extends StatefulWidget {
   final String callId;       // Agora channel name (= Firestore doc ID)
-  final String peerName;
+  final String peerName;     // peer name (1:1) or group name (group)
   final String peerAvatar;
   final bool isVideo;
   final bool isCaller;       // true = we initiated, false = we answered
+  final bool isGroup;        // true = group call (multiple remote UIDs)
 
   const AgoraCallPage({
     super.key,
@@ -26,6 +27,7 @@ class AgoraCallPage extends StatefulWidget {
     required this.peerAvatar,
     required this.isVideo,
     required this.isCaller,
+    this.isGroup = false,
   });
 
   @override
@@ -37,8 +39,11 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   bool _localVideoMuted = false;
   bool _audioMuted = false;
   bool _speakerOn = true;
+  // 1:1
   bool _remoteJoined = false;
   int? _remoteUid;
+  // Group: track all remote UIDs
+  final Set<int> _remoteUids = {};
   bool _engineReady = false;
   bool _callEnded = false;
   String? _errorMessage;
@@ -50,7 +55,8 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   void initState() {
     super.initState();
     _requestPermissionsAndInit();
-    _watchCallStatus();
+    // Group calls: anyone can join/leave freely — no 1:1 status signaling
+    if (!widget.isGroup) _watchCallStatus();
   }
 
   Future<void> _requestPermissionsAndInit() async {
@@ -90,15 +96,20 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         if (mounted) setState(() {
           _remoteUid = remoteUid;
           _remoteJoined = true;
+          _remoteUids.add(remoteUid);
         });
       },
       onUserOffline: (connection, remoteUid, reason) {
         if (mounted) {
           setState(() {
-            _remoteJoined = false;
-            _remoteUid = null;
+            _remoteUids.remove(remoteUid);
+            if (_remoteUid == remoteUid) {
+              _remoteUid = _remoteUids.isNotEmpty ? _remoteUids.first : null;
+            }
+            _remoteJoined = _remoteUids.isNotEmpty;
           });
-          _hangUp();
+          // In 1:1, hang up when the other side leaves
+          if (!widget.isGroup && _remoteUids.isEmpty) _hangUp();
         }
       },
       onError: (err, msg) {
@@ -221,6 +232,10 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
           else
             _buildAvatarBackground(),
 
+          // Group: small participant tiles (top strip)
+          if (widget.isGroup && _remoteUids.length > 1)
+            _buildGroupParticipantStrip(),
+
           // Local video preview (PiP, top-right)
           if (widget.isVideo && !_localVideoMuted && _engineReady)
             _buildLocalVideoPreview(),
@@ -275,11 +290,55 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
                     : null,
               ),
               const SizedBox(height: 20),
-              if (!_remoteJoined)
+              if (widget.isGroup && _remoteUids.isNotEmpty)
+                Text(
+                  '${_remoteUids.length + 1} participante${_remoteUids.length > 0 ? 's' : ''}',
+                  style: const TextStyle(color: Colors.white60, fontSize: 14),
+                )
+              else if (!_remoteJoined)
                 const _PulsingText('Conectando...'),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Horizontal strip of small video tiles for extra group participants
+  Widget _buildGroupParticipantStrip() {
+    final extraUids = _remoteUids.skip(1).toList();
+    if (extraUids.isEmpty) return const SizedBox.shrink();
+    return Positioned(
+      top: 100,
+      left: 0,
+      right: 0,
+      height: 100,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        itemCount: extraUids.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemBuilder: (_, i) {
+          final uid = extraUids[i];
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 80,
+              child: widget.isVideo
+                  ? AgoraVideoView(
+                      controller: VideoViewController.remote(
+                        rtcEngine: _engine,
+                        canvas: VideoCanvas(uid: uid),
+                        connection: RtcConnection(channelId: widget.callId),
+                      ),
+                    )
+                  : Container(
+                      color: const Color(0xFF1a2a3a),
+                      child: const Icon(Icons.person, color: Colors.white54, size: 36),
+                    ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -326,9 +385,13 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
               Text(
                 _errorMessage != null
                     ? _errorMessage!
-                    : _remoteJoined
-                        ? _formatDuration(_callDuration)
-                        : widget.isCaller ? 'Llamando...' : 'Conectando...',
+                    : widget.isGroup
+                        ? (_remoteUids.isNotEmpty
+                            ? '${_remoteUids.length + 1} en llamada · ${_formatDuration(_callDuration)}'
+                            : 'Esperando participantes...')
+                        : (_remoteJoined
+                            ? _formatDuration(_callDuration)
+                            : widget.isCaller ? 'Llamando...' : 'Conectando...'),
                 style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 14,

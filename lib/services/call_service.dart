@@ -16,7 +16,7 @@ class CallService {
   static final _db = FirebaseFirestore.instance;
   static const _col = 'calls';
 
-  /// Initiate a call and notify the callee via FCM push.
+  /// Initiate a 1-on-1 call and notify the callee via FCM push.
   /// Returns the callId (= Agora channel name).
   static Future<String> startCall({
     required String callerId,
@@ -33,6 +33,7 @@ class CallService {
       'callerName': callerName,
       'calleeId': calleeId,
       'isVideo': isVideo,
+      'isGroup': false,
       'status': 'ringing',
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -48,6 +49,55 @@ class CallService {
         callerName: callerName,
         callerId: callerId,
         isVideo: isVideo,
+      );
+    }
+
+    return callId;
+  }
+
+  /// Initiate a group call: creates a Firestore doc and sends push to all members.
+  /// Returns the callId (= Agora channel name).
+  static Future<String> startGroupCall({
+    required String callerId,
+    required String callerName,
+    required String groupId,
+    required String groupName,
+    required List<String> memberIds,
+    required bool isVideo,
+  }) async {
+    final doc = _db.collection(_col).doc();
+    final callId = doc.id;
+
+    await doc.set({
+      'channelName': callId,
+      'callerId': callerId,
+      'callerName': callerName,
+      'groupId': groupId,
+      'groupName': groupName,
+      'isVideo': isVideo,
+      'isGroup': true,
+      'status': 'ringing',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    // Fan-out push to all members except the caller
+    final others = memberIds.where((uid) => uid != callerId).toList();
+    if (others.isEmpty) return callId;
+
+    final userDocs = await Future.wait(
+      others.map((uid) => _db.collection('users').doc(uid).get()),
+    );
+
+    for (final userDoc in userDocs) {
+      final pushToken = userDoc.data()?['pushToken'] as String?;
+      if (pushToken == null || pushToken.isEmpty) continue;
+      await _sendCallPush(
+        pushToken: pushToken,
+        callId: callId,
+        callerName: callerName,
+        callerId: callerId,
+        isVideo: isVideo,
+        groupName: groupName,
       );
     }
 
@@ -82,6 +132,7 @@ class CallService {
     required String callerName,
     required String callerId,
     required bool isVideo,
+    String? groupName,
   }) async {
     try {
       await http.post(
@@ -91,8 +142,9 @@ class CallService {
           'push_token': pushToken,
           'caller_name': callerName,
           'caller_uid': callerId,
-          'room_name': callId,  // reused as Agora channel name
+          'room_name': callId,
           'is_video': isVideo,
+          if (groupName != null) 'group_name': groupName,
         }),
       );
     } catch (_) {

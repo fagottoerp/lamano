@@ -995,9 +995,53 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  Future<void> _startGroupJitsiCall({required bool videoMuted}) async {}
+  Future<void> _startGroupAgoraCall({required bool isVideo}) async {
+    try {
+      // Fetch current member list from Firestore
+      final groupDoc = await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.arguments.groupId)
+          .get();
+      final members = List<String>.from(groupDoc.data()?['members'] ?? []);
+      if (members.isEmpty) {
+        Fluttertoast.showToast(msg: 'No se encontraron miembros del grupo');
+        return;
+      }
 
-  Widget _buildGroupCallBubble(String roomName, {required bool isVideo}) {
+      final callId = await CallService.startGroupCall(
+        callerId: _currentUserId,
+        callerName: _currentNickname,
+        groupId: widget.arguments.groupId,
+        groupName: widget.arguments.groupName,
+        memberIds: members,
+        isVideo: isVideo,
+      );
+
+      if (!mounted) return;
+
+      // Post a call bubble in the group chat
+      _onSendMessage(callId, isVideo ? TypeMessage.videoCall : TypeMessage.audioCall);
+
+      // Caller joins immediately
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AgoraCallPage(
+            callId: callId,
+            peerName: widget.arguments.groupName,
+            peerAvatar: '',
+            isVideo: isVideo,
+            isCaller: true,
+            isGroup: true,
+          ),
+        ),
+      );
+    } catch (e) {
+      Fluttertoast.showToast(msg: 'Error al iniciar llamada grupal: $e');
+    }
+  }
+
+  Widget _buildGroupCallBubble(String callId, {required bool isVideo}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1006,12 +1050,42 @@ class _GroupChatPageState extends State<GroupChatPage> {
         color: const Color(0xFF1A2A1A),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.phone_disabled, color: Colors.grey, size: 18),
-          SizedBox(width: 8),
-          Text('Llamadas — Próximamente', style: TextStyle(color: Colors.grey, fontSize: 13)),
+          Icon(isVideo ? Icons.videocam : Icons.phone, color: Colors.greenAccent, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            isVideo ? 'Videollamada grupal' : 'Llamada grupal',
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AgoraCallPage(
+                    callId: callId,
+                    peerName: widget.arguments.groupName,
+                    peerAvatar: '',
+                    isVideo: isVideo,
+                    isCaller: false,
+                    isGroup: true,
+                  ),
+                ),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.greenAccent.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.greenAccent, width: 1),
+              ),
+              child: const Text('Unirse', style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
+          ),
         ],
       ),
     );
@@ -2094,6 +2168,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
         ),
         centerTitle: false,
         actions: [
+          _buildTopAction(
+            icon: Icons.call,
+            tooltip: 'Llamada de voz',
+            onTap: () => _startGroupAgoraCall(isVideo: false),
+          ),
+          _buildTopAction(
+            icon: Icons.videocam,
+            tooltip: 'Videollamada',
+            onTap: () => _startGroupAgoraCall(isVideo: true),
+          ),
           _buildTopAction(
             icon: Icons.more_vert,
             tooltip: 'Más opciones',

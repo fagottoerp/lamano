@@ -35,15 +35,23 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   if (message.data['type'] != 'incoming_call') return;
 
-  final roomName   = message.data['room_name']   ?? '';
-  final callerName = message.data['caller_name'] ?? 'Alguien';
-  final isVideo    = message.data['is_video']    == 'true';
+  final roomName    = message.data['room_name']    ?? '';
+  final callerName  = message.data['caller_name']  ?? 'Alguien';
+  final isVideo     = message.data['is_video']     == 'true';
+  final isGroupCall = message.data['is_group_call'] == 'true';
+  final groupName   = message.data['group_name']   ?? '';
+  // Use server-generated title/body when available
+  final title = message.data['title'] as String? ??
+      (isGroupCall
+          ? (isVideo ? '📹 Videollamada grupal' : '📞 Llamada grupal')
+          : (isVideo ? '📹 Videollamada entrante' : '📞 Llamada entrante'));
+  final bodyText = message.data['body'] as String? ??
+      (isGroupCall
+          ? '$callerName inició una llamada'
+          : '$callerName te está llamando');
 
   if (roomName.isEmpty) return;
 
-  // Show a high-priority fullScreenIntent notification.
-  // The user tapping it will open the app; the app reads
-  // FirebaseMessaging.instance.getInitialMessage() to detect it.
   const channel = AndroidNotificationChannel(
     'incoming_call_v1',
     'Llamadas entrantes',
@@ -63,11 +71,11 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
-  final title = isVideo ? '📹 Videollamada entrante' : '📞 Llamada entrante';
+  // payload: call|roomName|callerName|isVideo|isGroupCall|groupName
   await plugin.show(
     id: 9999,
     title: title,
-    body: '$callerName te está llamando',
+    body: bodyText,
     notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
         'incoming_call_v1',
@@ -87,10 +95,10 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           const AndroidNotificationAction('accept', 'Aceptar',
               cancelNotification: true),
         ],
-        additionalFlags: Int32List.fromList([4]), // FLAG_INSISTENT (ring loop)
+        additionalFlags: Int32List.fromList([4]),
       ),
     ),
-    payload: 'call|$roomName|$callerName|${isVideo ? '1' : '0'}',
+    payload: 'call|$roomName|$callerName|${isVideo ? '1' : '0'}|${isGroupCall ? '1' : '0'}|$groupName',
   );
 }
 

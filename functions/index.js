@@ -97,9 +97,12 @@ exports.sendPushOnNewMessage = onDocumentCreated(
         android: {
           priority: "high",
           ttl: 1000 * 60,
-          notification: { channelId: "flutter_chat_urgent_v2", sound: "default", defaultSound: true, priority: "high" },
+          notification: { channelId: "flutter_chat_urgent_v2", sound: "default", defaultSound: true, priority: "high", tag: `chat_${groupChatId}` },
         },
-        apns: buildApnsConfig(),
+        apns: {
+          ...buildApnsConfig(),
+          headers: { ...buildApnsConfig().headers, "apns-collapse-id": `chat_${groupChatId}` },
+        },
       };
       try {
         const response = await admin.messaging().send(payload);
@@ -149,9 +152,12 @@ exports.sendPushOnNewMessage = onDocumentCreated(
         android: {
           priority: "high",
           ttl: 1000 * 60,
-          notification: { channelId: "flutter_chat_urgent_v2", sound: "default", defaultSound: true, priority: "high" },
+          notification: { channelId: "flutter_chat_urgent_v2", sound: "default", defaultSound: true, priority: "high", tag: `group_${groupChatId}` },
         },
-        apns: buildApnsConfig(),
+        apns: {
+          ...buildApnsConfig(),
+          headers: { ...buildApnsConfig().headers, "apns-collapse-id": `group_${groupChatId}` },
+        },
       });
     }
 

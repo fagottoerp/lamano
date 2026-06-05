@@ -679,8 +679,6 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  Future<void> _sendDirectCallPush({required String roomName, required String callerName, required bool isVideo}) async {}
-
   Widget _buildCallBubble(String roomName, {required bool isVideo, required bool isMe}) {
     return Container(
       constraints: const BoxConstraints(maxWidth: 220),

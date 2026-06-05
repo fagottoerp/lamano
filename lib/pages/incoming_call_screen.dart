@@ -10,6 +10,7 @@ class IncomingCallScreen extends StatelessWidget {
   final String callerName;
   final String callerAvatar;
   final bool isVideo;
+  final bool isGroup;
 
   const IncomingCallScreen({
     super.key,
@@ -17,10 +18,11 @@ class IncomingCallScreen extends StatelessWidget {
     required this.callerName,
     required this.callerAvatar,
     required this.isVideo,
+    this.isGroup = false,
   });
 
   void _accept(BuildContext context) async {
-    await CallService.acceptCall(callId);
+    if (!isGroup) await CallService.acceptCall(callId);
     if (context.mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -30,6 +32,7 @@ class IncomingCallScreen extends StatelessWidget {
             peerAvatar: callerAvatar,
             isVideo: isVideo,
             isCaller: false,
+            isGroup: isGroup,
           ),
         ),
       );
@@ -59,7 +62,9 @@ class IncomingCallScreen extends StatelessWidget {
               const SizedBox(height: 60),
               // Call type label
               Text(
-                isVideo ? 'Videollamada entrante' : 'Llamada de voz entrante',
+                isGroup
+                    ? (isVideo ? 'Videollamada grupal' : 'Llamada grupal')
+                    : (isVideo ? 'Videollamada entrante' : 'Llamada de voz entrante'),
                 style: const TextStyle(color: Colors.white54, fontSize: 15),
               ),
               const SizedBox(height: 30),

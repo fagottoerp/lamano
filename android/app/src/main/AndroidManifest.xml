@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
@@ -104,6 +106,13 @@
             android:foregroundServiceType="location"
             android:stopWithTask="false"
             android:exported="false" />
+
+        <!-- Agora: microphone/camera foreground service (required Android 14+) -->
+        <service
+            android:name="io.agora.rtc2.internal.RtcForegroundService"
+            android:foregroundServiceType="microphone|camera"
+            android:exported="false"
+            android:stopWithTask="true" />
 
         <!-- Auto-restart service after device reboot -->
         <receiver

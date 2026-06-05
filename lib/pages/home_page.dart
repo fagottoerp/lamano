@@ -154,9 +154,9 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
 
     _firebaseMessaging.setForegroundNotificationPresentationOptions(
-      alert: true,
+      alert: false, // flutter_local_notifications maneja el display; evita duplicado en iOS
       badge: true,
-      sound: true,
+      sound: false,
     );
 
     _syncPushToken();
@@ -169,17 +169,21 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       print('onMessage: $message');
       // ── Incoming call (Agora) ──────────────────────────────────────────────
       if (message.data['type'] == 'incoming_call') {
-        final callId = message.data['room_name'] ?? '';
-        final callerName = message.data['caller_name'] ?? 'Desconocido';
-        final isVideo = message.data['is_video'] == 'true';
+        final callId      = message.data['room_name']    ?? '';
+        final callerName  = message.data['caller_name']  ?? 'Desconocido';
+        final isVideo     = message.data['is_video']     == 'true';
+        final isGroupCall = message.data['is_group_call'] == 'true';
+        final groupName   = message.data['group_name']   ?? '';
+        final displayName = isGroupCall && groupName.isNotEmpty ? groupName : callerName;
         if (callId.isNotEmpty && mounted) {
           Navigator.of(context).push(MaterialPageRoute(
             fullscreenDialog: true,
             builder: (_) => IncomingCallScreen(
               callId: callId,
-              callerName: callerName,
+              callerName: displayName,
               callerAvatar: '',
               isVideo: isVideo,
+              isGroup: isGroupCall,
             ),
           ));
         }
@@ -206,12 +210,14 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (_isMotoboy && idFrom == AppConstants.adminFirebaseUid && _selectedTab != orderTabIndex) {
           setState(() => _orderBadge++);
         }
+        final isGroup = message.data['isGroup'] == '1';
         _showNotificationWithPayload(
           message.notification!,
           '$idFrom|$groupChatId|$senderName',
           senderName: senderName,
-          // En grupos: agrupar por groupChatId. En chats 1:1: agrupar por idFrom.
+          // En grupos: agrupar por groupChatId. En 1:1: por idFrom.
           senderId: groupChatId.isNotEmpty ? groupChatId : idFrom,
+          isGroup: isGroup,
         );
       }
       return;
@@ -262,7 +268,32 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       settings: initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         final payload = response.payload ?? '';
-        if (payload.isNotEmpty) _navigateToChatFromPayload(payload);
+        if (payload.startsWith('call|')) {
+          // payload format: "call|roomName|callerName|isVideo|isGroupCall|groupName"
+          final parts = payload.split('|');
+          if (parts.length >= 3) {
+            final roomName    = parts[1];
+            final callerName  = parts[2];
+            final isVideo     = parts.length > 3 && parts[3] == '1';
+            final isGroupCall = parts.length > 4 && parts[4] == '1';
+            final groupName   = parts.length > 5 ? parts[5] : '';
+            final displayName = isGroupCall && groupName.isNotEmpty ? groupName : callerName;
+            if (roomName.isNotEmpty && mounted) {
+              Navigator.of(context).push(MaterialPageRoute(
+                fullscreenDialog: true,
+                builder: (_) => IncomingCallScreen(
+                  callId: roomName,
+                  callerName: displayName,
+                  callerAvatar: '',
+                  isVideo: isVideo,
+                  isGroup: isGroupCall,
+                ),
+              ));
+            }
+          }
+        } else if (payload.isNotEmpty) {
+          _navigateToChatFromPayload(payload);
+        }
       },
     );
 
@@ -292,6 +323,27 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     // Handle notification tap when app was in background (notification tray)
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      if (message.data['type'] == 'incoming_call') {
+        final roomName    = message.data['room_name']    ?? '';
+        final callerName  = message.data['caller_name']  ?? 'Alguien';
+        final isVideo     = message.data['is_video']     == 'true';
+        final isGroupCall = message.data['is_group_call'] == 'true';
+        final groupName   = message.data['group_name']   ?? '';
+        final displayName = isGroupCall && groupName.isNotEmpty ? groupName : callerName;
+        if (roomName.isNotEmpty && mounted) {
+          Navigator.of(context).push(MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => IncomingCallScreen(
+              callId: roomName,
+              callerName: displayName,
+              callerAvatar: '',
+              isVideo: isVideo,
+              isGroup: isGroupCall,
+            ),
+          ));
+        }
+        return;
+      }
       final idFrom = message.data['idFrom'] ?? '';
       final groupChatId = message.data['groupChatId'] ?? '';
       final senderName = message.data['senderName'] as String? ?? '';
@@ -301,8 +353,32 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
 
     // Handle notification tap when app was TERMINATED
+    // Use addPostFrameCallback so Navigator is ready when we push.
     FirebaseMessaging.instance.getInitialMessage().then((message) {
       if (message == null) return;
+      if (message.data['type'] == 'incoming_call') {
+        final roomName    = message.data['room_name']    ?? '';
+        final callerName  = message.data['caller_name']  ?? 'Alguien';
+        final isVideo     = message.data['is_video']     == 'true';
+        final isGroupCall = message.data['is_group_call'] == 'true';
+        final groupName   = message.data['group_name']   ?? '';
+        final displayName = isGroupCall && groupName.isNotEmpty ? groupName : callerName;
+        if (roomName.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            Navigator.of(context).push(MaterialPageRoute(
+              fullscreenDialog: true,
+              builder: (_) => IncomingCallScreen(
+                callId: roomName,
+                callerName: displayName,
+                callerAvatar: '',
+                isVideo: isVideo,
+                isGroup: isGroupCall,
+              ),
+            ));
+          });
+        }
+      }
     });
 
   }
@@ -438,104 +514,136 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  void _showNotificationWithPayload(RemoteNotification remoteNotification, String payload, {String senderName = '', String senderId = ''}) async {
-    final displayTitle = senderName.isNotEmpty ? senderName : (remoteNotification.title ?? 'La Mano');
+  void _showNotificationWithPayload(RemoteNotification remoteNotification, String payload, {String senderName = '', String senderId = '', bool isGroup = false}) async {
+    final displayTitle = remoteNotification.title ?? (senderName.isNotEmpty ? senderName : 'La Mano');
     final displayBody = remoteNotification.body ?? '';
-    final isGroup = senderId.isNotEmpty && senderId != (senderId.contains('|') ? '' : senderId) || senderId.length > 28;
-    // En grupos mostramos "Nombre: mensaje", en 1:1 solo el mensaje
-    final notifTitle = remoteNotification.title ?? displayTitle;
-    final bodyLine = (senderName.isNotEmpty && notifTitle != senderName)
-        ? '$senderName: $displayBody'  // grupo: "Juan: hola"
-        : displayBody;                  // 1:1: solo el mensaje
     final key = senderId.isNotEmpty ? senderId : displayTitle;
+    final notifId = key.hashCode.abs() % 100000 + 1;
 
-    // Acumular mensajes de este remitente
-    if (!_pendingNotifs.containsKey(key)) {
-      _pendingNotifs[key] = {
-        'name': displayTitle,
-        'messages': <String>[],
-        'notifId': key.hashCode.abs() % 100000 + 1,
-      };
-    }
-    (_pendingNotifs[key]!['messages'] as List<String>).add(bodyLine);
+    if (!isGroup) {
+      // ── Chat 1:1: siempre reemplaza con el último mensaje (igual que WhatsApp) ──
+      // No acumula. El mismo notifId sobreescribe la notificación anterior.
+      _pendingNotifs.remove(key); // limpiar por si quedó algo acumulado
 
-    final msgs = _pendingNotifs[key]!['messages'] as List<String>;
-    final notifId = _pendingNotifs[key]!['notifId'] as int;
-    final count = msgs.length;
+      final androidDetails = AndroidNotificationDetails(
+        _androidChannel.id,
+        _androidChannel.name,
+        channelDescription: _androidChannel.description,
+        playSound: true,
+        enableVibration: true,
+        importance: Importance.max,
+        priority: Priority.high,
+        category: AndroidNotificationCategory.message,
+        ticker: 'Nuevo mensaje',
+        groupKey: _notifGroupKey,
+        setAsGroupSummary: false,
+      );
 
-    // Notificación individual del remitente (InboxStyle con todos sus mensajes)
-    final inboxStyle = InboxStyleInformation(
-      msgs,
-      contentTitle: displayTitle,
-      summaryText: count > 1 ? '$count mensajes' : null,
-    );
-
-    final androidDetails = AndroidNotificationDetails(
-      _androidChannel.id,
-      _androidChannel.name,
-      channelDescription: _androidChannel.description,
-      playSound: true,
-      enableVibration: true,
-      importance: Importance.max,
-      priority: Priority.high,
-      category: AndroidNotificationCategory.message,
-      ticker: 'Nuevo mensaje',
-      styleInformation: inboxStyle,
-      groupKey: _notifGroupKey,
-      setAsGroupSummary: false,
-    );
-
-    await _flutterLocalNotificationsPlugin.show(
-      id: notifId,
-      title: displayTitle,
-      body: count > 1 ? '$count mensajes nuevos' : bodyLine,
-      notificationDetails: NotificationDetails(
-        android: androidDetails,
-        iOS: const DarwinNotificationDetails(
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: true,
-          sound: 'default',
+      await _flutterLocalNotificationsPlugin.show(
+        id: notifId,
+        title: displayTitle,
+        body: displayBody,
+        notificationDetails: NotificationDetails(
+          android: androidDetails,
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            sound: 'default',
+          ),
         ),
-      ),
-      payload: payload,
-    );
+        payload: payload,
+      );
+    } else {
+      // ── Grupo: acumular mensajes con InboxStyle ──
+      final bodyLine = senderName.isNotEmpty ? '$senderName: $displayBody' : displayBody;
 
-    // Notificación resumen del grupo (agrupa todas en el panel de notificaciones)
-    final totalMsgs = _pendingNotifs.values.fold<int>(
-      0, (sum, v) => sum + (v['messages'] as List<String>).length,
-    );
+      if (!_pendingNotifs.containsKey(key)) {
+        _pendingNotifs[key] = {
+          'name': displayTitle,
+          'messages': <String>[],
+          'notifId': notifId,
+        };
+      }
+      (_pendingNotifs[key]!['messages'] as List<String>).add(bodyLine);
+
+      final msgs = _pendingNotifs[key]!['messages'] as List<String>;
+      final count = msgs.length;
+
+      final inboxStyle = InboxStyleInformation(
+        msgs,
+        contentTitle: displayTitle,
+        summaryText: count > 1 ? '$count mensajes' : null,
+      );
+
+      final androidDetails = AndroidNotificationDetails(
+        _androidChannel.id,
+        _androidChannel.name,
+        channelDescription: _androidChannel.description,
+        playSound: true,
+        enableVibration: true,
+        importance: Importance.max,
+        priority: Priority.high,
+        category: AndroidNotificationCategory.message,
+        ticker: 'Nuevo mensaje',
+        styleInformation: inboxStyle,
+        groupKey: _notifGroupKey,
+        setAsGroupSummary: false,
+      );
+
+      await _flutterLocalNotificationsPlugin.show(
+        id: notifId,
+        title: displayTitle,
+        body: count > 1 ? '$count mensajes nuevos' : bodyLine,
+        notificationDetails: NotificationDetails(
+          android: androidDetails,
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            sound: 'default',
+          ),
+        ),
+        payload: payload,
+      );
+    }
+
+    // ── Notificación resumen (Android bundling) ──
+    final totalMsgs = isGroup
+        ? _pendingNotifs.values.fold<int>(0, (sum, v) => sum + (v['messages'] as List<String>).length)
+        : 0;
     final totalConvs = _pendingNotifs.length;
 
-    final summaryDetails = AndroidNotificationDetails(
-      _androidChannel.id,
-      _androidChannel.name,
-      channelDescription: _androidChannel.description,
-      importance: Importance.min,
-      priority: Priority.low,
-      groupKey: _notifGroupKey,
-      setAsGroupSummary: true,
-      styleInformation: InboxStyleInformation(
-        _pendingNotifs.entries.map((e) => '${e.value['name']}: ${(e.value['messages'] as List<String>).last}').toList(),
-        contentTitle: 'La Mano',
-        summaryText: '$totalMsgs mensajes de $totalConvs conversación${totalConvs > 1 ? 'es' : ''}',
-      ),
-    );
-
-    await _flutterLocalNotificationsPlugin.show(
-      id: 0, // ID fijo para el resumen
-      title: 'La Mano',
-      body: '$totalMsgs mensajes nuevos',
-      notificationDetails: NotificationDetails(
-        android: summaryDetails,
-        iOS: const DarwinNotificationDetails(
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: true,
-          sound: 'default',
+    if (isGroup && totalConvs > 0) {
+      final summaryDetails = AndroidNotificationDetails(
+        _androidChannel.id,
+        _androidChannel.name,
+        channelDescription: _androidChannel.description,
+        importance: Importance.min,
+        priority: Priority.low,
+        groupKey: _notifGroupKey,
+        setAsGroupSummary: true,
+        styleInformation: InboxStyleInformation(
+          _pendingNotifs.entries
+              .map((e) => '${e.value['name']}: ${(e.value['messages'] as List<String>).last}')
+              .toList(),
+          contentTitle: 'La Mano',
+          summaryText: '$totalMsgs mensajes de $totalConvs grupo${totalConvs > 1 ? 's' : ''}',
         ),
-      ),
-    );
+      );
+
+      await _flutterLocalNotificationsPlugin.show(
+        id: 0,
+        title: 'La Mano',
+        body: '$totalMsgs mensajes nuevos',
+        notificationDetails: NotificationDetails(android: summaryDetails),
+      );
+    }
+  }
+
+  /// Llamar cuando el usuario abre un chat para limpiar el acumulador de ese grupo.
+  void clearNotificationForChat(String chatKey) {
+    _pendingNotifs.remove(chatKey);
   }
 
   Future<void> _handleSignOut() async {
