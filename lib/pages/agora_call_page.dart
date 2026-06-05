@@ -47,6 +47,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   bool _engineReady = false;
   bool _callEnded = false;
   String? _errorMessage;
+  bool _joinedChannel = false; // true once onJoinChannelSuccess fires
   Duration _callDuration = Duration.zero;
   Timer? _durationTimer;
   StreamSubscription? _callStatusSub;
@@ -74,9 +75,14 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         body: jsonEncode({'channel_name': channelName, 'uid': 0, 'role': 'publisher'}),
       ).timeout(const Duration(seconds: 8));
       final data = jsonDecode(resp.body);
-      return (data['token'] as String?) ?? '';
-    } catch (_) {
-      return ''; // fallback: no-token (testing mode)
+      final token = (data['token'] as String?) ?? '';
+      if (token.isEmpty && mounted) {
+        setState(() => _errorMessage = 'Error: no se pudo obtener token Agora');
+      }
+      return token;
+    } catch (e) {
+      if (mounted) setState(() => _errorMessage = 'Error token: $e');
+      return '';
     }
   }
 
@@ -89,7 +95,10 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
 
     _engine.registerEventHandler(RtcEngineEventHandler(
       onJoinChannelSuccess: (connection, elapsed) {
-        if (mounted) setState(() => _engineReady = true);
+        if (mounted) setState(() {
+          _engineReady = true;
+          _joinedChannel = true;
+        });
         _startTimer();
       },
       onUserJoined: (connection, remoteUid, elapsed) {
@@ -116,8 +125,14 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         if (mounted) setState(() => _errorMessage = 'Error Agora: ${err.name} — $msg');
       },
       onConnectionStateChanged: (connection, state, reason) {
-        if (state == ConnectionStateType.connectionStateFailed && mounted) {
-          setState(() => _errorMessage = 'No se pudo conectar. Verifica tu conexión.');
+        if (mounted) {
+          if (state == ConnectionStateType.connectionStateFailed) {
+            setState(() => _errorMessage = 'Sin conexión (${reason.name}). Verifica tu red.');
+          } else if (state == ConnectionStateType.connectionStateReconnecting) {
+            setState(() => _errorMessage = 'Reconectando...');
+          } else if (state == ConnectionStateType.connectionStateConnected) {
+            setState(() => _errorMessage = null);
+          }
         }
       },
     ));
@@ -388,10 +403,12 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
                     : widget.isGroup
                         ? (_remoteUids.isNotEmpty
                             ? '${_remoteUids.length + 1} en llamada · ${_formatDuration(_callDuration)}'
-                            : 'Esperando participantes...')
+                            : _joinedChannel ? 'Esperando participantes...' : 'Conectando al servidor...')
                         : (_remoteJoined
                             ? _formatDuration(_callDuration)
-                            : widget.isCaller ? 'Llamando...' : 'Conectando...'),
+                            : _joinedChannel
+                                ? (widget.isCaller ? 'Llamando...' : 'Esperando conexión del otro...')
+                                : 'Conectando al servidor...'),
                 style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 14,
