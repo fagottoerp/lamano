@@ -7,7 +7,7 @@ import '../services/call_service.dart';
 /// Agora App ID — Register at https://console.agora.io and set this value.
 /// For testing without a token, leave token as null and disable token auth
 /// in the Agora Console (Project → No certificate / Testing mode).
-const String kAgoraAppId = 'YOUR_AGORA_APP_ID';
+const String kAgoraAppId = '41b0a5f3844441c3abf9e4c5fdc2eca9';
 
 class AgoraCallPage extends StatefulWidget {
   final String callId;       // Agora channel name (= Firestore doc ID)
