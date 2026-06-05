@@ -16,7 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../constants/firestore_constants.dart';
 import '../utils/connectivity_service.dart';
 import '../utils/safe_json.dart';
-import 'chat_page.dart';
+import 'chat_page.dart' show ChatPage, ChatPageArguments;
 
 class MotoboOrdersPage extends StatefulWidget {
   const MotoboOrdersPage({super.key});

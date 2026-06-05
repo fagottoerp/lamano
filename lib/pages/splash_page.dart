@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/auth_provider.dart';
 import 'package:flutter_chat_demo/utils/app_updater.dart';
+import 'package:flutter_chat_demo/services/shared_sticker_share_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+
+import 'home_page.dart';
+import 'login_page.dart';
 
 class SplashPage extends StatefulWidget {
   SplashPage({super.key});
@@ -153,6 +156,7 @@ class SplashPageState extends State<SplashPage> with SingleTickerProviderStateMi
       bool isLoggedIn = await authProvider.isLoggedIn();
       if (!mounted) return;
       if (isLoggedIn) {
+        await SharedStickerShareService.instance.flushPendingImports();
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => HomePage()),

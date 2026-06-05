@@ -1,7 +1,6 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/auth_provider.dart';
 import 'package:flutter_chat_demo/utils/app_updater.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -9,6 +8,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+
+import 'home_page.dart';
 
 class LoginPage extends StatefulWidget {
   @override

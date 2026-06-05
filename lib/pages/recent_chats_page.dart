@@ -190,13 +190,16 @@ class _RecentChatsPageState extends State<RecentChatsPage> {
                             final archived = data['archived'] as bool? ?? false;
                             _showChatOptions(context, peerId, name, archived);
                           },
-                          onTap: () {
-                            FirebaseFirestore.instance
-                                .collection('user_conversations')
-                                .doc(_currentUserId)
-                                .collection('chats')
-                                .doc(peerId)
-                                .update({'unreadCount': 0}).catchError((_) {});
+                          onTap: () async {
+                            try {
+                              await FirebaseFirestore.instance
+                                  .collection('user_conversations')
+                                  .doc(_currentUserId)
+                                  .collection('chats')
+                                  .doc(peerId)
+                                  .update({'unreadCount': 0});
+                            } catch (_) {}
+                            if (!context.mounted) return;
                             Navigator.push(
                               context,
                               MaterialPageRoute(

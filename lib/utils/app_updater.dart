@@ -22,6 +22,9 @@ class AppUpdater {
     bool force = false,
     bool showUpToDate = false,
   }) async {
+    // iOS distribution is handled outside this APK updater flow.
+    if (Platform.isIOS) return;
+
     if (_checking) return;
     if (!force && _lastCheckAt != null) {
       final diff = DateTime.now().difference(_lastCheckAt!);
@@ -114,7 +117,6 @@ class AppUpdater {
   static Future<void> _downloadAndInstall(
       BuildContext context, String url, String version) async {
     // Show progress dialog
-    double _progress = 0.0;
     final progressNotifier = ValueNotifier<double>(0.0);
 
     showDialog(

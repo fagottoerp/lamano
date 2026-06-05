@@ -16,7 +16,6 @@ import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'pin_lock_page.dart';
-import 'token_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -424,28 +423,7 @@ class SettingsPageState extends State<SettingsPage> {
                     },
                   ),
                 ),
-
-                // Token y estado
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  child: ListTile(
-                    leading: const Icon(Icons.vpn_key_rounded,
-                        color: ColorConstants.primaryColor),
-                    title: const Text('Token y estado'),
-                    subtitle: const Text('Ver token FCM, APNS y datos del dispositivo'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => TokenPage(
-                          userId: _userId,
-                          nickname: _nickname,
-                          role: _aboutMe,
-                          phone: _phone,
-                        ),
-                      ));
-                    },
-                  ),
-                ),
+                const SizedBox.shrink(),
 
                 // Button
                 Container(

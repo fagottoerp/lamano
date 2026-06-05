@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/sticker_service.dart';
 import '../constants/color_constants.dart';
@@ -11,23 +13,12 @@ class StickerPicker extends StatefulWidget {
   State<StickerPicker> createState() => _StickerPickerState();
 }
 
-class _StickerPickerState extends State<StickerPicker>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  final TextEditingController _searchCtrl = TextEditingController();
-  String _searchQuery = '';
+class _StickerPickerState extends State<StickerPicker> {
   bool _uploading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-  }
+  bool _importingPack = false;
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -41,11 +32,34 @@ class _StickerPickerState extends State<StickerPicker>
     }
   }
 
-  static const List<String> _builtIn = [
-    'mimi1', 'mimi2', 'mimi3',
-    'mimi4', 'mimi5', 'mimi6',
-    'mimi7', 'mimi8', 'mimi9',
-  ];
+  Future<void> _importZipPack() async {
+    setState(() => _importingPack = true);
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['zip'],
+        allowMultiple: false,
+      );
+
+      if (picked == null || picked.files.isEmpty) return;
+      final path = picked.files.first.path;
+      if (path == null || path.isEmpty) {
+        Fluttertoast.showToast(msg: 'No se pudo leer el paquete ZIP');
+        return;
+      }
+
+      final imported = await StickerService.importStickerPackFromZip(path);
+      if (imported <= 0) {
+        Fluttertoast.showToast(msg: 'No se encontraron stickers validos para importar');
+      } else {
+        Fluttertoast.showToast(msg: 'Stickers importados: $imported');
+      }
+    } catch (_) {
+      Fluttertoast.showToast(msg: 'Error al importar paquete de stickers');
+    } finally {
+      if (mounted) setState(() => _importingPack = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,107 +71,82 @@ class _StickerPickerState extends State<StickerPicker>
       ),
       child: Column(
         children: [
-          TabBar(
-            controller: _tabController,
-            indicatorColor: ColorConstants.themeColor,
-            labelColor: ColorConstants.themeColor,
-            unselectedLabelColor: Colors.grey,
-            tabs: const [
-              Tab(icon: Icon(Icons.gif_box, size: 20), text: 'Giphy'),
-              Tab(icon: Icon(Icons.person, size: 20), text: 'Mis Stickers'),
-              Tab(icon: Icon(Icons.emoji_emotions, size: 20), text: 'Predeterminados'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+            child: Row(
               children: [
-                // ── Tab 0: Giphy temporalmente deshabilitado ─────────────
-                Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                      child: TextField(
-                        controller: _searchCtrl,
-                        decoration: InputDecoration(
-                          hintText: 'Giphy deshabilitado temporalmente...',
-                          prefixIcon: const Icon(Icons.search, size: 20),
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () {
-                                    _searchCtrl.clear();
-                                    setState(() => _searchQuery = '');
-                                  },
-                                )
-                              : null,
-                        ),
-                        enabled: false,
-                        onChanged: (v) => setState(() => _searchQuery = v),
-                      ),
-                    ),
-                    const Expanded(
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text(
-                            'Giphy esta deshabilitado temporalmente en la build iOS de prueba para evitar un conflicto de dependencias.\n\nPuedes seguir usando Mis Stickers y Predeterminados.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                // ── Tab 1: Mis Stickers ───────────────────────────────────
-                StreamBuilder<List<String>>(
-                  stream: StickerService.myStickersStream(),
-                  builder: (ctx, snap) {
-                    final stickers = snap.data ?? [];
-                    return GridView.builder(
-                      padding: const EdgeInsets.all(8),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4, crossAxisSpacing: 6, mainAxisSpacing: 6,
-                      ),
-                      itemCount: stickers.length + 2,
-                      itemBuilder: (ctx, i) {
-                        if (i == 0) return _AddButton(icon: Icons.photo_library, label: 'Galería', loading: _uploading, onTap: () => _addSticker(ImageSource.gallery));
-                        if (i == 1) return _AddButton(icon: Icons.camera_alt, label: 'Cámara', loading: false, onTap: () => _addSticker(ImageSource.camera));
-                        final url = stickers[i - 2];
-                        return GestureDetector(
-                          onLongPress: () => _confirmDelete(url),
-                          onTap: () => widget.onStickerSelected(url),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.network(url, fit: BoxFit.cover,
-                              loadingBuilder: (_, child, p) => p == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.grey)),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-                GridView.builder(
-                  padding: const EdgeInsets.all(8),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 4, crossAxisSpacing: 6, mainAxisSpacing: 6,
+                const Icon(Icons.sticky_note_2_outlined, size: 18, color: ColorConstants.themeColor),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Mis stickers',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: ColorConstants.textPrimary),
                   ),
-                  itemCount: _builtIn.length,
-                  itemBuilder: (ctx, i) => GestureDetector(
-                    onTap: () => widget.onStickerSelected(_builtIn[i]),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.asset('images/${_builtIn[i]}.gif', fit: BoxFit.cover),
-                    ),
-                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _importingPack ? null : _importZipPack,
+                  icon: _importingPack
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.archive_outlined, size: 16),
+                  label: const Text('Importar ZIP'),
+                  style: TextButton.styleFrom(foregroundColor: ColorConstants.themeColor),
                 ),
               ],
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<List<String>>(
+              stream: StickerService.myStickersStream(),
+              builder: (ctx, snap) {
+                final stickers = snap.data ?? [];
+                return GridView.builder(
+                  padding: const EdgeInsets.all(8),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    crossAxisSpacing: 6,
+                    mainAxisSpacing: 6,
+                  ),
+                  itemCount: stickers.length + 2,
+                  itemBuilder: (ctx, i) {
+                    if (i == 0) {
+                      return _AddButton(
+                        icon: Icons.photo_library,
+                        label: 'Galeria',
+                        loading: _uploading,
+                        onTap: () => _addSticker(ImageSource.gallery),
+                      );
+                    }
+                    if (i == 1) {
+                      return _AddButton(
+                        icon: Icons.camera_alt,
+                        label: 'Camara',
+                        loading: false,
+                        onTap: () => _addSticker(ImageSource.camera),
+                      );
+                    }
+
+                    final url = stickers[i - 2];
+                    return GestureDetector(
+                      onLongPress: () => _confirmDelete(url),
+                      onTap: () => widget.onStickerSelected(url),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (_, child, p) =>
+                              p == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.grey),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
           ),
         ],

@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/app_constants.dart';
 import '../constants/firestore_constants.dart';
-import 'chat_page.dart';
+import 'chat_page.dart' show ChatPage, ChatPageArguments;
 
 /// Shows active orders (created by this agent/executive) that have a motoboy
 /// assigned.  Tapping an order opens a Firebase chat with the motoboy using
@@ -22,6 +22,8 @@ class TempChatsPage extends StatefulWidget {
 class _TempChatsPageState extends State<TempChatsPage> with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
+
+  static const Set<String> _allowedCreatorRoleIds = {'1', '5', '6', '9'};
 
   List<Map<String, dynamic>> _orders = [];
   bool _loading = true;
@@ -45,6 +47,17 @@ class _TempChatsPageState extends State<TempChatsPage> with AutomaticKeepAliveCl
   Future<void> _loadOrders() async {
     final prefs = await SharedPreferences.getInstance();
     final lamanoUserId = prefs.getString(FirestoreConstants.lamanoUserId) ?? '0';
+    final rolId = prefs.getString(FirestoreConstants.rolId) ?? '';
+
+    if (!_allowedCreatorRoleIds.contains(rolId)) {
+      if (!mounted) return;
+      setState(() {
+        _orders = [];
+        _loading = false;
+        _error = 'Esta sección solo está disponible para quien crea órdenes.';
+      });
+      return;
+    }
 
     try {
       final uri = Uri.parse(

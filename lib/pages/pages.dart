@@ -9,6 +9,7 @@ export 'full_video_page.dart';
 export 'group_chat_page.dart';
 export 'recent_chats_page.dart';
 export 'group_live_map_page.dart';
+export 'location_share_picker_page.dart';
 export 'home_page.dart';
 export 'gps_vivo_page.dart';
 export 'caminador_page.dart';
