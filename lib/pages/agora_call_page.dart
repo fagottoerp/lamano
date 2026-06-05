@@ -54,6 +54,11 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   Timer? _durationTimer;
   StreamSubscription? _callStatusSub;
 
+  void _setError(String msg) {
+    _log(msg);
+    if (mounted) setState(() => _errorMessage = msg);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -63,14 +68,30 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   }
 
   Future<void> _requestPermissionsAndInit() async {
-    _log('Solicitando permisos...');
-    final List<Permission> perms = [Permission.microphone];
-    if (widget.isVideo) perms.add(Permission.camera);
-    final results = await perms.request();
-    for (final e in results.entries) {
-      _log('Permiso ${e.key}: ${e.value}');
+    try {
+      _log('Solicitando permisos...');
+      final List<Permission> perms = [Permission.microphone];
+      if (widget.isVideo) perms.add(Permission.camera);
+      final results = await perms.request();
+      for (final e in results.entries) {
+        _log('Permiso ${e.key}: ${e.value}');
+      }
+      final micStatus = await Permission.microphone.status;
+      if (!micStatus.isGranted) {
+        _setError('Error permisos: micrófono no concedido ($micStatus)');
+        return;
+      }
+      if (widget.isVideo) {
+        final camStatus = await Permission.camera.status;
+        if (!camStatus.isGranted) {
+          _setError('Error permisos: cámara no concedida ($camStatus)');
+          return;
+        }
+      }
+      await _initAgora();
+    } catch (e) {
+      _setError('Error permisos: $e');
     }
-    await _initAgora();
   }
 
   void _log(String msg) {
@@ -187,30 +208,38 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
 
       final token = await _fetchToken(widget.callId);
       final tokenArg = token.isEmpty ? null : token;
+      if (tokenArg == null) {
+        _setError('Error token: no llegó token de Agora');
+        return;
+      }
 
-      _log('joinChannel: ${widget.callId} token=${tokenArg != null ? "OK" : "NULL"}');
-      await _engine.joinChannel(
-        token: tokenArg ?? '',
-        channelId: widget.callId,
-        uid: 0,
-        options: ChannelMediaOptions(
-          channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
-          clientRoleType: ClientRoleType.clientRoleBroadcaster,
-          publishMicrophoneTrack: true,
-          publishCameraTrack: widget.isVideo,
-          autoSubscribeAudio: true,
-          autoSubscribeVideo: widget.isVideo,
-        ),
-      );
-      _log('joinChannel llamado (esperando callback)...');
+      _log('joinChannel: ${widget.callId} token=OK');
+      try {
+        await _engine.joinChannel(
+          token: tokenArg,
+          channelId: widget.callId,
+          uid: 0,
+          options: ChannelMediaOptions(
+            channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+            clientRoleType: ClientRoleType.clientRoleBroadcaster,
+            publishMicrophoneTrack: true,
+            publishCameraTrack: widget.isVideo,
+            autoSubscribeAudio: true,
+            autoSubscribeVideo: widget.isVideo,
+          ),
+        );
+        _log('joinChannel llamado (esperando callback)...');
+      } catch (e) {
+        _setError('Init error joinChannel: $e');
+        return;
+      }
 
       // Configurar speaker/video después del join
       if (!widget.isVideo) await _engine.disableVideo();
       await _engine.setEnableSpeakerphone(_speakerOn);
       _log('speaker OK');
     } catch (e) {
-      _log('EXCEPCION _initAgora: $e');
-      if (mounted) setState(() => _errorMessage = 'Init error: $e');
+      _setError('EXCEPCION _initAgora: $e');
     }
   }
 
@@ -471,6 +500,27 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
                   shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
                 ),
               ),
+                      if (_logLines.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.35),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Text(
+                            _logLines.take(5).join('\n'),
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 11,
+                              height: 1.3,
+                            ),
+                            textAlign: TextAlign.left,
+                          ),
+                        ),
+                      ],
             ],
           ),
         ),
