@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
+import '../constants/app_constants.dart';
 import '../services/call_service.dart';
 
 /// Agora App ID — Register at https://console.agora.io and set this value.
@@ -56,6 +59,20 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
     await _initAgora();
   }
 
+  Future<String> _fetchToken(String channelName) async {
+    try {
+      final resp = await http.post(
+        Uri.parse(AppConstants.agoraTokenApiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'channel_name': channelName, 'uid': 0, 'role': 'publisher'}),
+      ).timeout(const Duration(seconds: 8));
+      final data = jsonDecode(resp.body);
+      return (data['token'] as String?) ?? '';
+    } catch (_) {
+      return ''; // fallback: no-token (testing mode)
+    }
+  }
+
   Future<void> _initAgora() async {
     _engine = createAgoraRtcEngine();
     await _engine.initialize(RtcEngineContext(
@@ -95,8 +112,10 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
 
     await _engine.setEnableSpeakerphone(_speakerOn);
 
+    final token = await _fetchToken(widget.callId);
+
     await _engine.joinChannel(
-      token: '',   // empty = testing mode (no token auth). Set real token for production.
+      token: token,
       channelId: widget.callId,
       uid: 0,      // 0 = auto-assigned by Agora
       options: const ChannelMediaOptions(

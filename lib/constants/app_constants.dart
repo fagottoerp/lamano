@@ -10,4 +10,5 @@ class AppConstants {
   static const motoboyOrdersApiUrl = 'http://38.247.147.220/lamano/api_motoboy_orders.php';
   static const agentOrdersChatApiUrl = 'http://38.247.147.220/lamano/api_agent_orders_chat.php';
   static const callPushApiUrl = 'http://38.247.147.220/lamano/api_send_call_push.php';
+  static const agoraTokenApiUrl = 'http://38.247.147.220/lamano/api_agora_token.php';
 }
