@@ -18,7 +18,6 @@ import 'package:flutter_chat_demo/utils/panic_alert_service.dart';
 import 'package:flutter_chat_demo/pages/caminador_page.dart';
 import 'package:flutter_chat_demo/pages/chat_page.dart' show ChatPage, ChatPageArguments;
 import 'package:flutter_chat_demo/pages/group_chat_page.dart';
-import 'package:flutter_chat_demo/pages/incoming_call_page.dart';
 import 'package:flutter_chat_demo/pages/login_page.dart';
 import 'package:flutter_chat_demo/pages/settings_page.dart';
 import 'package:flutter_chat_demo/pages/stories_page.dart' show StoriesPage, StoryViewPage;
@@ -178,17 +177,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         print('push_latency_fcm_ms: ${nowMs - dispatchedAtMs}');
       }
 
-      // ── Incoming call push while app is in FOREGROUND ───────────────────
-      if (message.data['type'] == 'incoming_call') {
-        _showIncomingCallScreen(
-          roomName:   message.data['room_name']   ?? '',
-          callerName: message.data['caller_name'] ?? 'Alguien',
-          callerUid:  message.data['caller_uid']  ?? '',
-          isVideo:    message.data['is_video']    == 'true',
-        );
-        return;
-      }
-
       if (message.notification != null) {
         final idFrom = message.data['idFrom'] ?? '';
         final groupChatId = message.data['groupChatId'] ?? '';
@@ -254,21 +242,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       settings: initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         final payload = response.payload ?? '';
-        if (payload.startsWith('call|')) {
-          final parts = payload.split('|');
-          if (parts.length >= 4) {
-            final roomName   = parts[1];
-            final callerName = parts[2];
-            final isVideo    = parts[3] == '1';
-            if (response.actionId == 'accept' || response.actionId == null) {
-              _showIncomingCallScreen(
-                roomName: roomName, callerName: callerName,
-                callerUid: '', isVideo: isVideo,
-              );
-            }
-          }
-          return;
-        }
         if (payload.isNotEmpty) _navigateToChatFromPayload(payload);
       },
     );
@@ -299,15 +272,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     // Handle notification tap when app was in background (notification tray)
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      if (message.data['type'] == 'incoming_call') {
-        _showIncomingCallScreen(
-          roomName:   message.data['room_name']   ?? '',
-          callerName: message.data['caller_name'] ?? 'Alguien',
-          callerUid:  message.data['caller_uid']  ?? '',
-          isVideo:    message.data['is_video']    == 'true',
-        );
-        return;
-      }
       final idFrom = message.data['idFrom'] ?? '';
       final groupChatId = message.data['groupChatId'] ?? '';
       final senderName = message.data['senderName'] as String? ?? '';
@@ -319,43 +283,8 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Handle notification tap when app was TERMINATED
     FirebaseMessaging.instance.getInitialMessage().then((message) {
       if (message == null) return;
-      if (message.data['type'] == 'incoming_call') {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _showIncomingCallScreen(
-            roomName:   message.data['room_name']   ?? '',
-            callerName: message.data['caller_name'] ?? 'Alguien',
-            callerUid:  message.data['caller_uid']  ?? '',
-            isVideo:    message.data['is_video']    == 'true',
-          );
-        });
-      }
     });
 
-  }
-
-  void _showIncomingCallScreen({
-    required String roomName,
-    required String callerName,
-    required String callerUid,
-    required bool isVideo,
-  }) {
-    if (!mounted || roomName.isEmpty) return;
-    // Cancel ongoing call notification if any
-    _flutterLocalNotificationsPlugin.cancel(id: 9999);
-    // Limpiar acumulador de notificaciones (el usuario abrió la app)
-    _pendingNotifs.clear();
-    _flutterLocalNotificationsPlugin.cancelAll();
-    Navigator.of(context).push(MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (_) => IncomingCallPage(
-        args: IncomingCallArgs(
-          roomName:   roomName,
-          callerName: callerName,
-          callerUid:  callerUid,
-          isVideo:    isVideo,
-        ),
-      ),
-    ));
   }
 
   void _navigateToChatFromPayload(String payload) {

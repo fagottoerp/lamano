@@ -15,9 +15,9 @@ import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/providers.dart';
 import 'package:flutter_chat_demo/utils/utilities.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
-import 'package:flutter_chat_demo/widgets/sticker_picker.dart';
 import 'package:flutter_chat_demo/widgets/rainbow_text.dart';
 import 'package:flutter_chat_demo/widgets/location_map_bubble.dart';
+import 'package:flutter_chat_demo/widgets/sticker_picker.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
@@ -51,8 +51,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   File? _imageFile;
   bool _isLoading = false;
-  bool _isShowSticker = false;
   bool _showAttachPanel = false;
+  bool _showStickerPanel = false;
   String _imageUrl = '';
 
   // Reply to message
@@ -83,6 +83,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   // Audio recording & playback
   final _audioRecorder = AudioRecorder();
   final _audioPlayer = AudioPlayer();
+  StreamSubscription<PlayerState>? _audioStateSub;
   bool _isRecording = false;
   String? _recordingPath;
   int _recordSeconds = 0;
@@ -128,6 +129,11 @@ class _GroupChatPageState extends State<GroupChatPage> {
     super.initState();
     _focusNode.addListener(_onFocusChange);
     _listScrollController.addListener(_scrollListener);
+    _audioStateSub = _audioPlayer.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed && mounted) {
+        setState(() => _playingUrl = null);
+      }
+    });
     _currentUserId = _authProvider.userFirebaseId ?? '';
     _currentNickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
     _currentRolId = _authProvider.prefs.getString(FirestoreConstants.rolId) ?? '';
@@ -468,6 +474,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _recordTimer?.cancel();
     _chatProvider.setTyping(widget.arguments.groupId, _currentUserId, false);
     for (final c in _videoControllers.values) { c.dispose(); }
+    _audioStateSub?.cancel();
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     _chatInputController.dispose();
@@ -500,9 +507,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   }
 
   void _onFocusChange() {
-    if (_focusNode.hasFocus) {
-      setState(() => _isShowSticker = false);
-    }
+    if (_focusNode.hasFocus) {}
   }
 
   Future<bool> _pickImage({ImageSource source = ImageSource.gallery}) async {
@@ -517,6 +522,30 @@ class _GroupChatPageState extends State<GroupChatPage> {
         _imageFile = File(pickedXFile.path);
         _isLoading = true;
       });
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> _pickVideo({ImageSource source = ImageSource.camera}) async {
+    final imagePicker = ImagePicker();
+    final pickedXFile = await imagePicker.pickVideo(source: source).catchError((err) {
+      Fluttertoast.showToast(msg: err.toString());
+      return null;
+    });
+    if (pickedXFile != null) {
+      setState(() => _isLoading = true);
+      try {
+        final file = File(pickedXFile.path);
+        final fileName = 'chat_videos/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        final snap = await _chatProvider.uploadFile(file, fileName);
+        final url = await snap.ref.getDownloadURL();
+        _onSendMessage(url, TypeMessage.video);
+      } catch (e) {
+        Fluttertoast.showToast(msg: 'Error al subir video');
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
       return true;
     }
     return false;
@@ -547,19 +576,43 @@ class _GroupChatPageState extends State<GroupChatPage> {
   }
 
   Future<void> _pickAndSendVideo() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.video);
-    if (result == null || result.files.single.path == null) return;
+    await _pickVideo(source: ImageSource.camera);
+  }
+
+  Future<void> _pickAndSendDocument() async {
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(type: FileType.any, allowMultiple: false);
+    } catch (_) {
+      Fluttertoast.showToast(msg: 'Error al abrir documentos');
+      return;
+    }
+    if (result == null || result.files.isEmpty) return;
+
+    final picked = result.files.first;
+    final path = picked.path;
+    if (path == null || path.isEmpty) {
+      Fluttertoast.showToast(msg: 'No se pudo leer el archivo');
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
-      final file = File(result.files.single.path!);
-      final fileName = 'chat_videos/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}.mp4';
-      final snap = await _chatProvider.uploadFile(file, fileName);
-      final url = await snap.ref.getDownloadURL();
-      _onSendMessage(url, TypeMessage.video);
-    } catch (e) {
-      Fluttertoast.showToast(msg: 'Error al subir video');
+      final file = File(path);
+      final safeName = picked.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final remoteName = 'chat_docs/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}_$safeName';
+      final snapshot = await _chatProvider.uploadFile(file, remoteName);
+      if (snapshot.state != TaskState.success) {
+        Fluttertoast.showToast(msg: 'Error al subir documento');
+        return;
+      }
+      final url = await snapshot.ref.getDownloadURL();
+      _onSendMessage('Documento: ${picked.name}\n$url', TypeMessage.text);
+    } catch (_) {
+      Fluttertoast.showToast(msg: 'Error al subir documento');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-    setState(() => _isLoading = false);
   }
 
   Future<void> _uploadFile() async {
@@ -680,11 +733,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
         await groupRef.update(updates);
       } catch (_) {}
     }();
-  }
-
-  void _getSticker() {
-    _focusNode.unfocus();
-    setState(() => _isShowSticker = !_isShowSticker);
   }
 
   Future<void> _startRecording() async {
@@ -952,85 +1000,45 @@ class _GroupChatPageState extends State<GroupChatPage> {
     required bool isVideo,
   }) async {
     try {
-      final groupId = widget.arguments.groupId;
-      final groupName = widget.arguments.groupName;
-
-      // 1. Obtener lista de miembros del grupo
-      final groupSnap = await FirebaseFirestore.instance
+      final groupDoc = await FirebaseFirestore.instance
           .collection('groups')
-          .doc(groupId)
+          .doc(widget.arguments.groupId)
           .get();
-      final members = ((groupSnap.data()?['members'] as List?) ?? [])
+      final members = ((groupDoc.data()?['members'] as List?) ?? [])
           .map((e) => e.toString())
-          .where((uid) => uid != _currentUserId)
+          .where((uid) => uid.isNotEmpty && uid != _currentUserId)
           .toList();
+      if (members.isEmpty) return;
 
-      // 2. Para cada miembro, obtener pushToken y enviar FCM
+      final callerName = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? _currentNickname;
+
       for (final uid in members) {
-        final userSnap = await FirebaseFirestore.instance
-            .collection(FirestoreConstants.pathUserCollection)
-            .doc(uid)
-            .get();
-        final pushToken = userSnap.data()?['pushToken'] as String?;
-        if (pushToken == null || pushToken.isEmpty) continue;
+        try {
+          final userDoc = await FirebaseFirestore.instance
+              .collection(FirestoreConstants.pathUserCollection)
+              .doc(uid)
+              .get();
+          final pushToken = (userDoc.data()?['pushToken'] as String? ?? '').trim();
+          if (pushToken.isEmpty) continue;
 
-        http.post(
-          Uri.parse('http://38.247.147.220/lamano/api_send_call_push.php'),
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode({
-            'push_token':  pushToken,
-            'caller_name': '$_currentNickname (Grupo: $groupName)',
-            'caller_uid':  _currentUserId,
-            'room_name':   roomName,
-            'is_video':    isVideo,
-          }),
-        ).timeout(const Duration(seconds: 10));
+          await http.post(
+            Uri.parse(AppConstants.callPushApiUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'push_token': pushToken,
+              'caller_name': '${callerName} (${widget.arguments.groupName})',
+              'caller_uid': _currentUserId,
+              'room_name': roomName,
+              'is_video': isVideo,
+            }),
+          ).timeout(const Duration(seconds: 10));
+        } catch (_) {}
       }
-    } catch (_) {
-      // Push es best-effort
-    }
+    } catch (_) {}
   }
 
   Future<void> _startGroupJitsiCall({required bool videoMuted}) async {
-    // Check current permission status first
-    var micStatus = await Permission.microphone.status;
-    var camStatus = videoMuted ? PermissionStatus.granted : await Permission.camera.status;
-    
-    // Request only if not already granted
-    if (!micStatus.isGranted) micStatus = await Permission.microphone.request();
-    if (!videoMuted && !camStatus.isGranted) camStatus = await Permission.camera.request();
-    
-    // Abort if still not granted
-    if (!micStatus.isGranted || !camStatus.isGranted) {
-      Fluttertoast.showToast(
-        msg: videoMuted
-            ? 'Debes permitir el micrófono para llamar'
-            : 'Debes permitir cámara y micrófono para videollamar',
-        toastLength: Toast.LENGTH_LONG,
-      );
-      return;
-    }
-
-    final groupId = widget.arguments.groupId;
-    final groupName = widget.arguments.groupName;
-    final roomName = 'grupo_${groupId}_${DateTime.now().millisecondsSinceEpoch}';
-    final callType = videoMuted ? TypeMessage.audioCall : TypeMessage.videoCall;
-
-    _sendGroupMessage(roomName, callType);
-    _sendGroupCallPush(roomName: roomName, isVideo: !videoMuted);
-
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => LiveKitCallPage(
-          roomName: roomName,
-          callerName: groupName,
-          isVideo: !videoMuted,
-        ),
-      ),
-    );
+    // Llamadas temporalmente deshabilitadas
   }
 
   Widget _buildGroupCallBubble(String roomName, {required bool isVideo}) {
@@ -1041,46 +1049,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
       decoration: BoxDecoration(
         color: const Color(0xFF1A3A2A),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF00E65A), width: 1),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(isVideo ? Icons.videocam : Icons.call,
-                  color: const Color(0xFF00E65A), size: 18),
-              const SizedBox(width: 6),
-              Text(
-                isVideo ? 'Videollamada grupal' : 'Llamada grupal',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  fullscreenDialog: true,
-                  builder: (_) => LiveKitCallPage(
-                    roomName: roomName,
-                    callerName: widget.arguments.groupName,
-                    isVideo: isVideo,
-                  ),
-                ),
-              );
-            },
-            icon: const Icon(Icons.meeting_room, size: 16),
-            label: const Text('Contestar'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00E65A),
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-            ),
+          Icon(isVideo ? Icons.videocam_off : Icons.call_end,
+              color: Colors.grey, size: 18),
+          const SizedBox(width: 6),
+          Text(
+            isVideo ? 'Videollamada grupal' : 'Llamada grupal',
+            style: const TextStyle(color: Colors.grey),
           ),
         ],
       ),
@@ -1088,37 +1066,24 @@ class _GroupChatPageState extends State<GroupChatPage> {
   }
 
   Future<void> _shareLocation() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        Fluttertoast.showToast(msg: 'Activa la ubicación del teléfono');
-        return;
-      }
+    final result = await Navigator.push<LocationShareResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LocationSharePickerPage(title: 'Enviar ubicación'),
+      ),
+    );
+    if (result == null) return;
 
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        Fluttertoast.showToast(msg: 'No se concedió permiso de ubicación');
-        return;
-      }
-
-      setState(() => _isLoading = true);
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
-      final payload = jsonEncode({
-        'lat': position.latitude,
-        'lng': position.longitude,
-      });
-      setState(() => _isLoading = false);
-      _onSendMessage(payload, TypeMessage.location);
-    } catch (_) {
-      setState(() => _isLoading = false);
-      Fluttertoast.showToast(msg: 'No se pudo obtener la ubicación');
+    if (result.shareLive) {
+      await _startGroupLiveLocation();
+      return;
     }
+
+    final payload = jsonEncode({
+      'lat': result.lat,
+      'lng': result.lng,
+    });
+    _onSendMessage(payload, TypeMessage.location);
   }
 
   Map<String, double>? _parseLocationContent(String content) {
@@ -1817,12 +1782,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
               } else {
                 if (mounted) setState(() => _playingUrl = url);
                 await _audioPlayer.setUrl(url);
-                _audioPlayer.play();
-                _audioPlayer.playerStateStream.listen((state) {
-                  if (state.processingState == ProcessingState.completed && mounted) {
-                    setState(() => _playingUrl = null);
-                  }
-                });
+                await _audioPlayer.play();
               }
             },
             child: Icon(
@@ -1928,9 +1888,25 @@ class _GroupChatPageState extends State<GroupChatPage> {
       } else if (type == TypeMessage.video) {
         return _buildVideoBubble(content);
       } else if (type == TypeMessage.location) {
-        return LocationMapBubble(payload: content, isMe: isMe, live: false);
+        return LocationMapBubble(
+          payload: content,
+          isMe: isMe,
+          live: false,
+          groupId: widget.arguments.groupId,
+          groupName: widget.arguments.groupName,
+          currentUserId: _currentUserId,
+          currentUserName: _currentNickname,
+        );
       } else if (type == TypeMessage.liveLocation) {
-        return LocationMapBubble(payload: content, isMe: isMe, live: true);
+        return LocationMapBubble(
+          payload: content,
+          isMe: isMe,
+          live: true,
+          groupId: widget.arguments.groupId,
+          groupName: widget.arguments.groupName,
+          currentUserId: _currentUserId,
+          currentUserName: _currentNickname,
+        );
       } else if (type == TypeMessage.audio) {
         return _buildAudioBubble(content, isMe: isMe);
       } else if (type == TypeMessage.videoCall || type == TypeMessage.audioCall) {
@@ -2167,18 +2143,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
         centerTitle: false,
         actions: [
           _buildTopAction(
-            icon: Icons.call,
-            tooltip: 'Llamada grupal',
-            onTap: () => _startGroupJitsiCall(videoMuted: true),
-          ),
-          _buildTopAction(
-            icon: Icons.videocam,
-            tooltip: 'Videollamada grupal',
-            onTap: () => _startGroupJitsiCall(videoMuted: false),
-          ),
-          _buildTopAction(
             icon: Icons.more_vert,
             tooltip: 'Más opciones',
+            iconColor: Colors.black,
             onTap: () {
               showMenu<String>(
                 context: context,
@@ -2296,7 +2263,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
                       ),
                     ),
                   _buildListMessage(),
-                  if (_isShowSticker) _buildStickers(),
                   _buildInput(),
                 ],
               ),
@@ -2648,6 +2614,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
             ),
           // Quick alert panel
           if (_showAlertPanel) _buildQuickAlertPanel(),
+          if (_showStickerPanel)
+            StickerPicker(
+              onStickerSelected: (stickerUrl) {
+                setState(() => _showStickerPanel = false);
+                _onSendMessage(stickerUrl, TypeMessage.image);
+              },
+            ),
           if (_showAttachPanel)
             Container(
               margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
@@ -2665,11 +2638,15 @@ class _GroupChatPageState extends State<GroupChatPage> {
                 children: [
                   _buildAttachOption(Icons.insert_drive_file_outlined, 'Documento', () {
                     setState(() => _showAttachPanel = false);
-                    Fluttertoast.showToast(msg: 'Documentos próximamente');
+                    _pickAndSendDocument();
                   }),
                   _buildAttachOption(Icons.camera_alt_outlined, 'Cámara', () {
                     setState(() => _showAttachPanel = false);
                     _pickImage(source: ImageSource.camera).then((ok) { if (ok) _uploadFile(); });
+                  }),
+                  _buildAttachOption(Icons.videocam_outlined, 'Video', () {
+                    setState(() => _showAttachPanel = false);
+                    _pickAndSendVideo();
                   }),
                   _buildAttachOption(Icons.photo_outlined, 'Galería', () {
                     setState(() => _showAttachPanel = false);
@@ -2681,7 +2658,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                   }),
                   _buildAttachOption(Icons.location_on_outlined, 'Ubicación', () {
                     setState(() => _showAttachPanel = false);
-                    _startGroupLiveLocation();
+                    _shareLocation();
                   }),
                   _buildAttachOption(Icons.warning_amber_rounded, 'Alerta', () {
                     _focusNode.unfocus();
@@ -2707,14 +2684,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 6),
                     child: Row(
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.emoji_emotions_outlined, color: ColorConstants.textSecondary, size: 21),
-                          onPressed: _getSticker,
-                        ),
                         Expanded(
                           child: TextField(
                             onTapOutside: (_) => Utilities.closeKeyboard(),
-                            onTap: () => setState(() => _showAttachPanel = false),
+                            onTap: () => setState(() {
+                              _showAttachPanel = false;
+                              _showStickerPanel = false;
+                            }),
                             onChanged: _onTypingChanged,
                             textInputAction: TextInputAction.send,
                             onSubmitted: (_) {
@@ -2732,10 +2708,24 @@ class _GroupChatPageState extends State<GroupChatPage> {
                           ),
                         ),
                         IconButton(
+                          icon: const Icon(Icons.emoji_emotions_outlined, color: ColorConstants.textSecondary, size: 20),
+                          onPressed: () {
+                            _focusNode.unfocus();
+                            setState(() {
+                              _showAlertPanel = false;
+                              _showAttachPanel = false;
+                              _showStickerPanel = !_showStickerPanel;
+                            });
+                          },
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.attach_file_rounded, color: ColorConstants.textSecondary, size: 20),
                           onPressed: () {
                             _focusNode.unfocus();
-                            setState(() => _showAttachPanel = !_showAttachPanel);
+                            setState(() {
+                              _showStickerPanel = false;
+                              _showAttachPanel = !_showAttachPanel;
+                            });
                           },
                         ),
                         IconButton(
@@ -2787,7 +2777,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
   }
 
-  Widget _buildTopAction({required IconData icon, required VoidCallback onTap, required String tooltip}) {
+  Widget _buildTopAction({required IconData icon, required VoidCallback onTap, required String tooltip, Color? iconColor}) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
       decoration: BoxDecoration(
@@ -2795,7 +2785,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: IconButton(
-        icon: Icon(icon, color: const Color(0xFF22C58B), size: 20),
+        icon: Icon(icon, color: iconColor ?? const Color(0xFF22C58B), size: 20),
         tooltip: tooltip,
         splashRadius: 18,
         onPressed: onTap,
@@ -2826,14 +2816,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
   }
 
-  Widget _buildStickers() {
-    return StickerPicker(
-      onStickerSelected: (sticker) {
-        _onSendMessage(sticker, TypeMessage.sticker);
-        setState(() => _isShowSticker = false);
-      },
-    );
-  }
 }
 
 class GroupChatArguments {

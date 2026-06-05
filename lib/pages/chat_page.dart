@@ -15,9 +15,9 @@ import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/providers.dart';
 import 'package:flutter_chat_demo/utils/utilities.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
-import 'package:flutter_chat_demo/widgets/sticker_picker.dart';
 import 'package:flutter_chat_demo/widgets/rainbow_text.dart';
 import 'package:flutter_chat_demo/widgets/location_map_bubble.dart';
+import 'package:flutter_chat_demo/widgets/sticker_picker.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:fluttertoast/fluttertoast.dart';
@@ -56,8 +56,8 @@ class ChatPageState extends State<ChatPage> {
 
   File? _imageFile;
   bool _isLoading = false;
-  bool _isShowSticker = false;
   bool _showAttachPanel = false;
+  bool _showStickerPanel = false;
   String _imageUrl = "";
 
   // Live location
@@ -74,6 +74,7 @@ class ChatPageState extends State<ChatPage> {
 
   // Audio playback
   final _audioPlayer = AudioPlayer();
+  StreamSubscription<PlayerState>? _audioStateSub;
   String? _playingUrl;
 
   // Incoming call detection
@@ -123,6 +124,11 @@ class ChatPageState extends State<ChatPage> {
     super.initState();
     _focusNode.addListener(_onFocusChange);
     _listScrollController.addListener(_scrollListener);
+    _audioStateSub = _audioPlayer.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed && mounted) {
+        setState(() => _playingUrl = null);
+      }
+    });
     _readLocal();
     _loadMyBubbleColor();
   }
@@ -262,12 +268,7 @@ class ChatPageState extends State<ChatPage> {
   }
 
   void _onFocusChange() {
-    if (_focusNode.hasFocus) {
-      // Hide sticker when keyboard appear
-      setState(() {
-        _isShowSticker = false;
-      });
-    }
+    if (_focusNode.hasFocus) {}
   }
 
   void _readLocal() {
@@ -450,22 +451,70 @@ class ChatPageState extends State<ChatPage> {
     setState(() => _isLoading = false);
   }
 
+  Future<bool> _pickVideo({ImageSource source = ImageSource.camera}) async {
+    final imagePicker = ImagePicker();
+    final pickedXFile = await imagePicker.pickVideo(source: source).catchError((err) {
+      Fluttertoast.showToast(msg: err.toString());
+      return null;
+    });
+    if (pickedXFile != null) {
+      setState(() => _isLoading = true);
+      try {
+        final file = File(pickedXFile.path);
+        final fileName = 'chat_videos/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        final snapshot = await _chatProvider.uploadFile(file, fileName);
+        if (snapshot.state == TaskState.success) {
+          final url = await snapshot.ref.getDownloadURL();
+          _onSendMessage(url, TypeMessage.video);
+        }
+      } catch (e) {
+        Fluttertoast.showToast(msg: 'Error al subir video');
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _pickAndSendVideo() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.video);
-    if (result == null || result.files.single.path == null) return;
+    await _pickVideo(source: ImageSource.camera);
+  }
+
+  Future<void> _pickAndSendDocument() async {
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(type: FileType.any, allowMultiple: false);
+    } catch (_) {
+      Fluttertoast.showToast(msg: 'Error al abrir documentos');
+      return;
+    }
+    if (result == null || result.files.isEmpty) return;
+
+    final picked = result.files.first;
+    final path = picked.path;
+    if (path == null || path.isEmpty) {
+      Fluttertoast.showToast(msg: 'No se pudo leer el archivo');
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
-      final file = File(result.files.single.path!);
-      final fileName = 'chat_videos/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}.mp4';
-      final snap = await _chatProvider.uploadFile(file, fileName);
-      if (snap.state == TaskState.success) {
-        final url = await snap.ref.getDownloadURL();
-        _onSendMessage(url, TypeMessage.video);
+      final file = File(path);
+      final safeName = picked.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final remoteName = 'chat_docs/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}_$safeName';
+      final snapshot = await _chatProvider.uploadFile(file, remoteName);
+      if (snapshot.state != TaskState.success) {
+        Fluttertoast.showToast(msg: 'Error al subir documento');
+        return;
       }
-    } catch (e) {
-      Fluttertoast.showToast(msg: 'Error al subir video');
+      final url = await snapshot.ref.getDownloadURL();
+      _onSendMessage('Documento: ${picked.name}\n$url', TypeMessage.text);
+    } catch (_) {
+      Fluttertoast.showToast(msg: 'Error al subir documento');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-    setState(() => _isLoading = false);
   }
 
   Future<void> _makeCall() async {
@@ -636,14 +685,6 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _getSticker() {
-    // Hide keyboard when sticker appear
-    _focusNode.unfocus();
-    setState(() {
-      _isShowSticker = !_isShowSticker;
-    });
-  }
-
   // ── Live Location ──────────────────────────────────────────
   Future<void> _toggleLiveLocation() async {
     try {
@@ -674,34 +715,33 @@ class ChatPageState extends State<ChatPage> {
       return;
     }
     try {
-
-    // Create live location doc in Firestore
-    final docId = '${_groupChatId}_$_currentUserId';
-    await FirebaseFirestore.instance
-        .collection(FirestoreConstants.pathLiveLocations)
-        .doc(docId)
-        .set({'active': true, 'lat': 0.0, 'lng': 0.0, 'fromId': _currentUserId, 'chatId': _groupChatId});
-
-    // Send a message of type liveLocation (content = docId)
-    _onSendMessage(docId, TypeMessage.liveLocation);
-
-    setState(() {
-      _isSharingLiveLocation = true;
-      _activeLiveLocationDocId = docId;
-    });
-
-    _liveLocationSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
-    ).listen((pos) {
-      FirebaseFirestore.instance
+      // Create live location doc in Firestore
+      final docId = '${_groupChatId}_$_currentUserId';
+      await FirebaseFirestore.instance
           .collection(FirestoreConstants.pathLiveLocations)
           .doc(docId)
-          .update({'lat': pos.latitude, 'lng': pos.longitude});
-    }, onError: (e) {
-      Fluttertoast.showToast(msg: 'Error GPS stream: $e');
-    });
+          .set({'active': true, 'lat': 0.0, 'lng': 0.0, 'fromId': _currentUserId, 'chatId': _groupChatId});
 
-    Fluttertoast.showToast(msg: 'Compartiendo ubicación en vivo...');
+      // Send a message of type liveLocation (content = docId)
+      _onSendMessage(docId, TypeMessage.liveLocation);
+
+      setState(() {
+        _isSharingLiveLocation = true;
+        _activeLiveLocationDocId = docId;
+      });
+
+      _liveLocationSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
+      ).listen((pos) {
+        FirebaseFirestore.instance
+            .collection(FirestoreConstants.pathLiveLocations)
+            .doc(docId)
+            .update({'lat': pos.latitude, 'lng': pos.longitude});
+      }, onError: (e) {
+        Fluttertoast.showToast(msg: 'Error GPS stream: $e');
+      });
+
+      Fluttertoast.showToast(msg: 'Compartiendo ubicación en vivo...');
     } catch (e) {
       Fluttertoast.showToast(msg: 'Error al iniciar ubicación en vivo: $e');
     }
@@ -775,87 +815,31 @@ class ChatPageState extends State<ChatPage> {
     Fluttertoast.showToast(msg: 'Grabación cancelada');
   }
 
-  Future<void> _startJitsiCall({bool videoMuted = true}) async {
-    // Check current permission status first
-    var micStatus = await Permission.microphone.status;
-    var camStatus = videoMuted ? PermissionStatus.granted : await Permission.camera.status;
-    
-    // Request only if not already granted
-    if (!micStatus.isGranted) micStatus = await Permission.microphone.request();
-    if (!videoMuted && !camStatus.isGranted) camStatus = await Permission.camera.request();
-    
-    // Abort if still not granted
-    if (!micStatus.isGranted || !camStatus.isGranted) {
-      Fluttertoast.showToast(
-        msg: videoMuted
-            ? 'Debes permitir el micrófono para llamar'
-            : 'Debes permitir cámara y micrófono para videollamar',
-        toastLength: Toast.LENGTH_LONG,
-      );
-      return;
-    }
-
-    final myNickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
-    final ids = [_currentUserId, widget.arguments.peerId]..sort();
-    final roomName = 'lamano_${ids.join('_')}';
-
-    // Enviar mensaje de llamada al chat para notificar al receptor
-    final callType = videoMuted ? TypeMessage.audioCall : TypeMessage.videoCall;
-    _onSendMessage(roomName, callType);
-
-    // ── FCM push al receptor (funciona aunque tenga la app cerrada) ─────────
-    _sendCallPushToPeer(
-      roomName: roomName,
-      callerName: myNickname,
-      callerUid: _currentUserId,
-      isVideo: !videoMuted,
-    );
-
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => LiveKitCallPage(
-          roomName: roomName,
-          callerName: widget.arguments.peerNickname,
-          isVideo: !videoMuted,
-        ),
-      ),
-    );
-  }
-
-  /// Sends FCM push to peer so they see an incoming-call screen even if the
-  /// app is in background / terminated.
-  Future<void> _sendCallPushToPeer({
+  Future<void> _sendDirectCallPush({
     required String roomName,
     required String callerName,
-    required String callerUid,
     required bool isVideo,
   }) async {
     try {
-      // Fetch peer's FCM push token from Firestore
       final peerDoc = await FirebaseFirestore.instance
           .collection(FirestoreConstants.pathUserCollection)
           .doc(widget.arguments.peerId)
           .get();
-      final pushToken = peerDoc.data()?['pushToken'] as String?;
-      if (pushToken == null || pushToken.isEmpty) return;
+      final pushToken = (peerDoc.data()?['pushToken'] as String? ?? '').trim();
+      if (pushToken.isEmpty) return;
 
       await http.post(
-        Uri.parse('http://38.247.147.220/lamano/api_send_call_push.php'),
+        Uri.parse(AppConstants.callPushApiUrl),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'push_token':  pushToken,
+        body: jsonEncode({
+          'push_token': pushToken,
           'caller_name': callerName,
-          'caller_uid':  callerUid,
-          'room_name':   roomName,
-          'is_video':    isVideo,
+          'caller_uid': _currentUserId,
+          'room_name': roomName,
+          'is_video': isVideo,
         }),
       ).timeout(const Duration(seconds: 10));
-    } catch (_) {
-      // FCM push is best-effort; Firestore message is the fallback
-    }
+    } catch (_) {}
   }
 
   Widget _buildCallBubble(String roomName, {required bool isVideo, required bool isMe}) {
@@ -866,53 +850,19 @@ class ChatPageState extends State<ChatPage> {
         color: isMe ? ColorConstants.bgSent : ColorConstants.bgReceived,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isVideo ? Icons.videocam : Icons.call,
-                color: isMe ? Colors.black87 : ColorConstants.textPrimary,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                isVideo ? 'Videollamada' : 'Llamada de voz',
-                style: TextStyle(
-                  color: isMe ? Colors.black87 : ColorConstants.textPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+          Icon(
+            isVideo ? Icons.videocam_off : Icons.call_end,
+            color: Colors.grey,
+            size: 20,
           ),
-          if (!isMe) ...[
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    fullscreenDialog: true,
-                    builder: (_) => LiveKitCallPage(
-                      roomName: roomName,
-                      callerName: widget.arguments.peerNickname,
-                      isVideo: isVideo,
-                    ),
-                  ),
-                );
-              },
-              icon: Icon(isVideo ? Icons.videocam : Icons.call, size: 16),
-              label: const Text('Contestar'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                minimumSize: const Size(0, 32),
-              ),
-            ),
-          ],
+          const SizedBox(width: 8),
+          Text(
+            isVideo ? 'Videollamada' : 'Llamada de voz',
+            style: const TextStyle(color: Colors.grey),
+          ),
         ],
       ),
     );
@@ -938,12 +888,7 @@ class ChatPageState extends State<ChatPage> {
               } else {
                 setState(() => _playingUrl = url);
                 await _audioPlayer.setUrl(url);
-                _audioPlayer.play();
-                _audioPlayer.playerStateStream.listen((state) {
-                  if (state.processingState == ProcessingState.completed && mounted) {
-                    setState(() => _playingUrl = null);
-                  }
-                });
+                  await _audioPlayer.play();
               }
             },
             child: Icon(
@@ -1055,47 +1000,24 @@ class ChatPageState extends State<ChatPage> {
   // ────────────────────────────────────────────────────────────
 
   Future<void> _shareLocation() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        Fluttertoast.showToast(msg: 'Activa la ubicación del teléfono');
-        return;
-      }
+    final result = await Navigator.push<LocationShareResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LocationSharePickerPage(title: 'Enviar ubicación'),
+      ),
+    );
+    if (result == null) return;
 
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        Fluttertoast.showToast(msg: 'No se concedió permiso de ubicación');
-        return;
-      }
-
-      setState(() {
-        _isLoading = true;
-      });
-
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
-
-      final payload = jsonEncode({
-        'lat': position.latitude,
-        'lng': position.longitude,
-      });
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      _onSendMessage(payload, TypeMessage.location);
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      Fluttertoast.showToast(msg: 'No se pudo obtener la ubicación');
+    if (result.shareLive) {
+      await _toggleLiveLocation();
+      return;
     }
+
+    final payload = jsonEncode({
+      'lat': result.lat,
+      'lng': result.lng,
+    });
+    _onSendMessage(payload, TypeMessage.location);
   }
 
   Map<String, double>? _parseLocationContent(String content) {
@@ -1840,18 +1762,9 @@ class ChatPageState extends State<ChatPage> {
         centerTitle: false,
         actions: [
           _buildTopAction(
-            icon: Icons.call,
-            tooltip: 'Llamada de voz',
-            onTap: () => _startJitsiCall(videoMuted: true),
-          ),
-          _buildTopAction(
-            icon: Icons.videocam,
-            tooltip: 'Videollamada',
-            onTap: () => _startJitsiCall(videoMuted: false),
-          ),
-          _buildTopAction(
             icon: Icons.more_vert,
             tooltip: 'Más opciones',
+            iconColor: Colors.black,
             onTap: () {
               showMenu<String>(
                 context: context,
@@ -1937,7 +1850,6 @@ class ChatPageState extends State<ChatPage> {
                       ),
                     ),
                   _buildListMessage(),
-                  _isShowSticker ? _buildStickers() : SizedBox.shrink(),
                   if (_isBlocked || _blockedByPeer)
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
@@ -2101,15 +2013,6 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildStickers() {
-    return StickerPicker(
-      onStickerSelected: (sticker) {
-        _onSendMessage(sticker, TypeMessage.sticker);
-        setState(() => _isShowSticker = false);
-      },
-    );
-  }
-
   Widget _buildStickerImage(String content) {
     if (content.startsWith('http')) {
       return Image.network(
@@ -2139,6 +2042,13 @@ class ChatPageState extends State<ChatPage> {
         children: [
           // Reply preview bar
           if (_replyTo != null) _buildReplyPreviewBar(),
+          if (_showStickerPanel)
+            StickerPicker(
+              onStickerSelected: (stickerUrl) {
+                setState(() => _showStickerPanel = false);
+                _onSendMessage(stickerUrl, TypeMessage.image);
+              },
+            ),
           if (_showAttachPanel)
             Container(
               margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
@@ -2156,7 +2066,7 @@ class ChatPageState extends State<ChatPage> {
                 children: [
                   _buildAttachOption(Icons.insert_drive_file_outlined, 'Documento', () {
                     setState(() => _showAttachPanel = false);
-                    Fluttertoast.showToast(msg: 'Documentos próximamente');
+                    _pickAndSendDocument();
                   }),
                   _buildAttachOption(Icons.camera_alt_outlined, 'Cámara', () {
                     setState(() => _showAttachPanel = false);
@@ -2197,14 +2107,13 @@ class ChatPageState extends State<ChatPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 6),
                     child: Row(
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.emoji_emotions_outlined, color: ColorConstants.textSecondary, size: 21),
-                          onPressed: _getSticker,
-                        ),
                         Expanded(
                           child: TextField(
                             onTapOutside: (_) => Utilities.closeKeyboard(),
-                            onTap: () => setState(() => _showAttachPanel = false),
+                            onTap: () => setState(() {
+                              _showAttachPanel = false;
+                              _showStickerPanel = false;
+                            }),
                             onChanged: _onTypingChanged,
                             textInputAction: TextInputAction.send,
                             onSubmitted: (_) {
@@ -2222,10 +2131,23 @@ class ChatPageState extends State<ChatPage> {
                           ),
                         ),
                         IconButton(
+                          icon: const Icon(Icons.emoji_emotions_outlined, color: ColorConstants.textSecondary, size: 20),
+                          onPressed: () {
+                            _focusNode.unfocus();
+                            setState(() {
+                              _showAttachPanel = false;
+                              _showStickerPanel = !_showStickerPanel;
+                            });
+                          },
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.attach_file_rounded, color: ColorConstants.textSecondary, size: 20),
                           onPressed: () {
                             _focusNode.unfocus();
-                            setState(() => _showAttachPanel = !_showAttachPanel);
+                            setState(() {
+                              _showStickerPanel = false;
+                              _showAttachPanel = !_showAttachPanel;
+                            });
                           },
                         ),
                         IconButton(
@@ -2280,7 +2202,7 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildTopAction({required IconData icon, required VoidCallback onTap, required String tooltip}) {
+  Widget _buildTopAction({required IconData icon, required VoidCallback onTap, required String tooltip, Color? iconColor}) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
       decoration: BoxDecoration(
@@ -2288,7 +2210,7 @@ class ChatPageState extends State<ChatPage> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: IconButton(
-        icon: Icon(icon, color: const Color(0xFF22C58B), size: 20),
+        icon: Icon(icon, color: iconColor ?? const Color(0xFF22C58B), size: 20),
         tooltip: tooltip,
         splashRadius: 18,
         onPressed: onTap,
