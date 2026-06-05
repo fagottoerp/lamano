@@ -49,6 +49,19 @@
 		<string>Lamano necesita ubicación en segundo plano para mostrarte en el mapa del equipo aunque la app esté minimizada.</string>
 		<key>NSLocationAlwaysUsageDescription</key>
 		<string>Lamano necesita ubicación en segundo plano para mostrarte en el mapa del equipo aunque la app esté minimizada.</string>
+		<key>NSAppTransportSecurity</key>
+		<dict>
+			<key>NSExceptionDomains</key>
+			<dict>
+				<key>38.247.147.220</key>
+				<dict>
+					<key>NSExceptionAllowsInsecureHTTPLoads</key>
+					<true/>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+			</dict>
+		</dict>
 		<key>UIBackgroundModes</key>
 		<array>
 			<string>fetch</string>
