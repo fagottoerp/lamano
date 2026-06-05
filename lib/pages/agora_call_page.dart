@@ -41,6 +41,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   int? _remoteUid;
   bool _engineReady = false;
   bool _callEnded = false;
+  String? _errorMessage;
   Duration _callDuration = Duration.zero;
   Timer? _durationTimer;
   StreamSubscription? _callStatusSub;
@@ -97,8 +98,15 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
             _remoteJoined = false;
             _remoteUid = null;
           });
-          // Peer left — end the call
           _hangUp();
+        }
+      },
+      onError: (err, msg) {
+        if (mounted) setState(() => _errorMessage = 'Error Agora: ${err.name} — $msg');
+      },
+      onConnectionStateChanged: (connection, state, reason) {
+        if (state == ConnectionStateType.connectionStateFailed && mounted) {
+          setState(() => _errorMessage = 'No se pudo conectar. Verifica tu conexión.');
         }
       },
     ));
@@ -146,15 +154,19 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   Future<void> _hangUp() async {
     if (_callEnded) return;
     _callEnded = true;
-    await CallService.endCall(widget.callId);
+    try { await CallService.endCall(widget.callId); } catch (_) {}
     await _endLocally();
   }
 
   Future<void> _endLocally() async {
     _durationTimer?.cancel();
     _callStatusSub?.cancel();
-    await _engine.leaveChannel();
-    await _engine.release();
+    try {
+      await _engine.leaveChannel().timeout(const Duration(seconds: 3));
+    } catch (_) {}
+    try {
+      await _engine.release().timeout(const Duration(seconds: 3));
+    } catch (_) {}
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -190,8 +202,8 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   void dispose() {
     _durationTimer?.cancel();
     _callStatusSub?.cancel();
-    _engine.leaveChannel();
-    _engine.release();
+    try { _engine.leaveChannel(); } catch (_) {}
+    try { _engine.release(); } catch (_) {}
     super.dispose();
   }
 
@@ -312,9 +324,11 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
               ),
               const SizedBox(height: 4),
               Text(
-                _remoteJoined
-                    ? _formatDuration(_callDuration)
-                    : widget.isCaller ? 'Llamando...' : 'Conectando...',
+                _errorMessage != null
+                    ? _errorMessage!
+                    : _remoteJoined
+                        ? _formatDuration(_callDuration)
+                        : widget.isCaller ? 'Llamando...' : 'Conectando...',
                 style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 14,
