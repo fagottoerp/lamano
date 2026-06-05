@@ -517,175 +517,7 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  Future<void> _makeCall() async {
-    final lamanoId = widget.arguments.peerLamanoId;
-    if (lamanoId == null || lamanoId.isEmpty) {
-      Fluttertoast.showToast(msg: 'No hay número de teléfono disponible');
-      return;
-    }
-    try {
-      final resp = await http
-          .get(Uri.parse('http://38.247.147.220/lamano/api_get_phone.php?user_id=$lamanoId'))
-          .timeout(const Duration(seconds: 8));
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final phone = data['phone'] as String? ?? '';
-      if (phone.isEmpty) {
-        Fluttertoast.showToast(msg: 'El usuario no tiene teléfono registrado');
-        return;
-      }
-      final uri = Uri(scheme: 'tel', path: phone);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      } else {
-        Fluttertoast.showToast(msg: 'No se puede iniciar la llamada');
-      }
-    } catch (_) {
-      Fluttertoast.showToast(msg: 'Error al obtener el teléfono');
-    }
-  }
-
-  Future<void> _twilioCall() async {
-    // 1. Obtener mi propio teléfono guardado
-    String myPhone = _authProvider.prefs.getString(FirestoreConstants.motoboyPhone) ?? '';
-
-    // 2. Si no lo tenemos, pedirlo
-    if (myPhone.isEmpty) {
-      final controller = TextEditingController();
-      final entered = await showDialog<String>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          title: const Row(children: [
-            Icon(Icons.phone, color: Colors.green),
-            SizedBox(width: 8),
-            Text('Tu número celular'),
-          ]),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Twilio te llamará a ti primero y luego te conecta con la otra persona.\n\n'
-                '⚠️ Ninguno ve el número real del otro — solo el número de La Mano.\n\n'
-                'Solo se pide una vez.',
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  hintText: '+56912345678',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.phone),
-                  labelText: 'Tu número',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('Cancelar')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Guardar y llamar'),
-            ),
-          ],
-        ),
-      );
-      if (entered == null || entered.isEmpty) return;
-      await _authProvider.prefs.setString(FirestoreConstants.motoboyPhone, entered);
-      myPhone = entered;
-    }
-
-    // 3. Obtener el teléfono del destinatario desde el servidor
-    final lamanoId = widget.arguments.peerLamanoId;
-    if (lamanoId == null || lamanoId.isEmpty) {
-      Fluttertoast.showToast(msg: 'No se puede obtener el teléfono del contacto');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    try {
-      final resp = await http
-          .get(Uri.parse('http://38.247.147.220/lamano/api_get_phone.php?user_id=$lamanoId'))
-          .timeout(const Duration(seconds: 10));
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final peerPhone = (data['phone'] as String? ?? '').trim();
-
-      setState(() => _isLoading = false);
-
-      if (peerPhone.isEmpty) {
-        Fluttertoast.showToast(msg: '${widget.arguments.peerNickname} no tiene teléfono registrado');
-        return;
-      }
-
-      // 4. Confirmar antes de llamar
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Row(children: [
-            Icon(Icons.phone, color: Colors.green),
-            SizedBox(width: 8),
-            Text('Llamada anónima'),
-          ]),
-          content: Text(
-            'Twilio llamará a tu teléfono y te conectará con ${widget.arguments.peerNickname}.\n\n'
-            'Ninguno verá el número real del otro.',
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.pop(context, true),
-              icon: const Icon(Icons.call),
-              label: const Text('Llamar'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return;
-
-      // 5. Iniciar llamada via Twilio
-      setState(() => _isLoading = true);
-      final callResp = await http.post(
-        Uri.parse('http://38.247.147.220/lamano/twilio_user_call.php'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'caller_phone': myPhone, 'callee_phone': peerPhone}),
-      ).timeout(const Duration(seconds: 20));
-      setState(() => _isLoading = false);
-
-      final result = jsonDecode(callResp.body) as Map<String, dynamic>;
-      if (result['success'] == true) {
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Row(children: [
-              Icon(Icons.phone_in_talk, color: Colors.green),
-              SizedBox(width: 8),
-              Text('Llamada en camino'),
-            ]),
-            content: const Text(
-              'Tu teléfono sonará en segundos.\n\n'
-              '1. Contesta la llamada de Twilio\n'
-              '2. Espera mientras conecta con el otro usuario\n\n'
-              '✅ Ninguno ve el número real del otro.',
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Entendido'),
-              ),
-            ],
-          ),
-        );
-      } else {
-        Fluttertoast.showToast(msg: result['message'] ?? 'Error al iniciar llamada');
-      }
-    } catch (e) {
-      setState(() => _isLoading = false);
-      Fluttertoast.showToast(msg: 'Error: $e');
-    }
-  }
-
-  // ── Live Location ──────────────────────────────────────────
+  // ── Live Location ──────────────────────────────────────────────────────────
   Future<void> _toggleLiveLocation() async {
     try {
       if (_isSharingLiveLocation) {
@@ -815,32 +647,7 @@ class ChatPageState extends State<ChatPage> {
     Fluttertoast.showToast(msg: 'Grabación cancelada');
   }
 
-  Future<void> _sendDirectCallPush({
-    required String roomName,
-    required String callerName,
-    required bool isVideo,
-  }) async {
-    try {
-      final peerDoc = await FirebaseFirestore.instance
-          .collection(FirestoreConstants.pathUserCollection)
-          .doc(widget.arguments.peerId)
-          .get();
-      final pushToken = (peerDoc.data()?['pushToken'] as String? ?? '').trim();
-      if (pushToken.isEmpty) return;
-
-      await http.post(
-        Uri.parse(AppConstants.callPushApiUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'push_token': pushToken,
-          'caller_name': callerName,
-          'caller_uid': _currentUserId,
-          'room_name': roomName,
-          'is_video': isVideo,
-        }),
-      ).timeout(const Duration(seconds: 10));
-    } catch (_) {}
-  }
+  Future<void> _sendDirectCallPush({required String roomName, required String callerName, required bool isVideo}) async {}
 
   Widget _buildCallBubble(String roomName, {required bool isVideo, required bool isMe}) {
     return Container(
@@ -850,19 +657,12 @@ class ChatPageState extends State<ChatPage> {
         color: isMe ? ColorConstants.bgSent : ColorConstants.bgReceived,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
+      child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            isVideo ? Icons.videocam_off : Icons.call_end,
-            color: Colors.grey,
-            size: 20,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            isVideo ? 'Videollamada' : 'Llamada de voz',
-            style: const TextStyle(color: Colors.grey),
-          ),
+          Icon(Icons.phone_disabled, color: Colors.grey, size: 18),
+          SizedBox(width: 8),
+          Text('Llamadas — Próximamente', style: TextStyle(color: Colors.grey, fontSize: 13)),
         ],
       ),
     );
@@ -1779,14 +1579,6 @@ class ChatPageState extends State<ChatPage> {
                     ]),
                   ),
                   PopupMenuItem(
-                    value: 'twilio',
-                    child: const Row(children: [
-                      Icon(Icons.phone_forwarded, size: 18, color: Colors.grey),
-                      SizedBox(width: 8),
-                      Text('Llamada anónima'),
-                    ]),
-                  ),
-                  PopupMenuItem(
                     value: 'block',
                     child: Row(children: [
                       Icon(_isBlocked ? Icons.lock_open : Icons.block, size: 18, color: _isBlocked ? Colors.green : Colors.red),
@@ -1797,11 +1589,7 @@ class ChatPageState extends State<ChatPage> {
                 ],
               ).then((val) {
                 if (val == null) return;
-                if (val == 'twilio') {
-                  _twilioCall();
-                } else {
-                  _handleAppBarMenu(val);
-                }
+                _handleAppBarMenu(val);
               });
             },
           ),

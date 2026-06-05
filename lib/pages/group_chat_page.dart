@@ -995,71 +995,23 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  Future<void> _sendGroupCallPush({
-    required String roomName,
-    required bool isVideo,
-  }) async {
-    try {
-      final groupDoc = await FirebaseFirestore.instance
-          .collection('groups')
-          .doc(widget.arguments.groupId)
-          .get();
-      final members = ((groupDoc.data()?['members'] as List?) ?? [])
-          .map((e) => e.toString())
-          .where((uid) => uid.isNotEmpty && uid != _currentUserId)
-          .toList();
-      if (members.isEmpty) return;
-
-      final callerName = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? _currentNickname;
-
-      for (final uid in members) {
-        try {
-          final userDoc = await FirebaseFirestore.instance
-              .collection(FirestoreConstants.pathUserCollection)
-              .doc(uid)
-              .get();
-          final pushToken = (userDoc.data()?['pushToken'] as String? ?? '').trim();
-          if (pushToken.isEmpty) continue;
-
-          await http.post(
-            Uri.parse(AppConstants.callPushApiUrl),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'push_token': pushToken,
-              'caller_name': '${callerName} (${widget.arguments.groupName})',
-              'caller_uid': _currentUserId,
-              'room_name': roomName,
-              'is_video': isVideo,
-            }),
-          ).timeout(const Duration(seconds: 10));
-        } catch (_) {}
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _startGroupJitsiCall({required bool videoMuted}) async {
-    // Llamadas temporalmente deshabilitadas
-  }
+  Future<void> _startGroupJitsiCall({required bool videoMuted}) async {}
 
   Widget _buildGroupCallBubble(String roomName, {required bool isVideo}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-      constraints: const BoxConstraints(maxWidth: 220),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      constraints: const BoxConstraints(maxWidth: 240),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A3A2A),
+        color: const Color(0xFF1A2A1A),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
+      child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(isVideo ? Icons.videocam_off : Icons.call_end,
-              color: Colors.grey, size: 18),
-          const SizedBox(width: 6),
-          Text(
-            isVideo ? 'Videollamada grupal' : 'Llamada grupal',
-            style: const TextStyle(color: Colors.grey),
-          ),
+          Icon(Icons.phone_disabled, color: Colors.grey, size: 18),
+          SizedBox(width: 8),
+          Text('Llamadas — Próximamente', style: TextStyle(color: Colors.grey, fontSize: 13)),
         ],
       ),
     );
