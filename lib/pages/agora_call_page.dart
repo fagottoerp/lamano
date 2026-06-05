@@ -93,6 +93,11 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       channelProfile: ChannelProfileType.channelProfileCommunication,
     ));
 
+    // Force TCP fallback so UDP-restricted networks (emulators, strict firewalls) work
+    await _engine.setParameters('{"rtc.enable_proxy":true}');
+    // Enable Agora Cloud Proxy in TCP mode (mode 3 = TCP, works through firewalls/emulators)
+    await _engine.setCloudProxy(CloudProxyType.tcpProxy);
+
     // Register BEFORE joinChannel (Agora 6.x requirement)
     _engine.registerEventHandler(RtcEngineEventHandler(
       onJoinChannelSuccess: (connection, elapsed) {
