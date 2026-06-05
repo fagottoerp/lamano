@@ -2,9 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/firestore_constants.dart';
-import 'package:flutter_chat_demo/services/livekit_service.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:livekit_client/livekit_client.dart';
+import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,225 +24,149 @@ class LiveKitCallPage extends StatefulWidget {
 }
 
 class _LiveKitCallPageState extends State<LiveKitCallPage> {
-  final Room _room = Room();
-  EventsListener<RoomEvent>? _listener;
-  bool _connecting = true;
-  bool _connected = false;
+  final JitsiMeet _jitsiMeet = JitsiMeet();
+  bool _launching = true;
   String _status = 'Conectando...';
 
   @override
   void initState() {
     super.initState();
-    _connect();
+    _openJitsi();
   }
 
   @override
   void dispose() {
-    _listener?.dispose();
-    _room.disconnect();
+    unawaited(_jitsiMeet.hangUp());
     super.dispose();
   }
 
-  Future<void> _connect() async {
+  Future<void> _openJitsi() async {
     try {
-      // Check current permission status first
-      var mic = await Permission.microphone.status;
-      var cam = widget.isVideo ? await Permission.camera.status : PermissionStatus.granted;
-      
-      // Request only if not already granted
-      if (!mic.isGranted) mic = await Permission.microphone.request();
-      if (widget.isVideo && !cam.isGranted) cam = await Permission.camera.request();
-      
-      // Abort if still not granted
-      if (!mic.isGranted || !cam.isGranted) {
-        throw Exception(widget.isVideo
-            ? 'Necesitas activar cámara y micrófono en Ajustes'
-            : 'Necesitas activar micrófono en Ajustes');
-      }
+      await _requestCallPermissions();
 
       final prefs = await SharedPreferences.getInstance();
-      final identity = prefs.getString(FirestoreConstants.id) ?? '';
-      if (identity.isEmpty) {
-        throw Exception('Sesion no disponible');
-      }
+      final myName = (prefs.getString(FirestoreConstants.nickname) ?? 'Usuario').trim();
+      final safeName = myName.isEmpty ? 'Usuario' : myName;
 
-      final nickname = prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
-      final tokenData = await LiveKitService.createRoomToken(
-        identity: identity,
-        roomName: widget.roomName,
-        name: nickname,
+      final options = JitsiMeetConferenceOptions(
+        serverURL: 'https://meet.jit.si',
+        room: widget.roomName,
+        userInfo: JitsiMeetUserInfo(displayName: safeName),
+        configOverrides: {
+          'prejoinPageEnabled': false,
+          'startWithAudioMuted': false,
+          'startWithVideoMuted': !widget.isVideo,
+          'requireDisplayName': false,
+        },
+        featureFlags: {
+          FeatureFlags.welcomePageEnabled: false,
+          FeatureFlags.preJoinPageEnabled: false,
+          FeatureFlags.preJoinPageHideDisplayName: true,
+          FeatureFlags.callIntegrationEnabled: true,
+          FeatureFlags.chatEnabled: true,
+          FeatureFlags.inviteEnabled: false,
+        },
       );
 
-      await _room.connect(
-        tokenData.url,
-        tokenData.token,
-        roomOptions: const RoomOptions(adaptiveStream: true, dynacast: true),
+      await _jitsiMeet.join(
+        options,
+        JitsiMeetEventListener(
+          conferenceWillJoin: (_) {
+            if (!mounted) return;
+            setState(() => _status = 'Entrando a la llamada...');
+          },
+          conferenceJoined: (_) {
+            if (!mounted) return;
+            setState(() {
+              _launching = false;
+              _status = 'En llamada';
+            });
+          },
+          conferenceTerminated: (_, __) {
+            if (!mounted) return;
+            Navigator.of(context).maybePop();
+          },
+          readyToClose: () {
+            if (!mounted) return;
+            Navigator.of(context).maybePop();
+          },
+        ),
       );
-
-      await _room.localParticipant?.setMicrophoneEnabled(true);
-      await _room.localParticipant?.setCameraEnabled(widget.isVideo);
-
-      _listener = _room.createListener()
-        ..on<RoomDisconnectedEvent>((_) {
-          if (!mounted) return;
-          setState(() {
-            _connected = false;
-            _status = 'Llamada finalizada';
-          });
-          Navigator.of(context).pop();
-        })
-        ..on<ParticipantConnectedEvent>((event) {
-          if (!mounted) return;
-          setState(() => _status = '${event.participant.identity} en linea');
-        })
-        ..on<ParticipantDisconnectedEvent>((event) {
-          if (!mounted) return;
-          setState(() => _status = '${event.participant.identity} salio');
-        });
 
       if (!mounted) return;
       setState(() {
-        _connecting = false;
-        _connected = true;
-        _status = 'En llamada';
+        _launching = false;
+        _status = 'Abriendo interfaz de llamada...';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _connecting = false;
-        _connected = false;
+        _launching = false;
         _status = 'No se pudo conectar';
       });
       Fluttertoast.showToast(msg: e.toString().replaceFirst('Exception: ', ''));
     }
   }
 
-  Future<void> _toggleMic() async {
-    final enabled = _room.localParticipant?.isMicrophoneEnabled() ?? false;
-    await _room.localParticipant?.setMicrophoneEnabled(!enabled);
-    if (mounted) setState(() {});
-  }
+  Future<void> _requestCallPermissions() async {
+    var mic = await Permission.microphone.status;
+    if (!mic.isGranted) mic = await Permission.microphone.request();
+    if (!mic.isGranted) {
+      throw Exception('Permiso de microfono denegado');
+    }
 
-  Future<void> _toggleCam() async {
-    final enabled = _room.localParticipant?.isCameraEnabled() ?? false;
-    await _room.localParticipant?.setCameraEnabled(!enabled);
-    if (mounted) setState(() {});
-  }
+    if (!widget.isVideo) return;
 
-  Future<void> _hangup() async {
-    await _room.disconnect();
-    if (mounted) Navigator.of(context).pop();
+    var camera = await Permission.camera.status;
+    if (!camera.isGranted) camera = await Permission.camera.request();
+    if (!camera.isGranted) {
+      throw Exception('Permiso de camara denegado');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final micOn = _room.localParticipant?.isMicrophoneEnabled() ?? false;
-    final camOn = _room.localParticipant?.isCameraEnabled() ?? false;
-
     return Scaffold(
       backgroundColor: const Color(0xFF0A1628),
-      appBar: AppBar(
-        title: Text(widget.isVideo ? 'Videollamada' : 'Llamada de voz'),
-        centerTitle: true,
-      ),
       body: SafeArea(
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const SizedBox(height: 34),
-            CircleAvatar(
-              radius: 42,
-              backgroundColor: Colors.white12,
-              child: Text(
-                widget.callerName.isNotEmpty
-                    ? widget.callerName[0].toUpperCase()
-                    : '?',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 34,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            Icon(
+              widget.isVideo ? Icons.videocam : Icons.call,
+              size: 62,
+              color: Colors.white,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            Text(
+              widget.isVideo ? 'Videollamada' : 'Llamada de voz',
+              style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
             Text(
               widget.callerName,
-              style: const TextStyle(color: Colors.white, fontSize: 24),
+              style: const TextStyle(color: Colors.white70, fontSize: 15),
             ),
-            const SizedBox(height: 8),
+            if (_launching) const CircularProgressIndicator(color: Colors.white),
+            const SizedBox(height: 18),
             Text(
               _status,
-              style: TextStyle(
-                color: _connected ? Colors.greenAccent : Colors.white70,
-                fontSize: 13,
-              ),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 15),
             ),
-            if (_connecting) ...[
-              const SizedBox(height: 14),
-              const CircularProgressIndicator(color: Colors.white),
-            ],
-            const Spacer(),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _CircleAction(
-                    icon: micOn ? Icons.mic : Icons.mic_off,
-                    color: micOn ? const Color(0xFF1B4332) : Colors.orange,
-                    label: micOn ? 'Mic on' : 'Mic off',
-                    onTap: _toggleMic,
-                  ),
-                  if (widget.isVideo)
-                    _CircleAction(
-                      icon: camOn ? Icons.videocam : Icons.videocam_off,
-                      color: camOn ? const Color(0xFF1B4332) : Colors.orange,
-                      label: camOn ? 'Cam on' : 'Cam off',
-                      onTap: _toggleCam,
-                    ),
-                  _CircleAction(
-                    icon: Icons.call_end,
-                    color: Colors.red,
-                    label: 'Colgar',
-                    onTap: _hangup,
-                  ),
-                ],
-              ),
+            const SizedBox(height: 22),
+            TextButton.icon(
+              onPressed: _openJitsi,
+              icon: const Icon(Icons.videocam, color: Colors.white),
+              label: const Text('Entrar ahora', style: TextStyle(color: Colors.white)),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Volver al chat', style: TextStyle(color: Colors.white70)),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _CircleAction extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String label;
-  final VoidCallback onTap;
-
-  const _CircleAction({
-    required this.icon,
-    required this.color,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 62,
-            height: 62,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            child: Icon(icon, color: Colors.white, size: 30),
-          ),
-          const SizedBox(height: 7),
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-        ],
       ),
     );
   }
