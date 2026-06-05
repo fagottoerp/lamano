@@ -47,7 +47,8 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   bool _engineReady = false;
   bool _callEnded = false;
   String? _errorMessage;
-  bool _joinedChannel = false; // true once onJoinChannelSuccess fires
+  bool _joinedChannel = false;
+  final List<String> _logLines = [];
   Duration _callDuration = Duration.zero;
   Timer? _durationTimer;
   StreamSubscription? _callStatusSub;
@@ -61,13 +62,23 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   }
 
   Future<void> _requestPermissionsAndInit() async {
+    _log('Solicitando permisos...');
     final List<Permission> perms = [Permission.microphone];
     if (widget.isVideo) perms.add(Permission.camera);
-    await perms.request();
+    final results = await perms.request();
+    for (final e in results.entries) {
+      _log('Permiso ${e.key}: ${e.value}');
+    }
     await _initAgora();
   }
 
+  void _log(String msg) {
+    debugPrint('[AGORA] $msg');
+    if (mounted) setState(() => _logLines.add(msg));
+  }
+
   Future<String> _fetchToken(String channelName) async {
+    _log('Obteniendo token para canal: $channelName');
     try {
       final resp = await http.post(
         Uri.parse(AppConstants.agoraTokenApiUrl),
@@ -76,110 +87,118 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       ).timeout(const Duration(seconds: 8));
       final data = jsonDecode(resp.body);
       final token = (data['token'] as String?) ?? '';
-      if (token.isEmpty && mounted) {
-        setState(() => _errorMessage = 'Error: no se pudo obtener token Agora');
+      if (token.isEmpty) {
+        _log('ERROR: token vacío - respuesta: ${resp.body}');
+        if (mounted) setState(() => _errorMessage = 'Error: token vacío');
+      } else {
+        _log('Token OK (${token.length} chars)');
       }
       return token;
     } catch (e) {
+      _log('ERROR fetchToken: $e');
       if (mounted) setState(() => _errorMessage = 'Error token: $e');
       return '';
     }
   }
 
   Future<void> _initAgora() async {
-    // Wrap entire init in try/catch to surface errors visibly
     try {
-    _engine = createAgoraRtcEngine();
-    await _engine.initialize(RtcEngineContext(
-      appId: kAgoraAppId,
-      channelProfile: ChannelProfileType.channelProfileCommunication,
-    ));
+      _log('createAgoraRtcEngine...');
+      _engine = createAgoraRtcEngine();
 
-    // Register BEFORE joinChannel (Agora 6.x requirement)
-    _engine.registerEventHandler(RtcEngineEventHandler(
-      onJoinChannelSuccess: (connection, elapsed) {
-        if (mounted) setState(() {
-          _engineReady = true;
-          _joinedChannel = true;
-        });
-        _startTimer();
-      },
-      onUserJoined: (connection, remoteUid, elapsed) {
-        if (mounted) setState(() {
-          _remoteUid = remoteUid;
-          _remoteJoined = true;
-          _remoteUids.add(remoteUid);
-        });
-      },
-      onUserOffline: (connection, remoteUid, reason) {
-        if (mounted) {
-          setState(() {
-            _remoteUids.remove(remoteUid);
-            if (_remoteUid == remoteUid) {
-              _remoteUid = _remoteUids.isNotEmpty ? _remoteUids.first : null;
-            }
-            _remoteJoined = _remoteUids.isNotEmpty;
+      _log('initialize (channelProfileLiveBroadcasting)...');
+      await _engine.initialize(RtcEngineContext(
+        appId: kAgoraAppId,
+        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+      ));
+      _log('initialize OK');
+
+      _log('registerEventHandler...');
+      _engine.registerEventHandler(RtcEngineEventHandler(
+        onJoinChannelSuccess: (connection, elapsed) {
+          _log('onJoinChannelSuccess uid=${connection.localUid} elapsed=${elapsed}ms');
+          if (mounted) setState(() { _engineReady = true; _joinedChannel = true; });
+          _startTimer();
+        },
+        onUserJoined: (connection, remoteUid, elapsed) {
+          _log('onUserJoined uid=$remoteUid');
+          if (mounted) setState(() {
+            _remoteUid = remoteUid;
+            _remoteJoined = true;
+            _remoteUids.add(remoteUid);
           });
-          if (!widget.isGroup && _remoteUids.isEmpty) _hangUp();
-        }
-      },
-      onError: (err, msg) {
-        if (mounted) setState(() => _errorMessage = 'Error Agora: ${err.name} — $msg');
-      },
-      onConnectionStateChanged: (connection, state, reason) {
-        if (mounted) {
-          if (state == ConnectionStateType.connectionStateFailed) {
-            setState(() => _errorMessage = 'Sin conexión (${reason.name}). Verifica tu red.');
-          } else if (state == ConnectionStateType.connectionStateReconnecting) {
-            setState(() => _errorMessage = 'Reconectando...');
-          } else if (state == ConnectionStateType.connectionStateConnected) {
-            setState(() => _errorMessage = null);
+        },
+        onUserOffline: (connection, remoteUid, reason) {
+          _log('onUserOffline uid=$remoteUid reason=${reason.name}');
+          if (mounted) {
+            setState(() {
+              _remoteUids.remove(remoteUid);
+              if (_remoteUid == remoteUid) {
+                _remoteUid = _remoteUids.isNotEmpty ? _remoteUids.first : null;
+              }
+              _remoteJoined = _remoteUids.isNotEmpty;
+            });
+            if (!widget.isGroup && _remoteUids.isEmpty) _hangUp();
           }
-        }
-      },
-      onTokenPrivilegeWillExpire: (connection, token) async {
-        // Renew token before it expires
-        final newToken = await _fetchToken(widget.callId);
-        if (newToken.isNotEmpty) {
-          await _engine.renewToken(newToken);
-        }
-      },
-    ));
+        },
+        onError: (err, msg) {
+          _log('onError: ${err.name}($err) msg=$msg');
+          if (mounted) setState(() => _errorMessage = 'Error: ${err.name} ($err)');
+        },
+        onConnectionStateChanged: (connection, state, reason) {
+          _log('connectionState: ${state.name} reason: ${reason.name}');
+          if (mounted) {
+            if (state == ConnectionStateType.connectionStateFailed) {
+              setState(() => _errorMessage = 'Sin conexión: ${reason.name}');
+            } else if (state == ConnectionStateType.connectionStateReconnecting) {
+              setState(() => _errorMessage = 'Reconectando...');
+            } else if (state == ConnectionStateType.connectionStateConnected) {
+              setState(() => _errorMessage = null);
+            }
+          }
+        },
+        onTokenPrivilegeWillExpire: (connection, token) async {
+          _log('token por expirar, renovando...');
+          final newToken = await _fetchToken(widget.callId);
+          if (newToken.isNotEmpty) await _engine.renewToken(newToken);
+        },
+      ));
 
-    // Enable audio FIRST (required in Agora 6.x — disabled by default)
-    await _engine.enableAudio();
-    await _engine.setAudioProfile(
-      profile: AudioProfileType.audioProfileDefault,
-      scenario: AudioScenarioType.audioScenarioChatroom,
-    );
+      _log('enableAudio...');
+      await _engine.enableAudio();
+      _log('enableAudio OK');
 
-    if (widget.isVideo) {
-      await _engine.enableVideo();
-      await _engine.startPreview();
-    } else {
-      await _engine.disableVideo();
-    }
+      if (widget.isVideo) {
+        _log('enableVideo + startPreview...');
+        await _engine.enableVideo();
+        await _engine.startPreview();
+        _log('video OK');
+      } else {
+        await _engine.disableVideo();
+      }
 
-    await _engine.setEnableSpeakerphone(_speakerOn);
+      await _engine.setEnableSpeakerphone(_speakerOn);
 
-    final token = await _fetchToken(widget.callId);
-    // Agora expects null token when auth is disabled, empty string causes error
-    final tokenArg = token.isEmpty ? null : token;
+      final token = await _fetchToken(widget.callId);
+      final tokenArg = token.isEmpty ? null : token;
 
-    await _engine.joinChannel(
-      token: tokenArg ?? '',
-      channelId: widget.callId,
-      uid: 0,
-      options: ChannelMediaOptions(
-        channelProfile: ChannelProfileType.channelProfileCommunication,
-        clientRoleType: ClientRoleType.clientRoleBroadcaster,
-        publishMicrophoneTrack: true,
-        publishCameraTrack: widget.isVideo,
-        autoSubscribeAudio: true,
-        autoSubscribeVideo: widget.isVideo,
-      ),
-    );
+      _log('joinChannel: ${widget.callId} token=${tokenArg != null ? "OK" : "NULL"}');
+      await _engine.joinChannel(
+        token: tokenArg ?? '',
+        channelId: widget.callId,
+        uid: 0,
+        options: ChannelMediaOptions(
+          channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+          clientRoleType: ClientRoleType.clientRoleBroadcaster,
+          publishMicrophoneTrack: true,
+          publishCameraTrack: widget.isVideo,
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: widget.isVideo,
+        ),
+      );
+      _log('joinChannel llamado (esperando callback)...');
     } catch (e) {
+      _log('EXCEPCION _initAgora: $e');
       if (mounted) setState(() => _errorMessage = 'Init error: $e');
     }
   }
@@ -286,6 +305,24 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
 
           // Bottom controls
           _buildControls(),
+
+          // Debug log overlay (últimas 6 líneas)
+          Positioned(
+            bottom: 130,
+            left: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.6),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _logLines.reversed.take(6).toList().reversed.join('\n'),
+                style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontFamily: 'monospace'),
+              ),
+            ),
+          ),
         ],
       ),
     );
