@@ -263,9 +263,20 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       }
 
       // Configurar speaker/video después del join
-      if (!widget.isVideo) await _engine.disableVideo();
-      await _engine.setEnableSpeakerphone(_speakerOn);
-      _log('speaker OK');
+      if (!widget.isVideo) {
+        try {
+          await _engine.disableVideo();
+          _log('disableVideo OK');
+        } catch (e) {
+          _log('disableVideo ignorado: $e');
+        }
+      }
+      try {
+        await _engine.setEnableSpeakerphone(_speakerOn);
+        _log('speaker OK');
+      } catch (e) {
+        _log('setEnableSpeakerphone ignorado: $e');
+      }
     } catch (e) {
       await _failCall('EXCEPCION _initAgora: $e');
     }
