@@ -1045,6 +1045,64 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         ),
     ];
 
+    Widget actionTile({
+      required IconData icon,
+      required String label,
+      required VoidCallback? onTap,
+      bool highlight = false,
+    }) {
+      final enabled = onTap != null;
+      final bgColor = highlight
+          ? ColorConstants.themeColor.withValues(alpha: enabled ? 0.12 : 0.06)
+          : const Color(0xFFF4F7F8);
+      final borderColor = highlight
+          ? ColorConstants.themeColor.withValues(alpha: enabled ? 0.28 : 0.14)
+          : ColorConstants.divider;
+      final iconColor = enabled
+          ? (highlight ? ColorConstants.themeColor : const Color(0xFF47615A))
+          : Colors.black26;
+      final textColor = enabled ? ColorConstants.textPrimary : Colors.black38;
+
+      return Expanded(
+        child: SizedBox(
+          height: 56,
+          child: Material(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: borderColor),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 18, color: iconColor),
+                    const SizedBox(height: 4),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: textColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Stack(
       children: [
         Column(
@@ -1078,43 +1136,28 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        TextButton.icon(
-                          onPressed: _openCreateAlertSheet,
-                          icon: const Icon(Icons.add_alert),
-                          label: const Text('Marcar alerta'),
-                        ),
-                        if (myLatLng != null)
-                          TextButton.icon(
-                            onPressed: _goToMyLocation,
-                            icon: const Icon(Icons.my_location),
-                            label: const Text('Mi ubicación'),
-                          ),
-                        Container(
-                          margin: const EdgeInsets.only(left: 6),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF3F7FA),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: ColorConstants.divider),
-                          ),
-                          child: InkWell(
-                            onTap: _openAlertsPanel,
-                            child: Row(
-                              children: [
-                                const Icon(Icons.notifications_active_outlined, size: 16),
-                                const SizedBox(width: 6),
-                                Text('Alertas +${_activeAlerts.length}'),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      actionTile(
+                        icon: Icons.add_alert,
+                        label: 'Marcar alerta',
+                        onTap: _openCreateAlertSheet,
+                        highlight: true,
+                      ),
+                      const SizedBox(width: 8),
+                      actionTile(
+                        icon: Icons.my_location,
+                        label: 'Mi ubicación',
+                        onTap: myLatLng != null ? _goToMyLocation : null,
+                      ),
+                      const SizedBox(width: 8),
+                      actionTile(
+                        icon: Icons.notifications_active_outlined,
+                        label: 'Alertas +${_activeAlerts.length}',
+                        onTap: _openAlertsPanel,
+                      ),
+                    ],
                   ),
                 ],
               ),
