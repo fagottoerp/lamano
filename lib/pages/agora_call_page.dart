@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/call_service.dart';
 
 const String kJitsiDomain = 'jitsi.38.247.147.220.nip.io';
@@ -41,7 +42,31 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   void initState() {
     super.initState();
     if (!widget.isGroup) _watchCallStatus();
-    _join();
+    _prepareAndJoin();
+  }
+
+  Future<void> _prepareAndJoin() async {
+    final perms = <Permission>[Permission.microphone];
+    if (widget.isVideo) {
+      perms.add(Permission.camera);
+    }
+
+    final results = await perms.request();
+    final micOk = (results[Permission.microphone] ?? PermissionStatus.denied).isGranted;
+    final camOk = !widget.isVideo || (results[Permission.camera] ?? PermissionStatus.denied).isGranted;
+
+    if (!micOk || !camOk) {
+      if (mounted) {
+        setState(() {
+          _error = widget.isVideo
+              ? 'Permisos de cámara/micrófono requeridos para videollamada'
+              : 'Permiso de micrófono requerido para llamada';
+        });
+      }
+      return;
+    }
+
+    await _join();
   }
 
   void _watchCallStatus() {
@@ -79,8 +104,12 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
     }
 
     final listener = JitsiMeetEventListener(
-      conferenceJoined: (url) {
+      conferenceJoined: (url) async {
         debugPrint('[JITSI] joined: $url');
+        if (widget.isVideo) {
+          // Some devices still join with camera muted despite startWithVideoMuted.
+          await _jitsi.setVideoMuted(false);
+        }
       },
       conferenceTerminated: (url, error) {
         debugPrint('[JITSI] terminated: $url error=$error');
