@@ -2,12 +2,12 @@ name: flutter_chat_demo
 description: This is the demo for chat app by Flutter
 publish_to: 'none'
 
-version: 3.11.27+143
+version: 3.11.27+144
 
 dependencies:
   flutter:
     sdk: flutter
-  audio_session: ^0.1.25
+  jitsi_meet_flutter_sdk: ^10.3.0
 
   cupertino_icons: ^1.0.2
   firebase_core: ^4.4.0
@@ -38,7 +38,6 @@ dependencies:
   record: ^6.0.0
   just_audio: ^0.9.42
   permission_handler: ^11.3.1
-  agora_rtc_engine: 6.3.2
   youtube_player_iframe: ^5.2.0
   connectivity_plus: ^6.0.5
   file_picker: ^8.1.4
