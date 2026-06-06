@@ -55,6 +55,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   bool _loading = true;
   String? _error;
   bool _focusedOnce = false;
+  LatLng _mapCenter = _chileCenter;
+  double _mapZoom = 5.2;
 
   bool _showNearestPanel = true;
   final Set<String> _expandedStations = <String>{};
@@ -103,6 +105,10 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       setState(() {
         _allStations = results[0] as List<_Comisaria>;
         _myPosition = results[1] as Position?;
+        if (_myPosition != null) {
+          _mapCenter = LatLng(_myPosition!.latitude, _myPosition!.longitude);
+          _mapZoom = 12.5;
+        }
         _loading = false;
       });
 
@@ -173,7 +179,30 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       if (!mounted) return;
       setState(() => _myPosition = p);
       _maybeNotifyNearbyAlerts();
+      _syncHelperLocationForActiveAlerts(p);
     });
+  }
+
+  Future<void> _syncHelperLocationForActiveAlerts(Position p) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+    final helping = _activeAlerts.where((a) => a.helperMembers.any((h) => h.uid == uid)).toList();
+    for (final alert in helping) {
+      final doc = _firestore.collection(_alertsCollection).doc(alert.id);
+      await _firestore.runTransaction((tx) async {
+        final snap = await tx.get(doc);
+        if (!snap.exists) return;
+        final data = snap.data() as Map<String, dynamic>;
+        final raw = (data['helperMembers'] as List<dynamic>? ?? const []);
+        final next = raw.map((entry) => Map<String, dynamic>.from(entry as Map)).toList();
+        final idx = next.indexWhere((entry) => '${entry['uid']}' == uid);
+        if (idx == -1) return;
+        next[idx]['lat'] = p.latitude;
+        next[idx]['lng'] = p.longitude;
+        next[idx]['updatedAtMs'] = DateTime.now().millisecondsSinceEpoch;
+        tx.update(doc, {'helperMembers': next});
+      });
+    }
   }
 
   void _listenLiveAlerts() {
@@ -275,8 +304,34 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   void _goToMyLocation() {
     if (_myPosition == null) return;
     final me = LatLng(_myPosition!.latitude, _myPosition!.longitude);
+    setState(() {
+      _mapCenter = me;
+      _mapZoom = 13;
+    });
     _mapController.move(me, 13);
   }
+
+  List<_Comisaria> _visibleStationsForMap() {
+    if (_allStations.isEmpty) return const [];
+    final center = _mapCenter;
+    final maxCount = switch (_mapZoom) {
+      < 7.5 => 80,
+      < 9.5 => 180,
+      < 11.5 => 320,
+      _ => 945,
+    };
+
+    final sorted = [..._allStations]
+      ..sort((a, b) {
+        final da = _meterDistance(center, LatLng(a.lat, a.lng));
+        final db = _meterDistance(center, LatLng(b.lat, b.lng));
+        return da.compareTo(db);
+      });
+    return sorted.take(maxCount).toList();
+  }
+
+  double _meterDistance(LatLng a, LatLng b) =>
+      Geolocator.distanceBetween(a.latitude, a.longitude, b.latitude, b.longitude);
 
   Future<void> _maybeNotifyNearbyAlerts() async {
     if (_myPosition == null || _activeAlerts.isEmpty) return;
@@ -518,6 +573,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       'helperDistanceKm': null,
       'helperEtaMin': null,
       'helperAcceptedAtMs': null,
+      'helperLat': null,
+      'helperLng': null,
+      'helperMembers': <Map<String, dynamic>>[],
     });
 
     if (!mounted) return;
@@ -615,12 +673,39 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     final distanceKm = meters / 1000;
     final etaMin = (distanceKm / 35 * 60).clamp(1, 180).round();
 
-    await _firestore.collection(_alertsCollection).doc(alert.id).update({
-      'helperUid': uid,
-      'helperName': helperName,
-      'helperDistanceKm': distanceKm,
-      'helperEtaMin': etaMin,
-      'helperAcceptedAtMs': DateTime.now().millisecondsSinceEpoch,
+    final doc = _firestore.collection(_alertsCollection).doc(alert.id);
+    await _firestore.runTransaction((tx) async {
+      final snap = await tx.get(doc);
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+      final raw = (data['helperMembers'] as List<dynamic>? ?? const []);
+      final helpers = raw.map((entry) => Map<String, dynamic>.from(entry as Map)).toList();
+      final nextHelper = <String, dynamic>{
+        'uid': uid,
+        'name': helperName,
+        'distanceKm': distanceKm,
+        'etaMin': etaMin,
+        'lat': _myPosition!.latitude,
+        'lng': _myPosition!.longitude,
+        'acceptedAtMs': DateTime.now().millisecondsSinceEpoch,
+        'updatedAtMs': DateTime.now().millisecondsSinceEpoch,
+      };
+      final idx = helpers.indexWhere((entry) => '${entry['uid']}' == uid);
+      if (idx >= 0) {
+        helpers[idx] = nextHelper;
+      } else {
+        helpers.add(nextHelper);
+      }
+      tx.update(doc, {
+        'helperMembers': helpers,
+        'helperUid': uid,
+        'helperName': helperName,
+        'helperDistanceKm': distanceKm,
+        'helperEtaMin': etaMin,
+        'helperAcceptedAtMs': DateTime.now().millisecondsSinceEpoch,
+        'helperLat': _myPosition!.latitude,
+        'helperLng': _myPosition!.longitude,
+      });
     });
 
     if (!mounted) return;
@@ -646,105 +731,125 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   }
 
   void _openAlertDetails(_CitizenAlert alert) {
-    final category = _categoryByKey(alert.category);
-    final risk = _riskLevelOf(alert);
-    final rep = _userReputation[alert.createdByUid] ?? 0;
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) {
-        final dist = _distanceKmTo(alert.lat, alert.lng);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: _firestore.collection(_alertsCollection).doc(alert.id).snapshots(),
+          builder: (_, snap) {
+            final live = snap.hasData && snap.data!.exists
+                ? _CitizenAlert.fromSnapshot(snap.data!)
+                : alert;
+            final category = _categoryByKey(live.category);
+            final risk = _riskLevelOf(live);
+            final rep = _userReputation[live.createdByUid] ?? 0;
+            final dist = _distanceKmTo(live.lat, live.lng);
+            final originLabel = live.createdByUid.isEmpty
+                ? 'del sistema'
+                : '${live.createdByName} (usuario)';
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(category.icon, color: category.color),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        alert.categoryLabel,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    Row(
+                      children: [
+                        Icon(category.icon, color: category.color),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            live.categoryLabel,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (live.note.isNotEmpty)
+                      Text(live.note, style: const TextStyle(color: Colors.black87)),
+                    if (dist != null) ...[
+                      const SizedBox(height: 6),
+                      Text('Distancia: ${dist.toStringAsFixed(1)} km'),
+                    ],
+                    const SizedBox(height: 4),
+                    Text('Generada por: $originLabel'),
+                    Text('Reputación: $rep'),
+                    Text(
+                      _riskLabel(risk),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: _riskColor(risk),
+                      ),
+                    ),
+                    Text(_relativeUntil(live.expiresAtMs)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        FilledButton.icon(
+                          onPressed: () => _voteAlert(live, confirm: true),
+                          icon: const Icon(Icons.thumb_up_alt_outlined),
+                          label: Text('Confirmar (${live.confirmCount})'),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () => _voteAlert(live, confirm: false),
+                          icon: const Icon(Icons.thumb_down_alt_outlined),
+                          label: Text('Descartar (${live.discardCount})'),
+                        ),
+                      ],
+                    ),
+                    if (live.isHelp) ...[
+                      const SizedBox(height: 10),
+                      if (live.helperMembers.isEmpty)
+                        FilledButton.icon(
+                          onPressed: () => _assistAlert(live),
+                          icon: const Icon(Icons.handshake),
+                          label: const Text('Asistir'),
+                        )
+                      else
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFFAF1),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFBDE5C5)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: live.helperMembers
+                                .map(
+                                  (helper) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 6),
+                                    child: Text(
+                                      '${helper.name} va en camino. Distancia: '
+                                      '${helper.distanceKm.toStringAsFixed(1)} km · ETA: ${helper.etaMin} min',
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ),
+                    ],
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => _openInGoogleMaps(live.lat, live.lng),
+                        icon: const Icon(Icons.navigation_outlined),
+                        label: const Text('Abrir en Google Maps'),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                if (alert.note.isNotEmpty)
-                  Text(alert.note, style: const TextStyle(color: Colors.black87)),
-                if (dist != null) ...[
-                  const SizedBox(height: 6),
-                  Text('Distancia: ${dist.toStringAsFixed(1)} km'),
-                ],
-                const SizedBox(height: 4),
-                Text('Reporto: ${alert.createdByName}'),
-                Text('Reputación: $rep'),
-                Text(
-                  _riskLabel(risk),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: _riskColor(risk),
-                  ),
-                ),
-                Text(_relativeUntil(alert.expiresAtMs)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    FilledButton.icon(
-                      onPressed: () => _voteAlert(alert, confirm: true),
-                      icon: const Icon(Icons.thumb_up_alt_outlined),
-                      label: Text('Confirmar (${alert.confirmCount})'),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: () => _voteAlert(alert, confirm: false),
-                      icon: const Icon(Icons.thumb_down_alt_outlined),
-                      label: Text('Descartar (${alert.discardCount})'),
-                    ),
-                  ],
-                ),
-                if (alert.isHelp) ...[
-                  const SizedBox(height: 10),
-                  if (alert.helperName == null || alert.helperName!.isEmpty)
-                    FilledButton.icon(
-                      onPressed: () => _assistAlert(alert),
-                      icon: const Icon(Icons.handshake),
-                      label: const Text('Asistir'),
-                    )
-                  else
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEFFAF1),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFBDE5C5)),
-                      ),
-                      child: Text(
-                        '${alert.helperName} va en camino. Distancia: '
-                        '${(alert.helperDistanceKm ?? 0).toStringAsFixed(1)} km · '
-                        'ETA: ${alert.helperEtaMin ?? '-'} min',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                ],
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _openInGoogleMaps(alert.lat, alert.lng),
-                    icon: const Icon(Icons.navigation_outlined),
-                    label: const Text('Abrir en Google Maps'),
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -828,13 +933,15 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         ? null
         : LatLng(_myPosition!.latitude, _myPosition!.longitude);
 
-    final stationMarkers = _allStations
+    final visibleStations = _visibleStationsForMap();
+
+    final stationMarkers = visibleStations
         .map(
           (s) => Marker(
             point: LatLng(s.lat, s.lng),
-            width: 16,
-            height: 16,
-            child: const Icon(Icons.location_on, size: 15, color: Colors.red),
+            width: 28,
+            height: 28,
+            child: Image.asset('assets/carabineros_roundel.png', width: 24, height: 24),
           ),
         )
         .toList();
@@ -843,31 +950,67 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       final c = _categoryByKey(a.category);
       final risk = _riskLevelOf(a);
       final riskColor = _riskColor(risk);
-      final icon = a.isHelp
-          ? (a.helperName == null || a.helperName!.isEmpty
+        final icon = a.isHelp
+          ? (a.helperMembers.isEmpty
               ? Icons.help_center
               : Icons.handshake)
           : c.icon;
-      final color = a.isHelp
-          ? (a.helperName == null || a.helperName!.isEmpty
+        final color = a.isHelp
+          ? (a.helperMembers.isEmpty
               ? Colors.deepPurple
               : Colors.green)
           : c.color;
 
       return Marker(
         point: LatLng(a.lat, a.lng),
-        width: 34,
-        height: 34,
+        width: 56,
+        height: 56,
         child: GestureDetector(
           onTap: () => _openAlertDetails(a),
-          child: CircleAvatar(
-            radius: 16,
-            backgroundColor: Colors.white,
-            child: Icon(icon, color: color == c.color ? riskColor : color, size: 18),
+          behavior: HitTestBehavior.opaque,
+          child: Center(
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 6),
+                ],
+                border: Border.all(color: riskColor.withValues(alpha: 0.6), width: 2),
+              ),
+              child: Icon(icon, color: color == c.color ? riskColor : color, size: 22),
+            ),
           ),
         ),
       );
     }).toList();
+
+    final helperMarkers = _activeAlerts
+        .expand(
+          (a) => a.helperMembers
+              .where((helper) => helper.lat != null && helper.lng != null)
+              .map(
+                (helper) => Marker(
+                  point: LatLng(helper.lat!, helper.lng!),
+                  width: 50,
+                  height: 50,
+                  child: GestureDetector(
+                    onTap: () => _openAlertDetails(a),
+                    behavior: HitTestBehavior.opaque,
+                    child: const Center(
+                      child: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Colors.green,
+                        child: Icon(Icons.directions_car, color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+        )
+        .toList();
 
     final alertRiskCircles = _activeAlerts
         .map((a) {
@@ -892,6 +1035,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     final markers = <Marker>[
       ...stationMarkers,
       ...alertMarkers,
+      ...helperMarkers,
       if (myLatLng != null)
         Marker(
           point: myLatLng,
@@ -909,34 +1053,68 @@ class _MapaMundisPageState extends State<MapaMundisPage>
               width: double.infinity,
               color: Colors.white,
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.map, color: ColorConstants.themeColor, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Mapa Mundis (GTA) · ${_allStations.length} comisarías',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: ColorConstants.textPrimary,
+                  Row(
+                    children: [
+                      const Icon(Icons.map, color: ColorConstants.themeColor, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Mapa Mundis (GTA)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: ColorConstants.textPrimary,
+                          ),
+                        ),
                       ),
-                    ),
+                      Text(
+                        '${visibleStations.length}/${_allStations.length} comisarías',
+                        style: const TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
+                    ],
                   ),
-                  TextButton.icon(
-                    onPressed: _openCreateAlertSheet,
-                    icon: const Icon(Icons.add_alert),
-                    label: const Text('Marcar alerta'),
-                  ),
-                  if (myLatLng != null)
-                    TextButton(
-                      onPressed: _goToMyLocation,
-                      child: const Text('Mi ubicación'),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        TextButton.icon(
+                          onPressed: _openCreateAlertSheet,
+                          icon: const Icon(Icons.add_alert),
+                          label: const Text('Marcar alerta'),
+                        ),
+                        if (myLatLng != null)
+                          TextButton.icon(
+                            onPressed: _goToMyLocation,
+                            icon: const Icon(Icons.my_location),
+                            label: const Text('Mi ubicación'),
+                          ),
+                        Container(
+                          margin: const EdgeInsets.only(left: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3F7FA),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: ColorConstants.divider),
+                          ),
+                          child: InkWell(
+                            onTap: _openAlertsPanel,
+                            child: Row(
+                              children: [
+                                const Icon(Icons.notifications_active_outlined, size: 16),
+                                const SizedBox(width: 6),
+                                Text('Alertas +${_activeAlerts.length}'),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  IconButton(
-                    tooltip: 'Ver alertas activas',
-                    onPressed: _openAlertsPanel,
-                    icon: const Icon(Icons.list_alt),
                   ),
                 ],
               ),
@@ -945,10 +1123,22 @@ class _MapaMundisPageState extends State<MapaMundisPage>
               child: FlutterMap(
                 mapController: _mapController,
                 options: MapOptions(
-                  initialCenter: _chileCenter,
-                  initialZoom: 5.2,
+                  initialCenter: _mapCenter,
+                  initialZoom: _mapZoom,
                   minZoom: 4,
                   maxZoom: 18,
+                  onMapReady: () {
+                    _focusInitial();
+                  },
+                  onPositionChanged: (position, hasGesture) {
+                    final center = position.center;
+                    final zoom = position.zoom;
+                    if (!mounted) return;
+                    setState(() {
+                      _mapCenter = center;
+                      _mapZoom = zoom;
+                    });
+                  },
                   onTap: (_, point) async {
                     if (!_pickPointOnMap || _pendingCategory == null) return;
                     final category = _pendingCategory!;
@@ -1268,6 +1458,9 @@ class _CitizenAlert {
   final String? helperName;
   final double? helperDistanceKm;
   final int? helperEtaMin;
+  final double? helperLat;
+  final double? helperLng;
+  final List<_HelperMember> helperMembers;
 
   int get confirmCount => confirmUids.length;
   int get discardCount => discardUids.length;
@@ -1291,12 +1484,42 @@ class _CitizenAlert {
     required this.helperName,
     required this.helperDistanceKm,
     required this.helperEtaMin,
+    required this.helperLat,
+    required this.helperLng,
+    required this.helperMembers,
   });
 
   factory _CitizenAlert.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data();
+    return _CitizenAlert._fromMap(doc.id, d);
+  }
+
+  factory _CitizenAlert.fromSnapshot(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data() ?? const <String, dynamic>{};
+    return _CitizenAlert._fromMap(doc.id, d);
+  }
+
+  factory _CitizenAlert._fromMap(String id, Map<String, dynamic> d) {
+    final rawHelpers = (d['helperMembers'] as List<dynamic>? ?? const []);
+    final parsedHelpers = rawHelpers
+        .map((entry) => _HelperMember.fromMap(Map<String, dynamic>.from(entry as Map)))
+        .toList();
+
+    if (parsedHelpers.isEmpty && (d['helperUid'] != null || d['helperName'] != null)) {
+      parsedHelpers.add(
+        _HelperMember(
+          uid: (d['helperUid'] ?? '').toString(),
+          name: (d['helperName'] ?? 'Usuario').toString(),
+          distanceKm: (d['helperDistanceKm'] as num?)?.toDouble() ?? 0,
+          etaMin: (d['helperEtaMin'] as num?)?.toInt() ?? 0,
+          lat: (d['helperLat'] as num?)?.toDouble(),
+          lng: (d['helperLng'] as num?)?.toDouble(),
+        ),
+      );
+    }
+
     return _CitizenAlert(
-      id: doc.id,
+      id: id,
       category: (d['category'] ?? '').toString(),
       categoryLabel: (d['categoryLabel'] ?? 'Alerta').toString(),
       isHelp: d['isHelp'] == true,
@@ -1314,6 +1537,38 @@ class _CitizenAlert {
       helperName: d['helperName'] as String?,
       helperDistanceKm: (d['helperDistanceKm'] as num?)?.toDouble(),
       helperEtaMin: (d['helperEtaMin'] as num?)?.toInt(),
+      helperLat: (d['helperLat'] as num?)?.toDouble(),
+      helperLng: (d['helperLng'] as num?)?.toDouble(),
+      helperMembers: parsedHelpers,
+    );
+  }
+}
+
+class _HelperMember {
+  final String uid;
+  final String name;
+  final double distanceKm;
+  final int etaMin;
+  final double? lat;
+  final double? lng;
+
+  const _HelperMember({
+    required this.uid,
+    required this.name,
+    required this.distanceKm,
+    required this.etaMin,
+    required this.lat,
+    required this.lng,
+  });
+
+  factory _HelperMember.fromMap(Map<String, dynamic> map) {
+    return _HelperMember(
+      uid: (map['uid'] ?? '').toString(),
+      name: (map['name'] ?? 'Usuario').toString(),
+      distanceKm: (map['distanceKm'] as num?)?.toDouble() ?? 0,
+      etaMin: (map['etaMin'] as num?)?.toInt() ?? 0,
+      lat: (map['lat'] as num?)?.toDouble(),
+      lng: (map['lng'] as num?)?.toDouble(),
     );
   }
 }
