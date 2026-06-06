@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'livekit_call_page.dart';
+import 'agora_call_page.dart';
 
 /// Full-screen incoming call page — shown via FCM fullScreenIntent.
 /// Arguments passed via route:
@@ -55,10 +55,12 @@ class _IncomingCallPageState extends State<IncomingCallPage>
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => LiveKitCallPage(
-          roomName: widget.args.roomName,
-          callerName: widget.args.callerName,
+        builder: (_) => AgoraCallPage(
+          callId: widget.args.roomName,
+          peerName: widget.args.callerName,
+          peerAvatar: '',
           isVideo: widget.args.isVideo,
+          isCaller: false,
         ),
       ),
     );

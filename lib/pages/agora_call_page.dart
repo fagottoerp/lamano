@@ -133,30 +133,38 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
     if (isIos && AppConstants.agoraTokenApiUrl.startsWith('http://')) {
       _log('iOS DIAG: endpoint token usa HTTP (ATS debe permitir este dominio)');
     }
-    try {
-      final resp = await http.post(
-        Uri.parse(AppConstants.agoraTokenApiUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'channel_name': channelName, 'uid': 0, 'role': 'publisher'}),
-      ).timeout(const Duration(seconds: 8));
-      _log('Token API status=${resp.statusCode}');
-      if (resp.statusCode != 200) {
-        _log('iOS DIAG: fallo token API body=${resp.body}');
+    const maxAttempts = 3;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final resp = await http.post(
+          Uri.parse(AppConstants.agoraTokenApiUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'channel_name': channelName, 'uid': 0, 'role': 'publisher'}),
+        ).timeout(const Duration(seconds: 15));
+
+        _log('Token API status=${resp.statusCode} intento=$attempt/$maxAttempts');
+        if (resp.statusCode != 200) {
+          _log('Token API body=${resp.body}');
+        }
+
+        final data = jsonDecode(resp.body);
+        final token = (data['token'] as String?) ?? '';
+        if (token.isNotEmpty) {
+          _log('Token OK (${token.length} chars)');
+          return token;
+        }
+        _log('Token vacío intento=$attempt/$maxAttempts');
+      } catch (e) {
+        _log('ERROR fetchToken intento=$attempt/$maxAttempts: $e');
       }
-      final data = jsonDecode(resp.body);
-      final token = (data['token'] as String?) ?? '';
-      if (token.isEmpty) {
-        _log('ERROR: token vacío - respuesta: ${resp.body}');
-        if (mounted) setState(() => _errorMessage = 'Error: token vacío');
-      } else {
-        _log('Token OK (${token.length} chars)');
+
+      if (attempt < maxAttempts) {
+        await Future.delayed(Duration(seconds: attempt));
       }
-      return token;
-    } catch (e) {
-      _log('ERROR fetchToken: $e');
-      if (mounted) setState(() => _errorMessage = 'Error token: $e');
-      return '';
     }
+
+    if (mounted) setState(() => _errorMessage = 'Error token: no disponible');
+    return '';
   }
 
   Future<void> _initAgora() async {
@@ -170,6 +178,13 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
       ));
       _log('initialize OK');
+
+      try {
+        await _engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+        _log('setClientRole broadcaster OK');
+      } catch (e) {
+        _log('setClientRole warning: $e');
+      }
 
       _log('registerEventHandler...');
       _engine.registerEventHandler(RtcEngineEventHandler(
@@ -235,8 +250,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       // disableVideo y speakerphone se configuran después del join
 
       final token = await _fetchToken(widget.callId);
-      final tokenArg = token.isEmpty ? null : token;
-      if (tokenArg == null) {
+      if (token.isEmpty) {
         await _failCall('Error token: no llegó token de Agora');
         return;
       }
@@ -244,7 +258,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       _log('joinChannel: ${widget.callId} token=OK');
       try {
         await _engine.joinChannel(
-          token: tokenArg,
+          token: token,
           channelId: widget.callId,
           uid: 0,
           options: ChannelMediaOptions(

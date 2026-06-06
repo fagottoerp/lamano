@@ -2298,10 +2298,12 @@ class ChatPageState extends State<ChatPage> {
                 context,
                 MaterialPageRoute(
                   fullscreenDialog: true,
-                  builder: (_) => LiveKitCallPage(
-                    roomName: roomName,
-                    callerName: widget.arguments.peerNickname,
+                  builder: (_) => AgoraCallPage(
+                    callId: roomName,
+                    peerName: widget.arguments.peerNickname,
+                    peerAvatar: widget.arguments.peerAvatar,
                     isVideo: isVideo,
+                    isCaller: false,
                   ),
                 ),
               );
