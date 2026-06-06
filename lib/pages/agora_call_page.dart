@@ -77,12 +77,22 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         _log('Permiso ${e.key}: ${e.value}');
       }
       final micStatus = await Permission.microphone.status;
+      if (micStatus.isPermanentlyDenied) {
+        _setError('iPhone bloqueó el micrófono para esta app. Ve a Ajustes y actívalo.');
+        await openAppSettings();
+        return;
+      }
       if (!micStatus.isGranted) {
         _setError('Error permisos: micrófono no concedido ($micStatus)');
         return;
       }
       if (widget.isVideo) {
         final camStatus = await Permission.camera.status;
+        if (camStatus.isPermanentlyDenied) {
+          _setError('iPhone bloqueó la cámara para esta app. Ve a Ajustes y actívala.');
+          await openAppSettings();
+          return;
+        }
         if (!camStatus.isGranted) {
           _setError('Error permisos: cámara no concedida ($camStatus)');
           return;
