@@ -290,6 +290,30 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
           final newToken = await _fetchToken(widget.callId);
           if (newToken.isNotEmpty) await _engine.renewToken(newToken);
         },
+        // ── Diagnóstico mic local ─────────────────────────────────────────
+        onLocalAudioStateChanged: (connection, state, reason) {
+          _log('LOCAL_AUDIO state=${state.name} reason=${reason.name}');
+          if (state == LocalAudioStreamState.localAudioStreamStateFailed) {
+            _log('ERROR MIC: ${reason.name} — revisar permisos o AVAudioSession');
+          }
+        },
+        // ── Diagnóstico audio remoto (si se suscribe pero no llega) ──────
+        onAudioSubscribeStateChanged: (channel, uid, oldState, newState, elapsed) {
+          _log('AUDIO_SUBSCRIBE uid=$uid $oldState→$newState elapsed=${elapsed}ms');
+        },
+        // ── Diagnóstico publicación local ─────────────────────────────────
+        onAudioPublishStateChanged: (channel, oldState, newState, elapsed) {
+          _log('AUDIO_PUBLISH $oldState→$newState elapsed=${elapsed}ms');
+        },
+        // ── Stats post-join (calidad de red) ──────────────────────────────
+        onRtcStats: (connection, stats) {
+          _log('RTC_STATS txKbps=${stats.txKBitRate} rxKbps=${stats.rxKBitRate} '
+              'users=${stats.userCount} cpu=${stats.cpuAppUsage?.toStringAsFixed(1)}%');
+        },
+        // ── Canal abandonado ──────────────────────────────────────────────
+        onLeaveChannel: (connection, stats) {
+          _log('onLeaveChannel duration=${stats.duration}s tx=${stats.txKBitRate}kbps');
+        },
       ));
       _log('PASO3 registerEventHandler OK');
 
