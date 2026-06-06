@@ -179,13 +179,6 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       ));
       _log('initialize OK');
 
-      try {
-        await _engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
-        _log('setClientRole broadcaster OK');
-      } catch (e) {
-        _log('setClientRole warning: $e');
-      }
-
       _log('registerEventHandler...');
       _engine.registerEventHandler(RtcEngineEventHandler(
         onJoinChannelSuccess: (connection, elapsed) {
@@ -236,9 +229,10 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
           if (newToken.isNotEmpty) await _engine.renewToken(newToken);
         },
       ));
+      _log('registerEventHandler OK');
 
       _log('enableAudio...');
-      await _engine.enableAudio();
+      await _engine.enableAudio().timeout(const Duration(seconds: 8));
       _log('enableAudio OK');
 
       if (widget.isVideo) {
