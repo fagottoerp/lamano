@@ -1,8 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
 import 'package:flutter_chat_demo/constants/constants.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -15,43 +20,111 @@ class MapaMundisPage extends StatefulWidget {
   State<MapaMundisPage> createState() => _MapaMundisPageState();
 }
 
-class _MapaMundisPageState extends State<MapaMundisPage> {
+class _MapaMundisPageState extends State<MapaMundisPage>
+  with SingleTickerProviderStateMixin {
   static const LatLng _chileCenter = LatLng(-35.6751, -71.5430);
+  static const String _alertsCollection = 'citizen_alerts';
+
+  static final List<_AlertCategory> _categories = [
+    _AlertCategory('bache', 'Bache en la via', Icons.construction, Colors.orange),
+    _AlertCategory('accidente', 'Accidente de transito', Icons.car_crash, Colors.red),
+    _AlertCategory('vehiculo_detenido', 'Vehiculo detenido', Icons.car_repair, Colors.amber),
+    _AlertCategory('control_policial', 'Control policial', Icons.local_police, Colors.indigo),
+    _AlertCategory('corte_calle', 'Corte de calle', Icons.block, Colors.deepOrange),
+    _AlertCategory('objeto_peligroso', 'Objeto peligroso', Icons.warning_amber, Colors.brown),
+    _AlertCategory('falta_combustible', 'Falta de combustible', Icons.local_gas_station, Colors.teal, isHelp: true),
+    _AlertCategory('ayuda_mecanica', 'Ayuda mecanica', Icons.build_circle, Colors.green, isHelp: true),
+    _AlertCategory('asistencia_basica', 'Asistencia basica', Icons.handshake, Colors.lightGreen, isHelp: true),
+    _AlertCategory('emergencia_menor', 'Emergencia menor', Icons.health_and_safety, Colors.purple, isHelp: true),
+  ];
 
   final MapController _mapController = MapController();
   final Distance _distance = const Distance();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FlutterLocalNotificationsPlugin _localNotif = FlutterLocalNotificationsPlugin();
+
+  StreamSubscription<QuerySnapshot>? _alertsSub;
+  StreamSubscription<Position>? _positionSub;
+  Timer? _dispatchRotateTimer;
+  late final AnimationController _scannerCtrl;
 
   List<_Comisaria> _allStations = const [];
+  List<_CitizenAlert> _activeAlerts = const [];
+
   Position? _myPosition;
   bool _loading = true;
   String? _error;
   bool _focusedOnce = false;
 
+  bool _showNearestPanel = true;
+  final Set<String> _expandedStations = <String>{};
+  bool _pickPointOnMap = false;
+  _AlertCategory? _pendingCategory;
+  String _pendingNote = '';
+
+  final Set<String> _notifiedNearAlerts = <String>{};
+  final Set<String> _notifiedGlobalAlerts = <String>{};
+  final Map<String, int> _userReputation = <String, int>{};
+  int _dispatchIndex = 0;
+  bool _alertsPrimed = false;
+
   @override
   void initState() {
     super.initState();
+    _scannerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )
+      ..addListener(() {
+        if (mounted) setState(() {});
+      })
+      ..repeat();
     _init();
+  }
+
+  @override
+  void dispose() {
+    _alertsSub?.cancel();
+    _positionSub?.cancel();
+    _dispatchRotateTimer?.cancel();
+    _scannerCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _init() async {
     try {
+      await _initLocalNotifications();
+
       final stationsFuture = _loadStations();
       final locationFuture = _resolveLocation();
       final results = await Future.wait([stationsFuture, locationFuture]);
+
       if (!mounted) return;
       setState(() {
         _allStations = results[0] as List<_Comisaria>;
         _myPosition = results[1] as Position?;
         _loading = false;
       });
+
       _focusInitial();
-    } catch (e) {
+      _listenLiveAlerts();
+      _startPositionTracking();
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _loading = false;
         _error = 'No se pudo cargar el Mapa Mundis (GTA).';
       });
     }
+  }
+
+  Future<void> _initLocalNotifications() async {
+    await _localNotif.initialize(
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('app_icon'),
+        iOS: DarwinInitializationSettings(),
+      ),
+    );
   }
 
   Future<List<_Comisaria>> _loadStations() async {
@@ -66,7 +139,7 @@ class _MapaMundisPageState extends State<MapaMundisPage> {
 
   Future<Position?> _resolveLocation() async {
     try {
-      var serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return null;
 
       var permission = await Geolocator.checkPermission();
@@ -81,10 +154,102 @@ class _MapaMundisPageState extends State<MapaMundisPage> {
       final last = await Geolocator.getLastKnownPosition();
       if (last != null) return last;
       return Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.medium),
       );
     } catch (_) {
       return null;
+    }
+  }
+
+  void _startPositionTracking() {
+    _positionSub?.cancel();
+    _positionSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.medium,
+        distanceFilter: 40,
+      ),
+    ).listen((p) {
+      if (!mounted) return;
+      setState(() => _myPosition = p);
+      _maybeNotifyNearbyAlerts();
+    });
+  }
+
+  void _listenLiveAlerts() {
+    _alertsSub?.cancel();
+    _alertsSub = _firestore
+        .collection(_alertsCollection)
+        .where('status', isEqualTo: 'active')
+        .snapshots()
+        .listen((snap) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final alerts = snap.docs
+          .map(_CitizenAlert.fromDoc)
+          .where((a) => a.expiresAtMs > now)
+          .toList()
+        ..sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
+
+      if (!mounted) return;
+      _startDispatchTicker(alerts);
+      _rebuildReputation(alerts);
+      _notifyGlobalNewAlerts(alerts);
+      setState(() {
+        _activeAlerts = alerts;
+        if (_dispatchIndex >= alerts.length) {
+          _dispatchIndex = 0;
+        }
+      });
+      _maybeNotifyNearbyAlerts();
+    });
+  }
+
+  void _startDispatchTicker(List<_CitizenAlert> alerts) {
+    _dispatchRotateTimer?.cancel();
+    if (alerts.length <= 1) return;
+    _dispatchRotateTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || _activeAlerts.isEmpty) return;
+      setState(() {
+        _dispatchIndex = (_dispatchIndex + 1) % _activeAlerts.length;
+      });
+    });
+  }
+
+  void _rebuildReputation(List<_CitizenAlert> alerts) {
+    _userReputation
+      ..clear()
+      ..addEntries(alerts.map((a) {
+        final rep = (a.confirmCount * 2) - a.discardCount;
+        return MapEntry(a.createdByUid, rep);
+      }));
+  }
+
+  Future<void> _notifyGlobalNewAlerts(List<_CitizenAlert> alerts) async {
+    if (!_alertsPrimed) {
+      _notifiedGlobalAlerts.addAll(alerts.map((a) => a.id));
+      _alertsPrimed = true;
+      return;
+    }
+    for (final alert in alerts) {
+      if (_notifiedGlobalAlerts.contains(alert.id)) continue;
+      _notifiedGlobalAlerts.add(alert.id);
+
+      final id = (alert.id.hashCode ^ 0x41f2) & 0x7fffffff;
+      await _localNotif.show(
+        id: id,
+        title: 'Nueva alerta en tiempo real',
+        body: '${alert.categoryLabel} · ${alert.createdByName}',
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'citizen_alerts_global_v1',
+            'Alertas globales ciudadanas',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+      );
+      SystemSound.play(SystemSoundType.alert);
     }
   }
 
@@ -101,7 +266,51 @@ class _MapaMundisPageState extends State<MapaMundisPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _mapController.move(center, zoom);
+      if (hasMe) {
+        _goToMyLocation();
+      }
     });
+  }
+
+  void _goToMyLocation() {
+    if (_myPosition == null) return;
+    final me = LatLng(_myPosition!.latitude, _myPosition!.longitude);
+    _mapController.move(me, 13);
+  }
+
+  Future<void> _maybeNotifyNearbyAlerts() async {
+    if (_myPosition == null || _activeAlerts.isEmpty) return;
+
+    final myLat = _myPosition!.latitude;
+    final myLng = _myPosition!.longitude;
+
+    for (final alert in _activeAlerts) {
+      if (_notifiedNearAlerts.contains(alert.id)) continue;
+
+      final meters = Geolocator.distanceBetween(myLat, myLng, alert.lat, alert.lng);
+      if (meters > 700) continue;
+
+      final km = meters / 1000;
+      final body = '${alert.categoryLabel} cerca (${km.toStringAsFixed(1)} km).';
+      final notifId = alert.id.hashCode & 0x7fffffff;
+
+      await _localNotif.show(
+        id: notifId,
+        title: 'Alerta cercana',
+        body: body,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'citizen_alerts_v1',
+            'Alertas ciudadanas',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+      );
+
+      _notifiedNearAlerts.add(alert.id);
+    }
   }
 
   List<_Comisaria> _nearestStations() {
@@ -118,11 +327,482 @@ class _MapaMundisPageState extends State<MapaMundisPage> {
     return sorted.take(12).toList();
   }
 
-  Future<void> _openInGoogleMaps(_Comisaria station) async {
+  Future<void> _openInGoogleMaps(double lat, double lng) async {
     final uri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=${station.lat},${station.lng}',
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
     );
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  _AlertCategory _categoryByKey(String key) {
+    return _categories.firstWhere(
+      (c) => c.key == key,
+      orElse: () => const _AlertCategory('otro', 'Alerta', Icons.warning, Colors.red),
+    );
+  }
+
+  Future<void> _openCreateAlertSheet() async {
+    final selected = await showModalBottomSheet<_AlertCategory>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Nueva alerta ciudadana',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Selecciona una categoria',
+                style: TextStyle(color: Colors.black54),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 350,
+                child: GridView.count(
+                  crossAxisCount: 2,
+                  childAspectRatio: 2.5,
+                  children: _categories
+                      .map(
+                        (c) => Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: OutlinedButton.icon(
+                            onPressed: () => Navigator.of(context).pop(c),
+                            icon: Icon(c.icon, color: c.color),
+                            label: Text(
+                              c.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selected == null || !mounted) return;
+    _openCreateModeSheet(selected);
+  }
+
+  Future<void> _openCreateModeSheet(_AlertCategory category) async {
+    final noteCtrl = TextEditingController();
+    final mode = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              category.label,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: noteCtrl,
+              maxLength: 140,
+              decoration: InputDecoration(
+                labelText: category.isHelp
+                    ? 'Describe brevemente la ayuda'
+                    : 'Detalle opcional de la alerta',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.of(context).pop('my_location'),
+                    icon: const Icon(Icons.my_location),
+                    label: const Text('Usar mi ubicación'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).pop('pick_map'),
+                    icon: const Icon(Icons.touch_app),
+                    label: const Text('Marcar en mapa'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final note = noteCtrl.text.trim();
+    noteCtrl.dispose();
+
+    if (mode == null || !mounted) return;
+
+    if (mode == 'my_location') {
+      if (_myPosition == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No hay ubicacion disponible.')),
+        );
+        return;
+      }
+      await _createAlert(
+        category: category,
+        point: LatLng(_myPosition!.latitude, _myPosition!.longitude),
+        note: note,
+      );
+      return;
+    }
+
+    setState(() {
+      _pendingCategory = category;
+      _pendingNote = note;
+      _pickPointOnMap = true;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Toca el mapa para publicar la alerta.')),
+    );
+  }
+
+  Future<void> _createAlert({
+    required _AlertCategory category,
+    required LatLng point,
+    required String note,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid ?? '';
+    final nickname =
+        (user?.displayName?.trim().isNotEmpty == true) ? user!.displayName!.trim() : 'Usuario';
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final expiresAt = now + const Duration(hours: 6).inMilliseconds;
+
+    await _firestore.collection(_alertsCollection).add({
+      'category': category.key,
+      'categoryLabel': category.label,
+      'isHelp': category.isHelp,
+      'note': note,
+      'lat': point.latitude,
+      'lng': point.longitude,
+      'createdByUid': uid,
+      'createdByName': nickname,
+      'createdAtMs': now,
+      'expiresAtMs': expiresAt,
+      'status': 'active',
+      'confirmUids': <String>[],
+      'discardUids': <String>[],
+      'helperUid': null,
+      'helperName': null,
+      'helperDistanceKm': null,
+      'helperEtaMin': null,
+      'helperAcceptedAtMs': null,
+    });
+
+    if (!mounted) return;
+    SystemSound.play(SystemSoundType.alert);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Alerta publicada para toda la comunidad.')),
+    );
+  }
+
+  _RiskLevel _riskLevelOf(_CitizenAlert alert) {
+    final score = (alert.confirmCount * 2) - alert.discardCount;
+    if (score >= 8) return _RiskLevel.high;
+    if (score >= 3) return _RiskLevel.medium;
+    return _RiskLevel.low;
+  }
+
+  Color _riskColor(_RiskLevel level) {
+    switch (level) {
+      case _RiskLevel.high:
+        return Colors.redAccent;
+      case _RiskLevel.medium:
+        return Colors.amber;
+      case _RiskLevel.low:
+        return Colors.lightGreen;
+    }
+  }
+
+  String _riskLabel(_RiskLevel level) {
+    switch (level) {
+      case _RiskLevel.high:
+        return 'Riesgo alto';
+      case _RiskLevel.medium:
+        return 'Riesgo medio';
+      case _RiskLevel.low:
+        return 'Riesgo bajo';
+    }
+  }
+
+  Future<void> _voteAlert(_CitizenAlert alert, {required bool confirm}) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+
+    final doc = _firestore.collection(_alertsCollection).doc(alert.id);
+
+    await _firestore.runTransaction((tx) async {
+      final snap = await tx.get(doc);
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+
+      final confirms = Set<String>.from((data['confirmUids'] as List<dynamic>? ?? const []).map((e) => '$e'));
+      final discards = Set<String>.from((data['discardUids'] as List<dynamic>? ?? const []).map((e) => '$e'));
+
+      if (confirm) {
+        confirms.add(uid);
+        discards.remove(uid);
+      } else {
+        discards.add(uid);
+        confirms.remove(uid);
+      }
+
+      final next = <String, dynamic>{
+        'confirmUids': confirms.toList(),
+        'discardUids': discards.toList(),
+      };
+
+      if (discards.length >= confirms.length + 5) {
+        next['status'] = 'closed';
+      }
+
+      tx.update(doc, next);
+    });
+  }
+
+  Future<void> _assistAlert(_CitizenAlert alert) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+    if (_myPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Activa tu ubicacion para asistir.')),
+      );
+      return;
+    }
+
+    final helperName =
+        (FirebaseAuth.instance.currentUser?.displayName?.trim().isNotEmpty == true)
+            ? FirebaseAuth.instance.currentUser!.displayName!.trim()
+            : 'Usuario';
+
+    final meters = Geolocator.distanceBetween(
+      _myPosition!.latitude,
+      _myPosition!.longitude,
+      alert.lat,
+      alert.lng,
+    );
+    final distanceKm = meters / 1000;
+    final etaMin = (distanceKm / 35 * 60).clamp(1, 180).round();
+
+    await _firestore.collection(_alertsCollection).doc(alert.id).update({
+      'helperUid': uid,
+      'helperName': helperName,
+      'helperDistanceKm': distanceKm,
+      'helperEtaMin': etaMin,
+      'helperAcceptedAtMs': DateTime.now().millisecondsSinceEpoch,
+    });
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$helperName va en camino. ETA aprox: $etaMin min.')),
+    );
+  }
+
+  String _relativeUntil(int expiresAtMs) {
+    final left = expiresAtMs - DateTime.now().millisecondsSinceEpoch;
+    if (left <= 0) return 'expirada';
+    final min = (left / 60000).floor();
+    if (min < 60) return 'vence en ${min}m';
+    final h = min ~/ 60;
+    final rem = min % 60;
+    return 'vence en ${h}h ${rem}m';
+  }
+
+  double? _distanceKmTo(double lat, double lng) {
+    if (_myPosition == null) return null;
+    final meters = Geolocator.distanceBetween(_myPosition!.latitude, _myPosition!.longitude, lat, lng);
+    return meters / 1000;
+  }
+
+  void _openAlertDetails(_CitizenAlert alert) {
+    final category = _categoryByKey(alert.category);
+    final risk = _riskLevelOf(alert);
+    final rep = _userReputation[alert.createdByUid] ?? 0;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) {
+        final dist = _distanceKmTo(alert.lat, alert.lng);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(category.icon, color: category.color),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        alert.categoryLabel,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (alert.note.isNotEmpty)
+                  Text(alert.note, style: const TextStyle(color: Colors.black87)),
+                if (dist != null) ...[
+                  const SizedBox(height: 6),
+                  Text('Distancia: ${dist.toStringAsFixed(1)} km'),
+                ],
+                const SizedBox(height: 4),
+                Text('Reporto: ${alert.createdByName}'),
+                Text('Reputación: $rep'),
+                Text(
+                  _riskLabel(risk),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: _riskColor(risk),
+                  ),
+                ),
+                Text(_relativeUntil(alert.expiresAtMs)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    FilledButton.icon(
+                      onPressed: () => _voteAlert(alert, confirm: true),
+                      icon: const Icon(Icons.thumb_up_alt_outlined),
+                      label: Text('Confirmar (${alert.confirmCount})'),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => _voteAlert(alert, confirm: false),
+                      icon: const Icon(Icons.thumb_down_alt_outlined),
+                      label: Text('Descartar (${alert.discardCount})'),
+                    ),
+                  ],
+                ),
+                if (alert.isHelp) ...[
+                  const SizedBox(height: 10),
+                  if (alert.helperName == null || alert.helperName!.isEmpty)
+                    FilledButton.icon(
+                      onPressed: () => _assistAlert(alert),
+                      icon: const Icon(Icons.handshake),
+                      label: const Text('Asistir'),
+                    )
+                  else
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFFAF1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFBDE5C5)),
+                      ),
+                      child: Text(
+                        '${alert.helperName} va en camino. Distancia: '
+                        '${(alert.helperDistanceKm ?? 0).toStringAsFixed(1)} km · '
+                        'ETA: ${alert.helperEtaMin ?? '-'} min',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _openInGoogleMaps(alert.lat, alert.lng),
+                    icon: const Icon(Icons.navigation_outlined),
+                    label: const Text('Abrir en Google Maps'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openAlertsPanel() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.65,
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              const Text(
+                'Alertas ciudadanas activas',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+              const Divider(),
+              Expanded(
+                child: _activeAlerts.isEmpty
+                    ? const Center(
+                        child: Text('No hay alertas activas por ahora.'),
+                      )
+                    : ListView.separated(
+                        itemCount: _activeAlerts.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final a = _activeAlerts[i];
+                          final c = _categoryByKey(a.category);
+                          final dist = _distanceKmTo(a.lat, a.lng);
+                          return ListTile(
+                            leading: Icon(c.icon, color: c.color),
+                            title: Text(a.categoryLabel),
+                            subtitle: Text(
+                              [
+                                if (dist != null) '${dist.toStringAsFixed(1)} km',
+                                _relativeUntil(a.expiresAtMs),
+                                if (a.note.isNotEmpty) a.note,
+                              ].join(' · '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: () {
+                              Navigator.of(context).pop();
+                              _mapController.move(LatLng(a.lat, a.lng), 14.5);
+                              _openAlertDetails(a);
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -148,170 +828,387 @@ class _MapaMundisPageState extends State<MapaMundisPage> {
         ? null
         : LatLng(_myPosition!.latitude, _myPosition!.longitude);
 
-    final markers = <Marker>[
-      ..._allStations.map(
-        (s) => Marker(
-          point: LatLng(s.lat, s.lng),
-          width: 16,
-          height: 16,
-          child: const Icon(
-            Icons.location_on,
-            size: 15,
-            color: Colors.red,
+    final stationMarkers = _allStations
+        .map(
+          (s) => Marker(
+            point: LatLng(s.lat, s.lng),
+            width: 16,
+            height: 16,
+            child: const Icon(Icons.location_on, size: 15, color: Colors.red),
+          ),
+        )
+        .toList();
+
+    final alertMarkers = _activeAlerts.map((a) {
+      final c = _categoryByKey(a.category);
+      final risk = _riskLevelOf(a);
+      final riskColor = _riskColor(risk);
+      final icon = a.isHelp
+          ? (a.helperName == null || a.helperName!.isEmpty
+              ? Icons.help_center
+              : Icons.handshake)
+          : c.icon;
+      final color = a.isHelp
+          ? (a.helperName == null || a.helperName!.isEmpty
+              ? Colors.deepPurple
+              : Colors.green)
+          : c.color;
+
+      return Marker(
+        point: LatLng(a.lat, a.lng),
+        width: 34,
+        height: 34,
+        child: GestureDetector(
+          onTap: () => _openAlertDetails(a),
+          child: CircleAvatar(
+            radius: 16,
+            backgroundColor: Colors.white,
+            child: Icon(icon, color: color == c.color ? riskColor : color, size: 18),
           ),
         ),
-      ),
+      );
+    }).toList();
+
+    final alertRiskCircles = _activeAlerts
+        .map((a) {
+          final level = _riskLevelOf(a);
+          final radius = switch (level) {
+            _RiskLevel.high => 320.0,
+            _RiskLevel.medium => 220.0,
+            _RiskLevel.low => 130.0,
+          };
+          final color = _riskColor(level);
+          return CircleMarker(
+            point: LatLng(a.lat, a.lng),
+            radius: radius,
+            useRadiusInMeter: true,
+            color: color.withValues(alpha: 0.10),
+            borderColor: color.withValues(alpha: 0.28),
+            borderStrokeWidth: 1,
+          );
+        })
+        .toList();
+
+    final markers = <Marker>[
+      ...stationMarkers,
+      ...alertMarkers,
       if (myLatLng != null)
         Marker(
           point: myLatLng,
           width: 24,
           height: 24,
-          child: const Icon(
-            Icons.my_location,
-            size: 22,
-            color: Colors.blue,
-          ),
+          child: const Icon(Icons.my_location, size: 22, color: Colors.blue),
         ),
     ];
 
-    return Column(
+    return Stack(
       children: [
-        Container(
-          width: double.infinity,
-          color: Colors.white,
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-          child: Row(
-            children: [
-              const Icon(Icons.map, color: ColorConstants.themeColor, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Mapa Mundis (GTA) · ${_allStations.length} comisarías',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: ColorConstants.textPrimary,
+        Column(
+          children: [
+            Container(
+              width: double.infinity,
+              color: Colors.white,
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.map, color: ColorConstants.themeColor, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Mapa Mundis (GTA) · ${_allStations.length} comisarías',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: ColorConstants.textPrimary,
+                      ),
+                    ),
                   ),
-                ),
+                  TextButton.icon(
+                    onPressed: _openCreateAlertSheet,
+                    icon: const Icon(Icons.add_alert),
+                    label: const Text('Marcar alerta'),
+                  ),
+                  if (myLatLng != null)
+                    TextButton(
+                      onPressed: _goToMyLocation,
+                      child: const Text('Mi ubicación'),
+                    ),
+                  IconButton(
+                    tooltip: 'Ver alertas activas',
+                    onPressed: _openAlertsPanel,
+                    icon: const Icon(Icons.list_alt),
+                  ),
+                ],
               ),
-              if (myLatLng != null)
-                TextButton(
-                  onPressed: () => _mapController.move(myLatLng, 13),
-                  child: const Text('Mi ubicación'),
-                ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: FlutterMap(
-            mapController: _mapController,
-            options: const MapOptions(
-              initialCenter: _chileCenter,
-              initialZoom: 5.2,
-              minZoom: 4,
-              maxZoom: 18,
             ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.lamano.clonewhatsapp',
-              ),
-              MarkerLayer(markers: markers),
-              if (myLatLng != null)
-                CircleLayer(
-                  circles: [
-                    CircleMarker(
-                      point: myLatLng,
-                      radius: 40,
-                      useRadiusInMeter: true,
-                      color: Colors.blue.withValues(alpha: 0.12),
-                      borderColor: Colors.blue.withValues(alpha: 0.3),
-                      borderStrokeWidth: 1,
-                    ),
-                  ],
-                ),
-            ],
-          ),
-        ),
-        if (nearest.isNotEmpty)
-          Container(
-            height: 120,
-            color: Colors.white,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.all(10),
-              itemBuilder: (_, i) {
-                final st = nearest[i];
-                final m = _distance.as(
-                  LengthUnit.Kilometer,
-                  myLatLng!,
-                  LatLng(st.lat, st.lng),
-                );
-                return InkWell(
-                  onTap: () {
-                    final p = LatLng(st.lat, st.lng);
-                    _mapController.move(p, 14.5);
+            Expanded(
+              child: FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: _chileCenter,
+                  initialZoom: 5.2,
+                  minZoom: 4,
+                  maxZoom: 18,
+                  onTap: (_, point) async {
+                    if (!_pickPointOnMap || _pendingCategory == null) return;
+                    final category = _pendingCategory!;
+                    final note = _pendingNote;
+                    setState(() {
+                      _pickPointOnMap = false;
+                      _pendingCategory = null;
+                      _pendingNote = '';
+                    });
+                    await _createAlert(
+                      category: category,
+                      point: point,
+                      note: note,
+                    );
                   },
-                  child: Container(
-                    width: 250,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF6F8FA),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: ColorConstants.divider),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          st.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.lamano.clonewhatsapp',
+                  ),
+                  if (alertRiskCircles.isNotEmpty)
+                    CircleLayer(circles: alertRiskCircles),
+                  MarkerLayer(markers: markers),
+                  if (myLatLng != null)
+                    CircleLayer(
+                      circles: [
+                        CircleMarker(
+                          point: myLatLng,
+                          radius: 40,
+                          useRadiusInMeter: true,
+                          color: Colors.blue.withValues(alpha: 0.12),
+                          borderColor: Colors.blue.withValues(alpha: 0.3),
+                          borderStrokeWidth: 1,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${st.comunaName}, ${st.regionName}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11, color: Colors.black54),
-                        ),
-                        const Spacer(),
-                        Row(
-                          children: [
-                            Text(
-                              '${m.toStringAsFixed(1)} km',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: ColorConstants.themeColor,
-                              ),
-                            ),
-                            const Spacer(),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              iconSize: 18,
-                              onPressed: () => _openInGoogleMaps(st),
-                              icon: const Icon(Icons.navigation_outlined),
-                              tooltip: 'Abrir en Google Maps',
-                            ),
-                          ],
+                        CircleMarker(
+                          point: myLatLng,
+                          radius: 120 + (_scannerCtrl.value * 420),
+                          useRadiusInMeter: true,
+                          color: Colors.cyan.withValues(alpha: 0.06 * (1 - _scannerCtrl.value)),
+                          borderColor: Colors.cyan.withValues(alpha: 0.28 * (1 - _scannerCtrl.value)),
+                          borderStrokeWidth: 1,
                         ),
                       ],
                     ),
+                ],
+              ),
+            ),
+            if (nearest.isNotEmpty && _showNearestPanel)
+              Container(
+                height: 150,
+                color: Colors.white,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 6, 6, 0),
+                      child: Row(
+                        children: [
+                          const Text(
+                            'Comisarías cercanas',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: ColorConstants.textPrimary,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.keyboard_arrow_down),
+                            tooltip: 'Ocultar panel',
+                            onPressed: () {
+                              setState(() {
+                                _showNearestPanel = false;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.all(10),
+                        itemBuilder: (_, i) {
+                          final st = nearest[i];
+                          final key = st.stationId.isEmpty ? '${st.lat},${st.lng}' : st.stationId;
+                          final expanded = _expandedStations.contains(key);
+                          final m = _distance.as(
+                            LengthUnit.Kilometer,
+                            myLatLng!,
+                            LatLng(st.lat, st.lng),
+                          );
+                          return InkWell(
+                            onTap: () {
+                              final p = LatLng(st.lat, st.lng);
+                              _mapController.move(p, 14.5);
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: expanded ? 280 : 220,
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF6F8FA),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: ColorConstants.divider),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          st.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        iconSize: 18,
+                                        tooltip: expanded ? 'Contraer' : 'Expandir',
+                                        icon: Icon(
+                                          expanded
+                                              ? Icons.expand_less
+                                              : Icons.expand_more,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            if (expanded) {
+                                              _expandedStations.remove(key);
+                                            } else {
+                                              _expandedStations.add(key);
+                                            }
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  if (expanded) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${st.comunaName}, ${st.regionName}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.black54,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Row(
+                                      children: [
+                                        Text(
+                                          '${m.toStringAsFixed(1)} km',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: ColorConstants.themeColor,
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          iconSize: 18,
+                                          onPressed: () => _openInGoogleMaps(st.lat, st.lng),
+                                          icon: const Icon(Icons.navigation_outlined),
+                                          tooltip: 'Abrir en Google Maps',
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemCount: nearest.length,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (nearest.isNotEmpty && !_showNearestPanel)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 10, bottom: 10),
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _showNearestPanel = true;
+                      });
+                    },
+                    icon: const Icon(Icons.keyboard_arrow_up),
+                    label: const Text('Comisarías'),
                   ),
-                );
+                ),
+              ),
+          ],
+        ),
+        if (_activeAlerts.isNotEmpty)
+          Positioned(
+            left: 10,
+            right: 10,
+            top: 54,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xE6000000),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.sensors, color: Colors.cyanAccent, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'DISPATCH: ${_activeAlerts[_dispatchIndex].categoryLabel} · ${_activeAlerts[_dispatchIndex].createdByName}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (_pickPointOnMap)
+          Positioned(
+            right: 12,
+            bottom: 190,
+            child: FloatingActionButton.small(
+              heroTag: 'fab_cancel_pick',
+              onPressed: () {
+                setState(() {
+                  _pickPointOnMap = false;
+                  _pendingCategory = null;
+                  _pendingNote = '';
+                });
               },
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemCount: nearest.length,
+              tooltip: 'Cancelar marcado',
+              child: const Icon(Icons.close),
             ),
           ),
       ],
     );
   }
 }
+
+enum _RiskLevel { low, medium, high }
 
 class _Comisaria {
   final String stationId;
@@ -338,6 +1235,85 @@ class _Comisaria {
       lng: (json['lng'] as num).toDouble(),
       regionName: (json['regionName'] ?? '').toString(),
       comunaName: (json['comunaName'] ?? '').toString(),
+    );
+  }
+}
+
+class _AlertCategory {
+  final String key;
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool isHelp;
+
+  const _AlertCategory(this.key, this.label, this.icon, this.color, {this.isHelp = false});
+}
+
+class _CitizenAlert {
+  final String id;
+  final String category;
+  final String categoryLabel;
+  final bool isHelp;
+  final String note;
+  final double lat;
+  final double lng;
+  final String createdByUid;
+  final String createdByName;
+  final int createdAtMs;
+  final int expiresAtMs;
+  final String status;
+  final List<String> confirmUids;
+  final List<String> discardUids;
+  final String? helperUid;
+  final String? helperName;
+  final double? helperDistanceKm;
+  final int? helperEtaMin;
+
+  int get confirmCount => confirmUids.length;
+  int get discardCount => discardUids.length;
+
+  const _CitizenAlert({
+    required this.id,
+    required this.category,
+    required this.categoryLabel,
+    required this.isHelp,
+    required this.note,
+    required this.lat,
+    required this.lng,
+    required this.createdByUid,
+    required this.createdByName,
+    required this.createdAtMs,
+    required this.expiresAtMs,
+    required this.status,
+    required this.confirmUids,
+    required this.discardUids,
+    required this.helperUid,
+    required this.helperName,
+    required this.helperDistanceKm,
+    required this.helperEtaMin,
+  });
+
+  factory _CitizenAlert.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data();
+    return _CitizenAlert(
+      id: doc.id,
+      category: (d['category'] ?? '').toString(),
+      categoryLabel: (d['categoryLabel'] ?? 'Alerta').toString(),
+      isHelp: d['isHelp'] == true,
+      note: (d['note'] ?? '').toString(),
+      lat: (d['lat'] as num).toDouble(),
+      lng: (d['lng'] as num).toDouble(),
+      createdByUid: (d['createdByUid'] ?? '').toString(),
+      createdByName: (d['createdByName'] ?? 'Usuario').toString(),
+      createdAtMs: (d['createdAtMs'] as num?)?.toInt() ?? 0,
+      expiresAtMs: (d['expiresAtMs'] as num?)?.toInt() ?? 0,
+      status: (d['status'] ?? 'active').toString(),
+      confirmUids: (d['confirmUids'] as List<dynamic>? ?? const []).map((e) => '$e').toList(),
+      discardUids: (d['discardUids'] as List<dynamic>? ?? const []).map((e) => '$e').toList(),
+      helperUid: d['helperUid'] as String?,
+      helperName: d['helperName'] as String?,
+      helperDistanceKm: (d['helperDistanceKm'] as num?)?.toDouble(),
+      helperEtaMin: (d['helperEtaMin'] as num?)?.toInt(),
     );
   }
 }

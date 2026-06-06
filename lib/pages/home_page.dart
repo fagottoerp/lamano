@@ -920,6 +920,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       final isActive = _selectedTab == i;
                       int badgeCount = 0;
                       if (item['key'] == 'orders') badgeCount = _orderBadge;
+                      if (item['key'] == 'home') badgeCount = chatsUnread;
                       if (item['key'] == 'chats') badgeCount = chatsUnread;
                       if (item['key'] == 'temp') badgeCount = tempUnread;
                       return Expanded(
