@@ -51,6 +51,8 @@
 		<string>Lamano necesita ubicación en segundo plano para mostrarte en el mapa del equipo aunque la app esté minimizada.</string>
 		<key>NSAppTransportSecurity</key>
 		<dict>
+			<key>NSAllowsArbitraryLoads</key>
+			<true/>
 			<key>NSExceptionDomains</key>
 			<dict>
 				<key>38.247.147.220</key>
@@ -64,9 +66,11 @@
 		</dict>
 		<key>UIBackgroundModes</key>
 		<array>
+			<string>audio</string>
 			<string>fetch</string>
-			<string>remote-notification</string>
 			<string>location</string>
+			<string>remote-notification</string>
+			<string>voip</string>
 		</array>
 		<key>UILaunchStoryboardName</key>
 		<string>LaunchScreen</string>

@@ -192,23 +192,15 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       _log('PASO0 configAudioSession...');
       try {
         final session = await AudioSession.instance;
-        await session.configure(const AudioSessionConfiguration(
-          avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-          avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.allowBluetooth,
-          avAudioSessionMode: AVAudioSessionMode.voiceChat,
-          avAudioSessionRouteSharingPolicy: AVAudioSessionRouteSharingPolicy.defaultPolicy,
-          avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
-          androidAudioAttributes: AndroidAudioAttributes(
-            contentType: AndroidAudioContentType.speech,
-            usage: AndroidAudioUsage.voiceCommunication,
-          ),
-          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-          androidWillPauseWhenDucked: true,
-        ));
-        await session.setActive(true);
-        _log('PASO0 audioSession OK');
+        // Solo deactivamos cualquier sesión previa de just_audio/record
+        // para que Agora pueda tomar control. NO llamamos setActive(true)
+        // porque Agora gestiona su propia sesión internamente.
+        await session.setActive(false,
+            avAudioSessionSetActiveOptions:
+                AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation);
+        _log('PASO0 audioSession liberada OK');
       } catch (e) {
-        _log('PASO0 audioSession warn: $e');
+        _log('PASO0 audioSession warn (no bloqueante): $e');
       }
 
       _log('PASO1 createAgoraRtcEngine...');
