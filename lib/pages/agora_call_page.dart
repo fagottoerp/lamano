@@ -53,6 +53,9 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   Duration _callDuration = Duration.zero;
   Timer? _durationTimer;
   StreamSubscription? _callStatusSub;
+  Timer? _joinWatchdog;
+  final DateTime _bootAt = DateTime.now();
+  int _logSeq = 0;
 
   void _setError(String msg) {
     _log(msg);
@@ -78,6 +81,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   @override
   void initState() {
     super.initState();
+    _log('INIT callId=${widget.callId} isCaller=${widget.isCaller} isVideo=${widget.isVideo} isGroup=${widget.isGroup} platform=${Platform.operatingSystem}');
     _requestPermissionsAndInit();
     // Group calls: anyone can join/leave freely — no 1:1 status signaling
     if (!widget.isGroup) _watchCallStatus();
@@ -123,8 +127,21 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   }
 
   void _log(String msg) {
-    debugPrint('[AGORA] $msg');
-    if (mounted) setState(() => _logLines.add(msg));
+    final ms = DateTime.now().difference(_bootAt).inMilliseconds;
+    final line = '#${++_logSeq} [+${ms}ms] $msg';
+    debugPrint('[AGORA] $line');
+    if (mounted) setState(() => _logLines.add(line));
+  }
+
+  void _startJoinWatchdog() {
+    _joinWatchdog?.cancel();
+    _joinWatchdog = Timer(const Duration(seconds: 15), () {
+      if (_joinedChannel || _callEnded) return;
+      _log('WATCHDOG: 15s sin onJoinChannelSuccess. Revisar token/red/firewall.');
+      if (mounted) {
+        setState(() => _errorMessage = 'Conectando... (sin respuesta del servidor)');
+      }
+    });
   }
 
   Future<String> _fetchToken(String channelName) async {
@@ -183,6 +200,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       _engine.registerEventHandler(RtcEngineEventHandler(
         onJoinChannelSuccess: (connection, elapsed) {
           _log('onJoinChannelSuccess uid=${connection.localUid} elapsed=${elapsed}ms');
+          _joinWatchdog?.cancel();
           if (mounted) setState(() { _engineReady = true; _joinedChannel = true; });
           _startTimer();
         },
@@ -212,7 +230,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
           unawaited(_failCall('Agora error: ${err.name} ($err) ${msg}'.trim()));
         },
         onConnectionStateChanged: (connection, state, reason) {
-          _log('connectionState: ${state.name} reason: ${reason.name}');
+          _log('connectionState: ${state.name} reason: ${reason.name} localUid=${connection.localUid}');
           if (mounted) {
             if (state == ConnectionStateType.connectionStateFailed) {
               setState(() => _errorMessage = 'Sin conexión: ${reason.name}');
@@ -265,6 +283,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
           ),
         );
         _log('joinChannel llamado (esperando callback)...');
+        _startJoinWatchdog();
       } catch (e) {
         await _failCall('Init error joinChannel: $e');
         return;
@@ -302,6 +321,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       final data = snap.data();
       if (data == null) return;
       final status = data['status'] as String?;
+      _log('watchCallStatus: $status');
       if ((status == 'ended' || status == 'declined') && !_callEnded) {
         _endLocally();
       }
@@ -310,12 +330,15 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
 
   Future<void> _hangUp() async {
     if (_callEnded) return;
+    _log('hangUp pressed');
     _callEnded = true;
     try { await CallService.endCall(widget.callId); } catch (_) {}
     await _endLocally();
   }
 
   Future<void> _endLocally() async {
+    _log('endLocally begin');
+    _joinWatchdog?.cancel();
     _durationTimer?.cancel();
     _callStatusSub?.cancel();
     try {
@@ -324,6 +347,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
     try {
       await _engine.release().timeout(const Duration(seconds: 3));
     } catch (_) {}
+    _log('endLocally done');
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -357,6 +381,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
 
   @override
   void dispose() {
+    _joinWatchdog?.cancel();
     _durationTimer?.cancel();
     _callStatusSub?.cancel();
     _engine.unregisterEventHandler(RtcEngineEventHandler());
