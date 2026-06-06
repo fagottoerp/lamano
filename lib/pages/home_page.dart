@@ -25,6 +25,7 @@ import 'package:flutter_chat_demo/pages/gps_vivo_page.dart';
 import 'package:flutter_chat_demo/pages/admin_group_manage_page.dart';
 import 'package:flutter_chat_demo/pages/contacts_page.dart';
 import 'package:flutter_chat_demo/pages/recent_chats_page.dart';
+import 'package:flutter_chat_demo/pages/mapa_mundis_page.dart';
 import 'motoboy_orders_page.dart';
 import 'temp_chats_page.dart';
 import 'package:geolocator/geolocator.dart';
@@ -796,7 +797,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
     }
 
-    final appBarTitles = <String>['Estados', 'Inicio', 'Chats'];
+    final appBarTitles = <String>['Mapa Mundis (GTA)', 'Inicio', 'Chats'];
     if (_canSeeTempChats) appBarTitles.add('Chat Temporales');
     if (_canSeeCaminadorMenu) appBarTitles.add('Caminador');
     if (_isMotoboy) appBarTitles.add('Mis Órdenes');
@@ -856,7 +857,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       body: IndexedStack(
         index: _selectedTab,
         children: [
-          _buildStoriesTab(),
+          const MapaMundisPage(),
           _buildHomeBody(),
           const RecentChatsPage(),
           if (_canSeeTempChats) const TempChatsPage(),
@@ -870,7 +871,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildBottomNav() {
     final items = [
-      {'key': 'stories', 'icon': Icons.auto_awesome_outlined, 'active': Icons.auto_awesome, 'label': 'Estados'},
+      {'key': 'mapa_mundis', 'icon': Icons.public_outlined, 'active': Icons.public, 'label': 'Mapa Mundis (GTA)'},
       {'key': 'home', 'icon': Icons.home_outlined, 'active': Icons.home, 'label': 'Inicio'},
       {'key': 'chats', 'icon': Icons.chat_bubble_outline, 'active': Icons.chat_bubble, 'label': 'Chats'},
       if (_canSeeTempChats) {'key': 'temp', 'icon': Icons.forum_outlined, 'active': Icons.forum, 'label': 'Chat Temp.'},
@@ -1188,10 +1189,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         child: ListView(
           padding: const EdgeInsets.all(14),
           children: [
-            const SizedBox(height: 16),
-            // ── Burbujas de estados ───────────────────────────
-            _buildStatusBubblesRow(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
             // ── Grupos ────────────────────────────────────────
             Row(

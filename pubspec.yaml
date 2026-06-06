@@ -58,6 +58,7 @@ flutter:
 
   assets:
     - images/
+    - assets/
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
