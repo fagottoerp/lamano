@@ -191,21 +191,33 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       // Esto evita que initialize() se quede colgado en iOS.
       _log('PASO0 configAudioSession...');
       try {
-        final session = await AudioSession.instance;
+        final session = await AudioSession.instance.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => throw 'AudioSession.instance timeout',
+        );
         // Solo deactivamos cualquier sesión previa de just_audio/record
         // para que Agora pueda tomar control. NO llamamos setActive(true)
         // porque Agora gestiona su propia sesión internamente.
         await session.setActive(false,
             avAudioSessionSetActiveOptions:
-                AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation);
+                AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation)
+            .timeout(const Duration(seconds: 2), onTimeout: () {
+          _log('PASO0 setActive TIMEOUT (continuamos)');
+          return false;
+        });
         _log('PASO0 audioSession liberada OK');
       } catch (e) {
         _log('PASO0 audioSession warn (no bloqueante): $e');
       }
 
       _log('PASO1 createAgoraRtcEngine...');
-      _engine = createAgoraRtcEngine();
-      _log('PASO1 engine created');
+      try {
+        _engine = createAgoraRtcEngine();
+        _log('PASO1 engine created OK');
+      } catch (e) {
+        await _failCall('PASO1 ERROR createAgoraRtcEngine: $e');
+        return;
+      }
 
       _log('PASO2 initialize...');
       await _engine.initialize(RtcEngineContext(
@@ -226,6 +238,15 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
           _joinWatchdog?.cancel();
           if (mounted) setState(() { _engineReady = true; _joinedChannel = true; });
           _startTimer();
+          // Configurar audio AFTER del join (evita -3 ERR_NOT_READY en iOS)
+          Future.delayed(const Duration(milliseconds: 300), () async {
+            try {
+              await _engine.setEnableSpeakerphone(_speakerOn);
+              _log('post-join speaker OK');
+            } catch (e) {
+              _log('post-join speaker warn: $e');
+            }
+          });
         },
         onUserJoined: (connection, remoteUid, elapsed) {
           _log('onUserJoined uid=$remoteUid');
@@ -317,21 +338,9 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         return;
       }
 
-      // Configurar speaker/video después del join
-      if (!widget.isVideo) {
-        try {
-          await _engine.disableVideo();
-          _log('disableVideo OK');
-        } catch (e) {
-          _log('disableVideo ignorado: $e');
-        }
-      }
-      try {
-        await _engine.setEnableSpeakerphone(_speakerOn);
-        _log('speaker OK');
-      } catch (e) {
-        _log('setEnableSpeakerphone ignorado: $e');
-      }
+      // NOTA: setEnableSpeakerphone y disableVideo se aplican dentro de
+      // onJoinChannelSuccess para evitar -3 ERR_NOT_READY en iOS, ya que
+      // antes del callback el engine puede no estar listo.
     } catch (e) {
       await _failCall('EXCEPCION _initAgora: $e');
     }
