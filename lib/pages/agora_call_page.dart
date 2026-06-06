@@ -33,11 +33,9 @@ class AgoraCallPage extends StatefulWidget {
 
 class _AgoraCallPageState extends State<AgoraCallPage> {
   final _jitsi = JitsiMeet();
-  bool _joined = false;
   bool _ended = false;
   String? _error;
   StreamSubscription? _callStatusSub;
-  final DateTime _bootAt = DateTime.now();
 
   @override
   void initState() {
@@ -76,9 +74,22 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
 
     final token = await _fetchToken(room);
     if (token.isEmpty) {
-      setState(() => _error = 'Error al obtener token de llamada');
+      if (mounted) setState(() => _error = 'Error al obtener token de llamada');
       return;
     }
+
+    final listener = JitsiMeetEventListener(
+      conferenceJoined: (url) {
+        debugPrint('[JITSI] joined: $url');
+      },
+      conferenceTerminated: (url, error) {
+        debugPrint('[JITSI] terminated: $url error=$error');
+        _hangUp();
+      },
+      conferenceWillJoin: (url) {
+        debugPrint('[JITSI] willJoin: $url');
+      },
+    );
 
     final options = JitsiMeetConferenceOptions(
       serverURL: 'https://$kJitsiDomain',
@@ -92,7 +103,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       },
       featureFlags: {
         FeatureFlags.addPeopleEnabled: false,
-        FeatureFlags.calendarEnabled: false,
+        FeatureFlags.calenderEnabled: false,
         FeatureFlags.callIntegrationEnabled: true,
         FeatureFlags.carModeEnabled: false,
         FeatureFlags.closeCaptionsEnabled: false,
@@ -106,37 +117,23 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         FeatureFlags.pipEnabled: true,
         FeatureFlags.raiseHandEnabled: false,
         FeatureFlags.recordingEnabled: false,
-        FeatureFlags.replaceParticipant: '',
         FeatureFlags.securityOptionEnabled: false,
         FeatureFlags.serverUrlChangeEnabled: false,
         FeatureFlags.tileViewEnabled: widget.isGroup,
         FeatureFlags.toolboxAlwaysVisible: false,
-        FeatureFlags.videoShareButtonEnabled: false,
+        FeatureFlags.videoShareEnabled: false,
         FeatureFlags.chatEnabled: false,
         FeatureFlags.reactionsEnabled: false,
         FeatureFlags.speakerStatsEnabled: false,
-        FeatureFlags.iOSRecordingEnabled: false,
+        FeatureFlags.iosRecordingEnabled: false,
         FeatureFlags.unsafeRoomWarningEnabled: false,
         FeatureFlags.welcomePageEnabled: false,
+        FeatureFlags.preJoinPageEnabled: false,
       },
     );
 
-    _jitsi.addListener(JitsiMeetEventListener(
-      conferenceJoined: (url) {
-        debugPrint('[JITSI] joined: $url');
-        if (mounted) setState(() => _joined = true);
-      },
-      conferenceTerminated: (url, error) {
-        debugPrint('[JITSI] terminated: $url error=$error');
-        _hangUp();
-      },
-      conferenceWillJoin: (url) {
-        debugPrint('[JITSI] willJoin: $url');
-      },
-    ));
-
     try {
-      await _jitsi.join(options);
+      await _jitsi.join(options, listener);
     } catch (e) {
       if (mounted) setState(() => _error = 'Error al unirse: $e');
     }
@@ -160,20 +157,17 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   Future<void> _endLocally() async {
     _callStatusSub?.cancel();
     try { await _jitsi.hangUp(); } catch (_) {}
-    _jitsi.removeAllListeners();
     if (mounted) Navigator.of(context).pop();
   }
 
   @override
   void dispose() {
     _callStatusSub?.cancel();
-    _jitsi.removeAllListeners();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Jitsi abre su propia UI nativa. Esta pantalla es solo un loader/error.
     if (_error != null) {
       return Scaffold(
         backgroundColor: Colors.black,
