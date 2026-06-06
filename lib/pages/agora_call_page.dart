@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
@@ -186,17 +187,47 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
 
   Future<void> _initAgora() async {
     try {
-      _log('createAgoraRtcEngine...');
-      _engine = createAgoraRtcEngine();
+      // ── Paso 0: liberar sesión de audio de otros plugins (just_audio / record)
+      // Esto evita que initialize() se quede colgado en iOS.
+      _log('PASO0 configAudioSession...');
+      try {
+        final session = await AudioSession.instance;
+        await session.configure(const AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+          avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.allowBluetooth,
+          avAudioSessionMode: AVAudioSessionMode.voiceChat,
+          avAudioSessionRouteSharingPolicy: AVAudioSessionRouteSharingPolicy.defaultPolicy,
+          avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
+          androidAudioAttributes: AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.speech,
+            usage: AndroidAudioUsage.voiceCommunication,
+          ),
+          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+          androidWillPauseWhenDucked: true,
+        ));
+        await session.setActive(true);
+        _log('PASO0 audioSession OK');
+      } catch (e) {
+        _log('PASO0 audioSession warn: $e');
+      }
 
-      _log('initialize (channelProfileLiveBroadcasting)...');
+      _log('PASO1 createAgoraRtcEngine...');
+      _engine = createAgoraRtcEngine();
+      _log('PASO1 engine created');
+
+      _log('PASO2 initialize...');
       await _engine.initialize(RtcEngineContext(
         appId: kAgoraAppId,
         channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
-      ));
-      _log('initialize OK');
+      )).timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          _log('PASO2 TIMEOUT initialize no respondio en 12s (iOS audio conflict?)');
+        },
+      );
+      _log('PASO2 initialize OK');
 
-      _log('registerEventHandler...');
+      _log('PASO3 registerEventHandler...');
       _engine.registerEventHandler(RtcEngineEventHandler(
         onJoinChannelSuccess: (connection, elapsed) {
           _log('onJoinChannelSuccess uid=${connection.localUid} elapsed=${elapsed}ms');
@@ -247,11 +278,14 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
           if (newToken.isNotEmpty) await _engine.renewToken(newToken);
         },
       ));
-      _log('registerEventHandler OK');
+      _log('PASO3 registerEventHandler OK');
 
-      _log('enableAudio...');
-      await _engine.enableAudio().timeout(const Duration(seconds: 8));
-      _log('enableAudio OK');
+      _log('PASO4 enableAudio...');
+      await _engine.enableAudio().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => _log('PASO4 TIMEOUT enableAudio no respondio en 8s'),
+      );
+      _log('PASO4 enableAudio OK');
 
       if (widget.isVideo) {
         _log('enableVideo + startPreview...');
@@ -261,13 +295,15 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       }
       // disableVideo y speakerphone se configuran después del join
 
+      _log('PASO5 fetchToken...');
       final token = await _fetchToken(widget.callId);
       if (token.isEmpty) {
         await _failCall('Error token: no llegó token de Agora');
         return;
       }
+      _log('PASO5 token len=${token.length}');
 
-      _log('joinChannel: ${widget.callId} token=OK');
+      _log('PASO6 joinChannel canal=${widget.callId}');
       try {
         await _engine.joinChannel(
           token: token,
@@ -282,7 +318,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
             autoSubscribeVideo: widget.isVideo,
           ),
         );
-        _log('joinChannel llamado (esperando callback)...');
+        _log('PASO6 joinChannel enviado (esperando onJoinChannelSuccess)...');
         _startJoinWatchdog();
       } catch (e) {
         await _failCall('Init error joinChannel: $e');
