@@ -38,7 +38,9 @@
 		<key>NSCameraUsageDescription</key>
 		<string>Lamano usa la cámara para videollamadas y para enviar fotos en el chat.</string>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>Lamano usa el microfono para grabar y enviar mensajes de voz en el chat.</string>
+		<string>Lamano usa el microfono para grabar, enviar audios y participar en llamadas.</string>
+		<key>NSLocalNetworkUsageDescription</key>
+		<string>Lamano necesita acceso a la red local para conexiones P2P de las llamadas.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>We need open gallery for you choose a photo</string>
 		<key>NSCalendarsUsageDescription</key>
@@ -79,6 +81,8 @@
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
 		<key>UISupportedInterfaceOrientations~ipad</key>
 		<array>
