@@ -87,8 +87,10 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         visibility: NotificationVisibility.public,
         playSound: true,
         enableVibration: true,
-        ongoing: true,
-        autoCancel: false,
+        ongoing: false,
+        autoCancel: true,
+        onlyAlertOnce: true,
+        timeoutAfter: 30000,
         actions: [
           const AndroidNotificationAction('decline', 'Rechazar',
               cancelNotification: true),

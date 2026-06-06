@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'agora_call_page.dart';
 
 /// Full-screen incoming call page — shown via FCM fullScreenIntent.
@@ -28,6 +29,7 @@ class IncomingCallPage extends StatefulWidget {
 
 class _IncomingCallPageState extends State<IncomingCallPage>
     with SingleTickerProviderStateMixin {
+  static const int _incomingNotifId = 9999;
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulse;
 
@@ -50,6 +52,7 @@ class _IncomingCallPageState extends State<IncomingCallPage>
   }
 
   Future<void> _accept() async {
+    await FlutterLocalNotificationsPlugin().cancel(id: _incomingNotifId);
     Navigator.of(context).pop();
     if (!mounted) return;
     Navigator.of(context).push(
@@ -67,6 +70,7 @@ class _IncomingCallPageState extends State<IncomingCallPage>
   }
 
   void _decline() {
+    FlutterLocalNotificationsPlugin().cancel(id: _incomingNotifId);
     Navigator.of(context).pop();
   }
 

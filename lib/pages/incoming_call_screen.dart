@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../services/call_service.dart';
 import 'agora_call_page.dart';
 
@@ -6,6 +7,7 @@ import 'agora_call_page.dart';
 /// Push this as a modal route from home_page when FCM delivers
 /// a data message with type == 'incoming_call'.
 class IncomingCallScreen extends StatelessWidget {
+  static const int _incomingNotifId = 9999;
   final String callId;
   final String callerName;
   final String callerAvatar;
@@ -22,6 +24,7 @@ class IncomingCallScreen extends StatelessWidget {
   });
 
   void _accept(BuildContext context) async {
+    await FlutterLocalNotificationsPlugin().cancel(id: _incomingNotifId);
     if (!isGroup) await CallService.acceptCall(callId);
     if (context.mounted) {
       Navigator.of(context).pushReplacement(
@@ -40,6 +43,7 @@ class IncomingCallScreen extends StatelessWidget {
   }
 
   void _decline(BuildContext context) async {
+    await FlutterLocalNotificationsPlugin().cancel(id: _incomingNotifId);
     await CallService.declineCall(callId);
     if (context.mounted) Navigator.of(context).pop();
   }
