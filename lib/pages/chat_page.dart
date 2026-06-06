@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
@@ -418,10 +419,13 @@ class ChatPageState extends State<ChatPage> {
 
   Future<bool> _pickImage({ImageSource source = ImageSource.gallery}) async {
     final imagePicker = ImagePicker();
-    final pickedXFile = await imagePicker.pickImage(source: source, imageQuality: 70).catchError((err) {
-      Fluttertoast.showToast(msg: err.toString());
-      return null;
-    });
+    XFile? pickedXFile;
+    try {
+      pickedXFile = await imagePicker.pickImage(source: source, imageQuality: 70);
+    } catch (err) {
+      _handleMediaPickerError(err, camera: source == ImageSource.camera);
+      return false;
+    }
     if (pickedXFile != null) {
       final imageFile = File(pickedXFile.path);
       setState(() {
@@ -462,10 +466,13 @@ class ChatPageState extends State<ChatPage> {
 
   Future<bool> _pickVideo({ImageSource source = ImageSource.camera}) async {
     final imagePicker = ImagePicker();
-    final pickedXFile = await imagePicker.pickVideo(source: source).catchError((err) {
-      Fluttertoast.showToast(msg: err.toString());
-      return null;
-    });
+    XFile? pickedXFile;
+    try {
+      pickedXFile = await imagePicker.pickVideo(source: source);
+    } catch (err) {
+      _handleMediaPickerError(err, camera: source == ImageSource.camera);
+      return false;
+    }
     if (pickedXFile != null) {
       setState(() => _isLoading = true);
       try {
@@ -484,6 +491,44 @@ class ChatPageState extends State<ChatPage> {
       return true;
     }
     return false;
+  }
+
+  Future<void> _handleMediaPickerError(Object err, {required bool camera}) async {
+    if (!mounted) return;
+    if (err is PlatformException) {
+      final code = err.code.toLowerCase();
+      final denied = code.contains('access_denied') ||
+          code.contains('camera_access_denied') ||
+          code.contains('photo_access_denied');
+      if (denied) {
+        final title = camera ? 'Permiso de camara denegado' : 'Permiso de fotos denegado';
+        final msg = camera
+            ? 'Para tomar foto o video, habilita la camara en Ajustes.'
+            : 'Para adjuntar desde galeria, habilita Fotos en Ajustes.';
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(title),
+            content: Text(msg),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await Geolocator.openAppSettings();
+                },
+                child: const Text('Abrir ajustes'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+    }
+    Fluttertoast.showToast(msg: 'No se pudo abrir la camara. Revisa permisos.');
   }
 
   Future<void> _pickAndSendVideo() async {
