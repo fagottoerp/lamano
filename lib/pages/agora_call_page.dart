@@ -59,6 +59,22 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
     if (mounted) setState(() => _errorMessage = msg);
   }
 
+  Future<void> _failCall(String msg) async {
+    if (_callEnded) return;
+    _setError(msg);
+    _callEnded = true;
+    try {
+      if (!widget.isGroup) {
+        if (widget.isCaller) {
+          await CallService.endCall(widget.callId);
+        } else {
+          await CallService.declineCall(widget.callId);
+        }
+      }
+    } catch (_) {}
+    await _endLocally();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -71,36 +87,38 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
     try {
       _log('Solicitando permisos...');
       final List<Permission> perms = [Permission.microphone];
-      if (widget.isVideo) perms.add(Permission.camera);
+      if (widget.isVideo) {
+        perms.add(Permission.camera);
+      }
       final results = await perms.request();
       for (final e in results.entries) {
         _log('Permiso ${e.key}: ${e.value}');
       }
       final micStatus = await Permission.microphone.status;
       if (micStatus.isPermanentlyDenied) {
-        _setError('iPhone bloqueó el micrófono para esta app. Ve a Ajustes y actívalo.');
+        await _failCall('iPhone bloqueó el micrófono para esta app. Ve a Ajustes y actívalo.');
         await openAppSettings();
         return;
       }
       if (!micStatus.isGranted) {
-        _setError('Error permisos: micrófono no concedido ($micStatus)');
+        await _failCall('Error permisos: micrófono no concedido ($micStatus)');
         return;
       }
       if (widget.isVideo) {
         final camStatus = await Permission.camera.status;
         if (camStatus.isPermanentlyDenied) {
-          _setError('iPhone bloqueó la cámara para esta app. Ve a Ajustes y actívala.');
+          await _failCall('iPhone bloqueó la cámara para esta app. Ve a Ajustes y actívala.');
           await openAppSettings();
           return;
         }
         if (!camStatus.isGranted) {
-          _setError('Error permisos: cámara no concedida ($camStatus)');
+          await _failCall('Error permisos: cámara no concedida ($camStatus)');
           return;
         }
       }
       await _initAgora();
     } catch (e) {
-      _setError('Error permisos: $e');
+      await _failCall('Error permisos: $e');
     }
   }
 
@@ -183,7 +201,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         },
         onError: (err, msg) {
           _log('onError: ${err.name}($err) msg=$msg');
-          if (mounted) setState(() => _errorMessage = 'Error: ${err.name} ($err)');
+          unawaited(_failCall('Agora error: ${err.name} ($err) ${msg}'.trim()));
         },
         onConnectionStateChanged: (connection, state, reason) {
           _log('connectionState: ${state.name} reason: ${reason.name}');
@@ -219,7 +237,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       final token = await _fetchToken(widget.callId);
       final tokenArg = token.isEmpty ? null : token;
       if (tokenArg == null) {
-        _setError('Error token: no llegó token de Agora');
+        await _failCall('Error token: no llegó token de Agora');
         return;
       }
 
@@ -240,7 +258,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         );
         _log('joinChannel llamado (esperando callback)...');
       } catch (e) {
-        _setError('Init error joinChannel: $e');
+        await _failCall('Init error joinChannel: $e');
         return;
       }
 
@@ -249,7 +267,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       await _engine.setEnableSpeakerphone(_speakerOn);
       _log('speaker OK');
     } catch (e) {
-      _setError('EXCEPCION _initAgora: $e');
+      await _failCall('EXCEPCION _initAgora: $e');
     }
   }
 
