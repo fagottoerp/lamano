@@ -7,7 +7,8 @@ version: 3.11.29+145
 dependencies:
   flutter:
     sdk: flutter
-  jitsi_meet_flutter_sdk: ^10.3.0
+  jitsi_meet_flutter_sdk:
+    path: third_party/jitsi_meet_flutter_sdk
 
   cupertino_icons: ^1.0.2
   firebase_core: ^4.4.0

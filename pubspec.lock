@@ -651,10 +651,9 @@ packages:
   jitsi_meet_flutter_sdk:
     dependency: "direct main"
     description:
-      name: jitsi_meet_flutter_sdk
-      sha256: "8d6fe8beb2f3a5663e642dd3ed61ff57afca4f7586995d18781096c005f87117"
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/jitsi_meet_flutter_sdk"
+      relative: true
+    source: path
     version: "10.3.0"
   just_audio:
     dependency: "direct main"
