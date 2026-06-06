@@ -1163,69 +1163,138 @@ class _MapaMundisPageState extends State<MapaMundisPage>
               ),
             ),
             Expanded(
-              child: FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: _mapCenter,
-                  initialZoom: _mapZoom,
-                  minZoom: 4,
-                  maxZoom: 18,
-                  onMapReady: () {
-                    _focusInitial();
-                  },
-                  onPositionChanged: (position, hasGesture) {
-                    final center = position.center;
-                    final zoom = position.zoom;
-                    if (!mounted) return;
-                    setState(() {
-                      _mapCenter = center;
-                      _mapZoom = zoom;
-                    });
-                  },
-                  onTap: (_, point) async {
-                    if (!_pickPointOnMap || _pendingCategory == null) return;
-                    final category = _pendingCategory!;
-                    final note = _pendingNote;
-                    setState(() {
-                      _pickPointOnMap = false;
-                      _pendingCategory = null;
-                      _pendingNote = '';
-                    });
-                    await _createAlert(
-                      category: category,
-                      point: point,
-                      note: note,
-                    );
-                  },
-                ),
+              child: Stack(
                 children: [
-                  TileLayer(
-                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.lamano.clonewhatsapp',
-                  ),
-                  if (alertRiskCircles.isNotEmpty)
-                    CircleLayer(circles: alertRiskCircles),
-                  MarkerLayer(markers: markers),
-                  if (myLatLng != null)
-                    CircleLayer(
-                      circles: [
-                        CircleMarker(
-                          point: myLatLng,
-                          radius: 40,
-                          useRadiusInMeter: true,
-                          color: Colors.blue.withValues(alpha: 0.12),
-                          borderColor: Colors.blue.withValues(alpha: 0.3),
-                          borderStrokeWidth: 1,
+                  Positioned.fill(
+                    child: FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: _mapCenter,
+                        initialZoom: _mapZoom,
+                        minZoom: 4,
+                        maxZoom: 18,
+                        onMapReady: () {
+                          _focusInitial();
+                        },
+                        onPositionChanged: (position, hasGesture) {
+                          final center = position.center;
+                          final zoom = position.zoom;
+                          if (!mounted) return;
+                          setState(() {
+                            _mapCenter = center;
+                            _mapZoom = zoom;
+                          });
+                        },
+                        onTap: (_, point) async {
+                          if (!_pickPointOnMap || _pendingCategory == null) return;
+                          final category = _pendingCategory!;
+                          final note = _pendingNote;
+                          setState(() {
+                            _pickPointOnMap = false;
+                            _pendingCategory = null;
+                            _pendingNote = '';
+                          });
+                          await _createAlert(
+                            category: category,
+                            point: point,
+                            note: note,
+                          );
+                        },
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.lamano.clonewhatsapp',
                         ),
-                        CircleMarker(
-                          point: myLatLng,
-                          radius: 120 + (_scannerCtrl.value * 420),
-                          useRadiusInMeter: true,
-                          color: Colors.cyan.withValues(alpha: 0.06 * (1 - _scannerCtrl.value)),
-                          borderColor: Colors.cyan.withValues(alpha: 0.28 * (1 - _scannerCtrl.value)),
-                          borderStrokeWidth: 1,
-                        ),
+                        if (alertRiskCircles.isNotEmpty)
+                          CircleLayer(circles: alertRiskCircles),
+                        MarkerLayer(markers: markers),
+                        if (myLatLng != null)
+                          CircleLayer(
+                            circles: [
+                              CircleMarker(
+                                point: myLatLng,
+                                radius: 40,
+                                useRadiusInMeter: true,
+                                color: Colors.blue.withValues(alpha: 0.12),
+                                borderColor: Colors.blue.withValues(alpha: 0.3),
+                                borderStrokeWidth: 1,
+                              ),
+                              CircleMarker(
+                                point: myLatLng,
+                                radius: 120 + (_scannerCtrl.value * 420),
+                                useRadiusInMeter: true,
+                                color: Colors.cyan.withValues(alpha: 0.06 * (1 - _scannerCtrl.value)),
+                                borderColor: Colors.cyan.withValues(alpha: 0.28 * (1 - _scannerCtrl.value)),
+                                borderStrokeWidth: 1,
+                              ),
+                            ],
+                          ),
                       ],
+                    ),
+                  ),
+                  if (_activeAlerts.isNotEmpty)
+                    Positioned(
+                      left: 10,
+                      right: 10,
+                      top: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xE6000000),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.sensors, color: Colors.cyanAccent, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'DISPATCH: ${_activeAlerts[_dispatchIndex].categoryLabel} · ${_activeAlerts[_dispatchIndex].createdByName}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (nearest.isNotEmpty && !_showNearestPanel)
+                    Positioned(
+                      right: 10,
+                      bottom: 12,
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _showNearestPanel = true;
+                          });
+                        },
+                        icon: const Icon(Icons.keyboard_arrow_up),
+                        label: const Text('Comisarías'),
+                      ),
+                    ),
+                  if (_pickPointOnMap)
+                    Positioned(
+                      right: 12,
+                      bottom: nearest.isNotEmpty && !_showNearestPanel ? 72 : 12,
+                      child: FloatingActionButton.small(
+                        heroTag: 'fab_cancel_pick',
+                        onPressed: () {
+                          setState(() {
+                            _pickPointOnMap = false;
+                            _pendingCategory = null;
+                            _pendingNote = '';
+                          });
+                        },
+                        tooltip: 'Cancelar marcado',
+                        child: const Icon(Icons.close),
+                      ),
                     ),
                 ],
               ),
@@ -1369,73 +1438,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   ],
                 ),
               ),
-            if (nearest.isNotEmpty && !_showNearestPanel)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 10, bottom: 10),
-                  child: FilledButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _showNearestPanel = true;
-                      });
-                    },
-                    icon: const Icon(Icons.keyboard_arrow_up),
-                    label: const Text('Comisarías'),
-                  ),
-                ),
-              ),
           ],
         ),
-        if (_activeAlerts.isNotEmpty)
-          Positioned(
-            left: 10,
-            right: 10,
-            top: 54,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xE6000000),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.sensors, color: Colors.cyanAccent, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'DISPATCH: ${_activeAlerts[_dispatchIndex].categoryLabel} · ${_activeAlerts[_dispatchIndex].createdByName}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        if (_pickPointOnMap)
-          Positioned(
-            right: 12,
-            bottom: 190,
-            child: FloatingActionButton.small(
-              heroTag: 'fab_cancel_pick',
-              onPressed: () {
-                setState(() {
-                  _pickPointOnMap = false;
-                  _pendingCategory = null;
-                  _pendingNote = '';
-                });
-              },
-              tooltip: 'Cancelar marcado',
-              child: const Icon(Icons.close),
-            ),
-          ),
       ],
     );
   }
