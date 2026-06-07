@@ -1362,10 +1362,48 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   }
 
   String _wazeCategoryLabel(Map<String, dynamic> item) {
-    final type = _safeText(item['type'], 'HAZARD').replaceAll('_', ' ');
-    final subtype = _safeText(item['subtype']).replaceAll('_', ' ');
-    final base = subtype.isNotEmpty ? subtype : type;
-    return 'Waze API: $base';
+    final type = _safeText(item['type'], 'HAZARD').toUpperCase();
+    final subtype = _safeText(item['subtype']).toUpperCase();
+
+    final subtypeLabels = <String, String>{
+      'HAZARD_ON_ROAD_POT_HOLE': 'Bache en la vía',
+      'HAZARD_ON_ROAD_OBJECT': 'Objeto en la vía',
+      'HAZARD_ON_ROAD_CAR_STOPPED': 'Vehículo detenido',
+      'HAZARD_ON_ROAD': 'Peligro en la vía',
+      'ROAD_CLOSED_HAZARD': 'Calle cerrada',
+      'ACCIDENT_MINOR': 'Accidente menor',
+      'ACCIDENT_MAJOR': 'Accidente grave',
+      'POLICE_VISIBLE': 'Control policial visible',
+      'POLICE_HIDING': 'Control policial oculto',
+      'JAM_MODERATE_TRAFFIC': 'Tráfico moderado',
+      'JAM_HEAVY_TRAFFIC': 'Tráfico intenso',
+      'JAM_STAND_STILL_TRAFFIC': 'Tráfico detenido',
+    };
+
+    final typeLabels = <String, String>{
+      'HAZARD': 'Peligro vial',
+      'POLICE': 'Control policial',
+      'ACCIDENT': 'Accidente',
+      'ROAD_CLOSED': 'Calle cerrada',
+      'JAM': 'Congestión',
+    };
+
+    final label = subtypeLabels[subtype] ?? typeLabels[type] ?? 'Alerta de tránsito';
+    return 'Waze: $label';
+  }
+
+  String _wazeCustomIconKey(Map<String, dynamic> item) {
+    final type = _safeText(item['type'], 'HAZARD').toUpperCase();
+    final subtype = _safeText(item['subtype']).toUpperCase();
+
+    if (type == 'POLICE') return 'police';
+    if (type == 'ACCIDENT') return 'accident';
+    if (type == 'ROAD_CLOSED') return 'roadblock';
+    if (type == 'JAM') return 'traffic';
+    if (subtype.contains('POT_HOLE')) return 'roadblock';
+    if (subtype.contains('OBJECT')) return 'warning';
+    if (subtype.contains('CAR_STOPPED')) return 'warning';
+    return 'warning';
   }
 
   String _wazeStableId(String raw) {
@@ -1464,6 +1502,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         await _firestore.collection(_alertsCollection).doc(docId).set({
           'category': 'api_waze',
           'categoryLabel': _wazeCategoryLabel(item),
+          'customIconKey': _wazeCustomIconKey(item),
           'isHelp': false,
           'isPriority': true,
           'priorityTemplateKey': null,
