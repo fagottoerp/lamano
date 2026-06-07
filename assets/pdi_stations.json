@@ -1,0 +1,2688 @@
+{
+  "source": "https://www.pdichile.cl/pdi-mas-cercano",
+  "generatedAt": "2026-06-06T16:08:41.574Z",
+  "totalScraped": 285,
+  "totalGeocoded": 268,
+  "stations": [
+    {
+      "stationId": "unidad_cafd4f76-91a6-4f59-89a5-448069f8fa7a",
+      "name": "Laboratorio de Criminalística Regional Antofagasta",
+      "lat": -23.644689,
+      "lng": -70.3982089,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Antofagasta",
+      "institution": "PDI",
+      "address": "Pje Abaroa 2768, Antofagasta"
+    },
+    {
+      "stationId": "unidad_bef2e821-aee5-4011-8b2c-ffaf8b1f88cd",
+      "name": "Brigada de Investigación Criminal Antofagasta",
+      "lat": -23.6449031,
+      "lng": -70.3975552,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Antofagasta",
+      "institution": "PDI",
+      "address": "Pje Abaroa 2768, Antofagasta"
+    },
+    {
+      "stationId": "unidad_fc7595d6-468e-4ef8-b223-7c94221eba8d",
+      "name": "Brigada Investigadora de Lavado de Activos Antofagasta",
+      "lat": -23.6445195,
+      "lng": -70.3981905,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Antofagasta",
+      "institution": "PDI",
+      "address": "Abaroa 2768, Antofagasta"
+    },
+    {
+      "stationId": "unidad_61d4a16e-d031-4f7a-97ad-70cadb9fc81b",
+      "name": "Brigada Investigadora de Robos Antofagasta",
+      "lat": -23.6445195,
+      "lng": -70.3981905,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Antofagasta",
+      "institution": "PDI",
+      "address": "Pje Abaroa 2768, Antofagasta"
+    },
+    {
+      "stationId": "unidad_2921265a-9261-4f4e-ac01-ee6cd3ed747a",
+      "name": "Brigada Investigadora de Delitos Económicos Antofagasta",
+      "lat": -23.644981,
+      "lng": -70.397762,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Antofagasta",
+      "institution": "PDI",
+      "address": "Andrónico Abaroa 276, Antofagasta"
+    },
+    {
+      "stationId": "unidad_8cefcdf6-b48d-424a-9e25-3bad47f19fae",
+      "name": "Brigada de Homicidios Antofagasta",
+      "lat": -23.6447371,
+      "lng": -70.3973905,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Antofagasta",
+      "institution": "PDI",
+      "address": "Pje Abaroa 2768, Antofagasta"
+    },
+    {
+      "stationId": "unidad_9fc982b2-278b-41c1-b812-f6749d31ab63",
+      "name": "Brigada Investigadora de Delitos Sexuales Antofagasta",
+      "lat": -23.6449866,
+      "lng": -70.3984424,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Antofagasta",
+      "institution": "PDI",
+      "address": "Pje Abaroa 2768, Antofagasta"
+    },
+    {
+      "stationId": "unidad_3554d16f-5421-4057-ac67-75dba53127b0",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Antofagasta",
+      "lat": -23.6451033,
+      "lng": -70.3974102,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Antofagasta",
+      "institution": "PDI",
+      "address": "Pje Abaroa 2768, Antofagasta"
+    },
+    {
+      "stationId": "unidad_7507450c-a919-4e36-af81-c38a2b16e5de",
+      "name": "Brigada Antinarcóticos Calama",
+      "lat": -22.4590319,
+      "lng": -68.9284124,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Calama",
+      "institution": "PDI",
+      "address": "Granaderos 2197, Calama"
+    },
+    {
+      "stationId": "unidad_5381a2a5-455b-4d83-aebd-d25b41e659a0",
+      "name": "Brigada de Investigación Criminal Calama",
+      "lat": -22.458909,
+      "lng": -68.9281566,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Calama",
+      "institution": "PDI",
+      "address": "Granaderos 2197, Calama"
+    },
+    {
+      "stationId": "unidad_ea6fd26b-fa84-481d-ae6f-dbae7602f6fc",
+      "name": "Brigada de Investigación Criminal Tocopilla",
+      "lat": -22.0955248,
+      "lng": -70.2041002,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Tocopilla",
+      "institution": "PDI",
+      "address": "21 de mayo 1299, Tocopilla"
+    },
+    {
+      "stationId": "unidad_939619ba-6849-4fcc-9518-5771d6e95f92",
+      "name": "Brigada Investigadora de Delitos Contra el Medioambiente y Patrimonio Antofagasta",
+      "lat": -23.6475193,
+      "lng": -70.400106,
+      "regionName": "Región de Antofagasta",
+      "comunaName": "Antofagasta",
+      "institution": "PDI",
+      "address": "Washington 2438, Antofagasta"
+    },
+    {
+      "stationId": "unidad_1ff07a1b-25ae-4318-a103-b7e2b1aa8cb4",
+      "name": "Brigada de Investigación Criminal Arica",
+      "lat": -18.4769781,
+      "lng": -70.2955735,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Calle Belén 1651 Arica"
+    },
+    {
+      "stationId": "unidad_d5130b34-aca0-49c9-90cb-a5bf31466e09",
+      "name": "Brigada Investigadora de Robos Arica",
+      "lat": -18.4787174,
+      "lng": -70.3108566,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Calle Belén 1651"
+    },
+    {
+      "stationId": "unidad_99658419-a33f-4fa0-84a6-b3553532fab5",
+      "name": "Brigada Investigadora de Lavado de Activos Arica",
+      "lat": -18.4769781,
+      "lng": -70.2955735,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Belén 1651, Arica"
+    },
+    {
+      "stationId": "unidad_ec38f998-e1e0-457a-a8a0-d13d0842d148",
+      "name": "Brigada de Homicidios Arica",
+      "lat": -18.4787174,
+      "lng": -70.3108566,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Calle Belén 1651"
+    },
+    {
+      "stationId": "unidad_f3c91e30-b62e-4704-93d0-858cd339c1fe",
+      "name": "Brigada Investigadora de Delitos Sexuales Arica",
+      "lat": -18.4787174,
+      "lng": -70.3108566,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Calle Belén 1651"
+    },
+    {
+      "stationId": "unidad_3df3398f-8d75-4eb7-b09c-6d99020332af",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Arica",
+      "lat": -18.4787174,
+      "lng": -70.3108566,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Calle Belén 1651, Arica"
+    },
+    {
+      "stationId": "unidad_a46073de-8835-4f06-a388-735a2316fe94",
+      "name": "Avanzada Antinarcóticos Chacalluta",
+      "lat": -18.3149999,
+      "lng": -70.3144359,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Ruta Internacional CH 5 Km 2 098"
+    },
+    {
+      "stationId": "unidad_05d10604-654a-4242-9c7a-a6e78ca06233",
+      "name": "Brigada Investigadora de Delitos Económicos Arica",
+      "lat": -18.4787174,
+      "lng": -70.3108566,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Calle Belén 1651"
+    },
+    {
+      "stationId": "unidad_67548a5a-0a2d-418c-ae2e-45db78aa7aef",
+      "name": "Brigada Investigadora de Delitos Contra el Medio Ambiente y Patrimonio Cultural Arica",
+      "lat": -18.4787174,
+      "lng": -70.3108566,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Calle Belén 1651"
+    },
+    {
+      "stationId": "unidad_2b7cd3aa-aa7f-45bb-bd8b-16dadc3b20b8",
+      "name": "Laboratorio de Criminalística Arica",
+      "lat": -18.4787174,
+      "lng": -70.3108566,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Angamos 990, Arica"
+    },
+    {
+      "stationId": "unidad_421b56a3-c8b5-491d-8d65-06bfa933d15c",
+      "name": "Prefectura Migraciones y Policía Internacional Arica",
+      "lat": -18.4787174,
+      "lng": -70.3108566,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Angamos 990, Arica"
+    },
+    {
+      "stationId": "unidad_d68e1b99-7c70-4b01-b260-08e8deb18515",
+      "name": "Brigada Investigadora de Trata de Personas Arica",
+      "lat": -18.4787174,
+      "lng": -70.3108566,
+      "regionName": "Región de Arica y Parinacota",
+      "comunaName": "Arica",
+      "institution": "PDI",
+      "address": "Belén 1651 tercer piso, Arica"
+    },
+    {
+      "stationId": "unidad_6520b210-e5d2-41ee-a43e-06ec702eac17",
+      "name": "Brigada de Investigación Criminal Copiapó",
+      "lat": -27.3720411,
+      "lng": -70.3287358,
+      "regionName": "Región de Atacama",
+      "comunaName": "Copiapó",
+      "institution": "PDI",
+      "address": "Atacama 1098, Copiapó"
+    },
+    {
+      "stationId": "unidad_d1b3e8e4-a5e6-4c48-bf93-4acb28b22b06",
+      "name": "Departamento de Migraciones y Policía Internacional",
+      "lat": -27.3720411,
+      "lng": -70.3287358,
+      "regionName": "Región de Atacama",
+      "comunaName": "Copiapó",
+      "institution": "PDI",
+      "address": "Av Los Carrera 691, segundo piso, Copiapó"
+    },
+    {
+      "stationId": "unidad_a3a84194-5e75-4275-80bc-9f8afd11c160",
+      "name": "Brigada Investigadora de Lavado de Activos Copiapó",
+      "lat": -27.3720411,
+      "lng": -70.3287358,
+      "regionName": "Región de Atacama",
+      "comunaName": "Copiapó",
+      "institution": "PDI",
+      "address": "Atacama 1098, Copiapó"
+    },
+    {
+      "stationId": "unidad_6f619195-e81c-426b-85d8-f59b398328dc",
+      "name": "Laboratorio de Criminalística Regional Copiapó",
+      "lat": -27.3718351,
+      "lng": -70.3293098,
+      "regionName": "Región de Atacama",
+      "comunaName": "Copiapó",
+      "institution": "PDI",
+      "address": "Atacama 1098, Copiapó"
+    },
+    {
+      "stationId": "unidad_c653c0c5-68bd-472e-bce7-5f88eca49947",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Copiapó",
+      "lat": -27.3720411,
+      "lng": -70.3287358,
+      "regionName": "Región de Atacama",
+      "comunaName": "Copiapó",
+      "institution": "PDI",
+      "address": "Atacama 1098, Copiapó"
+    },
+    {
+      "stationId": "unidad_5c39c75b-5453-45be-bc3c-0b50e1ea0221",
+      "name": "Brigada Investigadora de Delitos Económicos Copiapó",
+      "lat": -27.3722252,
+      "lng": -70.3289992,
+      "regionName": "Región de Atacama",
+      "comunaName": "Copiapó",
+      "institution": "PDI",
+      "address": "Atacama 1098, Copiapó"
+    },
+    {
+      "stationId": "unidad_7faf210d-8c03-4801-a2f0-ec66753a07cd",
+      "name": "Brigada Investigadora de Delitos Sexuales Copiapó",
+      "lat": -27.372018,
+      "lng": -70.3290688,
+      "regionName": "Región de Atacama",
+      "comunaName": "Copiapó",
+      "institution": "PDI",
+      "address": "Atacama 1098, Copiapó"
+    },
+    {
+      "stationId": "unidad_52a26f40-d3be-41d0-bbe3-42df3e69e346",
+      "name": "Brigada Investigadora de Robos Copiapó",
+      "lat": -27.372083,
+      "lng": -70.329379,
+      "regionName": "Región de Atacama",
+      "comunaName": "Copiapó",
+      "institution": "PDI",
+      "address": "Atacama 1098, Copiapó"
+    },
+    {
+      "stationId": "unidad_d8ed0125-23a2-485f-ae30-279d6c17b961",
+      "name": "Brigada Investigadora de Medio Ambiente y Patrimonio Cultural",
+      "lat": -27.3720411,
+      "lng": -70.3287358,
+      "regionName": "Región de Atacama",
+      "comunaName": "Copiapó",
+      "institution": "PDI",
+      "address": "Av Los Carrera 691, segundo piso, Copiapó"
+    },
+    {
+      "stationId": "unidad_47fa6b1b-b6e6-4ce3-a892-71d9f5847220",
+      "name": "Brigada de Investigación Criminal Chañaral",
+      "lat": -26.3418127,
+      "lng": -70.619276,
+      "regionName": "Región de Atacama",
+      "comunaName": "Chañaral",
+      "institution": "PDI",
+      "address": "Merino Jarpa 1400, Chañaral"
+    },
+    {
+      "stationId": "unidad_451b9066-0090-4d1d-91a4-5cd6de0e60be",
+      "name": "Departamento de Migraciones y Policía Internacional Chañaral",
+      "lat": -26.3416279,
+      "lng": -70.6196925,
+      "regionName": "Región de Atacama",
+      "comunaName": "Chañaral",
+      "institution": "PDI",
+      "address": "Merino Jarpa 1400, Chañaral"
+    },
+    {
+      "stationId": "unidad_0f304594-de25-4324-a039-f9c2d0de3484",
+      "name": "Brigada de Investigación Criminal Vallenar",
+      "lat": -28.5735124,
+      "lng": -70.7611492,
+      "regionName": "Región de Atacama",
+      "comunaName": "Vallenar",
+      "institution": "PDI",
+      "address": "Merced 620, Vallenar"
+    },
+    {
+      "stationId": "unidad_f810b64e-86f7-4810-9b93-b60534c68615",
+      "name": "Departamento de Migraciones y Policía Internacional Vallenar",
+      "lat": -28.5735124,
+      "lng": -70.7611492,
+      "regionName": "Región de Atacama",
+      "comunaName": "Vallenar",
+      "institution": "PDI",
+      "address": "Merced 620, Vallenar"
+    },
+    {
+      "stationId": "unidad_2aaac73d-23a4-4ede-b958-3205a850da0b",
+      "name": "Brigada de Investigación Criminal Coyhaique",
+      "lat": -45.5699295,
+      "lng": -72.0646785,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Coyhaique",
+      "institution": "PDI",
+      "address": "Calle Dos 086, Coyhaique"
+    },
+    {
+      "stationId": "unidad_7b5e9ecb-cbb7-4f6e-b57f-13f972492dca",
+      "name": "Brigada Investigadora de Robos Coyhaique",
+      "lat": -45.5701401,
+      "lng": -72.0648797,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Coyhaique",
+      "institution": "PDI",
+      "address": "Calle Dos 086, Coyhaique"
+    },
+    {
+      "stationId": "unidad_93082909-9248-4731-89e8-e45eff8548ef",
+      "name": "Brigada Investigadora de Lavado de Activos Coyhaique",
+      "lat": -45.5697681,
+      "lng": -72.0645873,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Coyhaique",
+      "institution": "PDI",
+      "address": "Calle Dos 086, Coyhaique"
+    },
+    {
+      "stationId": "unidad_d2b827ac-e6be-45b8-8135-66ce7de6c214",
+      "name": "Brigada Investigadora de Delitos Económicos Coyhaique",
+      "lat": -45.5696433,
+      "lng": -72.0643963,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Coyhaique",
+      "institution": "PDI",
+      "address": "Calle Dos 086, Coyhaique"
+    },
+    {
+      "stationId": "unidad_1540f400-0bcc-4279-bcbe-8b3db8ab0283",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Coyhaique",
+      "lat": -45.5697681,
+      "lng": -72.0645873,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Coyhaique",
+      "institution": "PDI",
+      "address": "Calle Dos 086, Coyhaique"
+    },
+    {
+      "stationId": "unidad_754af686-e808-42a5-81b1-a46121d3e2a2",
+      "name": "Brigada Investigadora de Delitos Sexuales Coyhaique",
+      "lat": -45.5698733,
+      "lng": -72.0651263,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Coyhaique",
+      "institution": "PDI",
+      "address": "Calle Dos 086, Coyhaique"
+    },
+    {
+      "stationId": "unidad_bfedbd18-54ec-4ee5-97bf-55cf38f5bf44",
+      "name": "Departamento de Migraciones y Policía Internacional Coyhaique",
+      "lat": -45.5697681,
+      "lng": -72.0645873,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Coyhaique",
+      "institution": "PDI",
+      "address": "Baquedano 511, Coyhaique"
+    },
+    {
+      "stationId": "unidad_a575d32a-4c87-43fe-a78f-d014dc21724f",
+      "name": "Brigada de Homicidios Coyhaique",
+      "lat": -45.5696141,
+      "lng": -72.0646115,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Coyhaique",
+      "institution": "PDI",
+      "address": "Calle Dos 086, Coyhaique"
+    },
+    {
+      "stationId": "unidad_8bbdab07-c3d4-454d-95d0-0f462bc6250a",
+      "name": "Brigada de Investigación Criminal Aysén",
+      "lat": -45.4059724,
+      "lng": -72.6963218,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Aysén",
+      "institution": "PDI",
+      "address": "Carrera 731, Aysén"
+    },
+    {
+      "stationId": "unidad_86c577c4-bd12-4aec-b882-f488614d2f71",
+      "name": "Departamento de Migraciones y Policía Internacional Aysén",
+      "lat": -45.4058077,
+      "lng": -72.6967643,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Aysén",
+      "institution": "PDI",
+      "address": "Carrera 731, Aysén"
+    },
+    {
+      "stationId": "unidad_cbeeb5da-ffc4-489f-a8b1-645a989aef49",
+      "name": "Brigada Investigadora de Delitos contra el Medio Ambiente y Patrimonio Cultural Aysén",
+      "lat": -45.4060427,
+      "lng": -72.6966998,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Aysén",
+      "institution": "PDI",
+      "address": "Carrera 731, Aysén"
+    },
+    {
+      "stationId": "unidad_103cffc3-b98e-4686-abb2-fe6990fd9701",
+      "name": "Laboratorio de Criminalística Regional Coyhaique",
+      "lat": -45.5697681,
+      "lng": -72.0645873,
+      "regionName": "Región de Aysén del General Carlos Ibáñez del Campo",
+      "comunaName": "Coyhaique",
+      "institution": "PDI",
+      "address": "Calle Dos 086, Coyhaique"
+    },
+    {
+      "stationId": "unidad_406a7236-828e-4b2d-a609-19d3de47fa73",
+      "name": "Brigada de Investigación Criminal La Serena",
+      "lat": -29.90865,
+      "lng": -71.2479901,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "La Serena",
+      "institution": "PDI",
+      "address": "Anfión Muñoz 700, La Serena"
+    },
+    {
+      "stationId": "unidad_bda020c3-79a5-42da-b0d3-1f51d8b90b88",
+      "name": "Departamento de Migraciones y Policía Internacional La Serena",
+      "lat": -29.9091071,
+      "lng": -71.249563,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "La Serena",
+      "institution": "PDI",
+      "address": "Balmaceda 1010, La Serena"
+    },
+    {
+      "stationId": "unidad_368b7d63-61d8-446b-9050-a662f3ffe4ca",
+      "name": "Brigada Investigadora de Lavado de Activos La Serena",
+      "lat": -29.90865,
+      "lng": -71.2479901,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "La serena",
+      "institution": "PDI",
+      "address": "Anfión Muñoz 700"
+    },
+    {
+      "stationId": "unidad_ea121432-09d7-4a87-baaa-8d9f0cde64a2",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado La Serena",
+      "lat": -29.9087638,
+      "lng": -71.2475896,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "La Serena",
+      "institution": "PDI",
+      "address": "Anfión Muñoz 700, La Serena"
+    },
+    {
+      "stationId": "unidad_a949e657-6f30-4a41-97b0-5ccd91342fd8",
+      "name": "Brigada de Delitos Económicos La Serena",
+      "lat": -29.9084242,
+      "lng": -71.2479463,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "La Serena",
+      "institution": "PDI",
+      "address": "Anfión Muñoz 700, La Serena"
+    },
+    {
+      "stationId": "unidad_14285e77-c3e7-47a8-b2e7-46d35cc4d931",
+      "name": "Brigada de Delitos Sexuales La Serena",
+      "lat": -29.9088638,
+      "lng": -71.2479489,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "La Serena",
+      "institution": "PDI",
+      "address": "Anfión Muñoz 700, La Serena"
+    },
+    {
+      "stationId": "unidad_890a2006-7c63-4991-bbdd-b658c55544df",
+      "name": "Brigada de Homicidios La Serena",
+      "lat": -29.9089521,
+      "lng": -71.2473213,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "Coquimbo",
+      "institution": "PDI",
+      "address": "Calle Aníbal Pinto 400, Coquimbo"
+    },
+    {
+      "stationId": "unidad_3e485a22-bfe7-40bc-b804-d1d7749f573d",
+      "name": "Brigada Investigadora de Robos La Serena",
+      "lat": -29.9091071,
+      "lng": -71.249563,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "Coquimbo",
+      "institution": "PDI",
+      "address": "Calle Aníbal Pinto 400, Coquimbo"
+    },
+    {
+      "stationId": "unidad_c407cdfa-7454-48d7-bda4-a94995fc55fc",
+      "name": "Brigada de Investigación Criminal Coquimbo",
+      "lat": -29.90865,
+      "lng": -71.2479901,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "Coquimbo",
+      "institution": "PDI",
+      "address": "Calle Aníbal Pinto 400, Coquimbo"
+    },
+    {
+      "stationId": "unidad_ae00dad3-bc42-4cce-896e-023d4504df0e",
+      "name": "Brigada de Investigacion Criminal Illapel",
+      "lat": -31.6320511,
+      "lng": -71.1672534,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "Illapel",
+      "institution": "PDI",
+      "address": "Freire 277, Illapel"
+    },
+    {
+      "stationId": "unidad_cfaebe4d-37ec-49e3-8ceb-887a41f2f63a",
+      "name": "Brigada de Investigacion Criminal Los Vilos",
+      "lat": -31.9104938,
+      "lng": -71.4964044,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "Los Vilos",
+      "institution": "PDI",
+      "address": "Av Caupolicán 1550, Los Vilos"
+    },
+    {
+      "stationId": "unidad_a29102fb-28a7-47b0-9a21-bd14c53bd8aa",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Los Vilos",
+      "lat": -31.9104938,
+      "lng": -71.4964044,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "Los Vilos",
+      "institution": "PDI",
+      "address": "Av Caupolicán 1550, Los Vilos"
+    },
+    {
+      "stationId": "unidad_5d4854b7-820e-422a-9ecb-bd456519076d",
+      "name": "Brigada de Investigación Criminal Ovalle",
+      "lat": -30.6068423,
+      "lng": -71.2006705,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "Ovalle",
+      "institution": "PDI",
+      "address": "Miguel Aguirre 641, Ovalle"
+    },
+    {
+      "stationId": "unidad_7cc11a02-a423-4a8a-a5e0-59b1c2cc9c7b",
+      "name": "Brigada de Investigación Criminal Vicuña",
+      "lat": -30.0331445,
+      "lng": -70.7143535,
+      "regionName": "Región de Coquimbo",
+      "comunaName": "Vicuña",
+      "institution": "PDI",
+      "address": "Avenida Las delicias 748, Vicuña"
+    },
+    {
+      "stationId": "unidad_098f8d44-2dd7-4a24-bf0f-3de157a3d51d",
+      "name": "Departamento de Migraciones y Policía Internacional Temuco",
+      "lat": -38.733538,
+      "lng": -72.5882197,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Temuco",
+      "institution": "PDI",
+      "address": "Prat 19, Temuco"
+    },
+    {
+      "stationId": "unidad_a0a3a165-f799-4e83-943a-4f21f83839c9",
+      "name": "Brigada Investigadora de Delitos Económicos Temuco",
+      "lat": -38.7337247,
+      "lng": -72.5890582,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Temuco",
+      "institution": "PDI",
+      "address": "Prat 19, Temuco"
+    },
+    {
+      "stationId": "unidad_c3b04e2d-e536-4484-ac2e-eca7662606fd",
+      "name": "Brigada Investigadora de Lavado de Activos Temuco",
+      "lat": -38.7395757,
+      "lng": -72.5955744,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Temuco",
+      "institution": "PDI",
+      "address": "Antonio Varas 459, Temuco"
+    },
+    {
+      "stationId": "unidad_55fa3761-4e64-4920-acf1-077c371afb71",
+      "name": "Laboratorio de Criminalística Cobertura Zona Sur Temuco",
+      "lat": -38.733538,
+      "lng": -72.5882197,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Temuco",
+      "institution": "PDI",
+      "address": "Prat 19, Temuco"
+    },
+    {
+      "stationId": "unidad_2000adf1-3568-407b-a661-70072e08a835",
+      "name": "Brigada de Homicidios Temuco",
+      "lat": -38.733538,
+      "lng": -72.5882197,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Temuco",
+      "institution": "PDI",
+      "address": "Prat 19, Temuco"
+    },
+    {
+      "stationId": "unidad_2a1809d4-4455-464b-9129-11512b30cd16",
+      "name": "Brigada Investigadora de Robos Temuco",
+      "lat": -38.7335104,
+      "lng": -72.5887024,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Temuco",
+      "institution": "PDI",
+      "address": "Prat 19, Temuco"
+    },
+    {
+      "stationId": "unidad_b827f346-0e44-477c-a994-7361c59f003c",
+      "name": "Brigada de Investigación Criminal Temuco",
+      "lat": -38.733538,
+      "lng": -72.5882197,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Temuco",
+      "institution": "PDI",
+      "address": "Prat 19, Temuco"
+    },
+    {
+      "stationId": "unidad_cf84a63b-a6e8-4f5e-b18f-ce2fa84ac181",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Temuco",
+      "lat": -38.7395757,
+      "lng": -72.5955744,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Temuco",
+      "institution": "PDI",
+      "address": "Antonio Varas 459, Temuco"
+    },
+    {
+      "stationId": "unidad_016b6c51-0d15-450e-9f04-437c76a10d49",
+      "name": "Brigada Investigadora de Delitos Sexuales Temuco",
+      "lat": -38.733538,
+      "lng": -72.5882197,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Temuco",
+      "institution": "PDI",
+      "address": "Prat 19, Temuco"
+    },
+    {
+      "stationId": "unidad_927a88bf-8c63-44f9-9d2e-ba42bf4ad626",
+      "name": "Brigada de Investigación Criminal de Victoria",
+      "lat": -38.2303517,
+      "lng": -72.3296956,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Victoria",
+      "institution": "PDI",
+      "address": "Baquedano 845, Victoria"
+    },
+    {
+      "stationId": "unidad_8dc213b2-fd84-4e24-9613-19079f32c7ff",
+      "name": "Brigada de Investigación Criminal Angol",
+      "lat": -38.7335104,
+      "lng": -72.5887024,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Angol",
+      "institution": "PDI",
+      "address": "Manuel Bunster Nro 639, Angol"
+    },
+    {
+      "stationId": "unidad_2bbb5101-699f-4d79-95af-86424d23c32b",
+      "name": "Brigada Investigadora de Robos Angol",
+      "lat": -38.7335104,
+      "lng": -72.5887024,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Angol",
+      "institution": "PDI",
+      "address": "Manuel Bunster Nro 639, Angol"
+    },
+    {
+      "stationId": "unidad_7fa69f42-364e-486c-bc53-59c9b4089eca",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Angol",
+      "lat": -38.7335104,
+      "lng": -72.5887024,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Angol",
+      "institution": "PDI",
+      "address": "Manuel Bunster Nro 639, Angol"
+    },
+    {
+      "stationId": "unidad_d856b440-a560-4586-94c6-88ce8726b52d",
+      "name": "Brigada de Investigación Criminal Traiguén",
+      "lat": -38.2469004,
+      "lng": -72.6686,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Traiguén",
+      "institution": "PDI",
+      "address": "Errázuriz 245, Traiguén"
+    },
+    {
+      "stationId": "unidad_363b31a6-b4fa-41c9-a7af-f88d126bc3f3",
+      "name": "Brigada de Investigación Criminal Pitrufquén",
+      "lat": -38.9839479,
+      "lng": -72.6348701,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Pitrufquén",
+      "institution": "PDI",
+      "address": "Vicuña Mackenna 481, Pitrufquén"
+    },
+    {
+      "stationId": "unidad_3de21e5d-abf6-4780-8873-2a4de1a8a878",
+      "name": "Brigada de Investigación Criminal Villarrica",
+      "lat": -39.2963617,
+      "lng": -72.2368223,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Villarrica",
+      "institution": "PDI",
+      "address": "José Miguel Carrera 825, Villarrica"
+    },
+    {
+      "stationId": "unidad_68eed79c-168d-4e02-85ec-bcf9da3bb938",
+      "name": "Brigada de Investigación Criminal Lautaro",
+      "lat": -38.529978,
+      "lng": -72.435624,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Lautaro",
+      "institution": "PDI",
+      "address": "Manuel Montt 310, Lautaro"
+    },
+    {
+      "stationId": "unidad_813b5658-8e80-4148-aea1-38fdbfc31617",
+      "name": "Brigada Investigadora de Delitos Contra el Medio Ambiente y Patrimonio Cultural",
+      "lat": -38.7335104,
+      "lng": -72.5887024,
+      "regionName": "Región de La Araucanía",
+      "comunaName": "Temuco",
+      "institution": "PDI",
+      "address": "Prat Nro 19, Temuco"
+    },
+    {
+      "stationId": "unidad_d5f42531-5e8f-4c69-8100-08e13b036ef6",
+      "name": "Brigada de Investigación Criminal Puerto Montt",
+      "lat": -41.4570627,
+      "lng": -72.9286423,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Montt",
+      "institution": "PDI",
+      "address": "Ramón Munita 536, Puerto Montt"
+    },
+    {
+      "stationId": "unidad_6b80286c-f286-43fc-b9c6-fe4b710e6ca3",
+      "name": "Departamento Migraciones y Policía Internacional Puerto Montt",
+      "lat": -41.4569589,
+      "lng": -72.9290024,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Montt",
+      "institution": "PDI",
+      "address": "Av Ramón Munita 536, piso 1, Puerto Montt"
+    },
+    {
+      "stationId": "unidad_0c671799-83fa-4490-b492-83948594c0c5",
+      "name": "Brigada Investigadora de Lavado de Activos Puerto Montt",
+      "lat": -41.4575513,
+      "lng": -72.9286516,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Montt",
+      "institution": "PDI",
+      "address": "Avenida Monseñor Ramón Munita #536"
+    },
+    {
+      "stationId": "unidad_6c5aaf28-e597-4812-9827-618329363b4e",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Puerto Montt",
+      "lat": -41.4569589,
+      "lng": -72.9290024,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Montt",
+      "institution": "PDI",
+      "address": "Ramón Munita 536, Puerto Montt"
+    },
+    {
+      "stationId": "unidad_dd69de12-fc0d-43ff-937f-c8af4ece4949",
+      "name": "Brigada de Delitos Económicos Puerto Montt",
+      "lat": -41.4569589,
+      "lng": -72.9290024,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Montt",
+      "institution": "PDI",
+      "address": "Ramón Munita 536, Puerto Montt"
+    },
+    {
+      "stationId": "unidad_16e68333-b2f4-46a8-9df3-5bd11166d0fc",
+      "name": "Brigada de Delitos Sexuales Puerto Montt",
+      "lat": -41.4572814,
+      "lng": -72.9291138,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Montt",
+      "institution": "PDI",
+      "address": "Ramón Munita 536, Puerto Montt"
+    },
+    {
+      "stationId": "unidad_7bdc9911-a0ac-4783-ba46-893b7ec053a9",
+      "name": "Brigada de Homicidios Puerto Montt",
+      "lat": -41.4574986,
+      "lng": -72.9292057,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Montt",
+      "institution": "PDI",
+      "address": "Ramón Munita 536, Puerto Montt"
+    },
+    {
+      "stationId": "unidad_b53cf45e-a1da-4358-ac94-9b60dc01a404",
+      "name": "Brigada Investigadora de Robos Puerto Montt",
+      "lat": -41.4576106,
+      "lng": -72.9289711,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Montt",
+      "institution": "PDI",
+      "address": "Ramón Munita 536, Puerto Montt"
+    },
+    {
+      "stationId": "unidad_f638407e-fd5f-4657-b56f-076592f87fd4",
+      "name": "Laboratorio de Criminalística Regional Puerto Montt",
+      "lat": -41.4575513,
+      "lng": -72.9286516,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Montt",
+      "institution": "PDI",
+      "address": "Ramón Munita 536, Puerto Montt"
+    },
+    {
+      "stationId": "unidad_af32e67b-4dd9-4b23-be78-b1d7f1a3c65e",
+      "name": "Prefectura Provincial Llanquihue",
+      "lat": -41.4571111,
+      "lng": -72.9290408,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Montt",
+      "institution": "PDI",
+      "address": "Ramón Munita 536, Puerto Montt"
+    },
+    {
+      "stationId": "unidad_9da421b6-650f-47dd-9a66-7f0ad5f4b695",
+      "name": "Brigada de Investigación Criminal Puerto Varas",
+      "lat": -41.3188414,
+      "lng": -72.9809781,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Puerto Varas",
+      "institution": "PDI",
+      "address": "Vicente Pérez Rosales 018, Puerto Varas"
+    },
+    {
+      "stationId": "unidad_a56e93cd-e65c-4c7a-bc0e-afbf8056dc14",
+      "name": "Brigada de Investigación Criminal Osorno",
+      "lat": -40.5792856,
+      "lng": -73.1278286,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Osorno",
+      "institution": "PDI",
+      "address": "Barros Arana 1282, Osorno"
+    },
+    {
+      "stationId": "unidad_3fb8eed0-2970-4791-a18a-7aa14d25b44a",
+      "name": "Departamento Migraciones y Policía Internacional Osorno",
+      "lat": -40.581119,
+      "lng": -73.1312544,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Osorno",
+      "institution": "PDI",
+      "address": "Barros Arana 1282, Osorno"
+    },
+    {
+      "stationId": "unidad_75f0379a-b364-4b3e-a165-5af9c3d6e402",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Osorno",
+      "lat": -40.581119,
+      "lng": -73.1312544,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Osorno",
+      "institution": "PDI",
+      "address": "Barros Arana 1282, Osorno"
+    },
+    {
+      "stationId": "unidad_fff3c1c8-e900-4a0a-8e89-4d7dab247f85",
+      "name": "Brigada de Delitos Económicos Osorno",
+      "lat": -40.5791408,
+      "lng": -73.1277458,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Osorno",
+      "institution": "PDI",
+      "address": "Barros Arana 1282, Osorno"
+    },
+    {
+      "stationId": "unidad_8d4bcd73-72ae-45f2-a0a5-0b76aa3a195e",
+      "name": "Brigada de Delitos Sexuales Osorno",
+      "lat": -40.5794658,
+      "lng": -73.1277985,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Osorno",
+      "institution": "PDI",
+      "address": "Barros Arana 1282, Osorno"
+    },
+    {
+      "stationId": "unidad_66b58c14-dcf2-47c2-a57a-731f3f98d63d",
+      "name": "Brigada de Homicidios Osorno",
+      "lat": -40.5796308,
+      "lng": -73.1278645,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Osorno",
+      "institution": "PDI",
+      "address": "Barros Arana 1282, Osorno"
+    },
+    {
+      "stationId": "unidad_721cbd9e-5c0a-40c5-9fff-8c88f3db39a9",
+      "name": "Brigada Investigadora de Robos Osorno",
+      "lat": -40.5798112,
+      "lng": -73.1275034,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Osorno",
+      "institution": "PDI",
+      "address": "Barros Arana 1282, Osorno"
+    },
+    {
+      "stationId": "unidad_6a430f47-9402-4a29-ad84-3e410b21b28e",
+      "name": "Brigada de Investigación Criminal Castro",
+      "lat": -42.483669,
+      "lng": -73.7648731,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Castro",
+      "institution": "PDI",
+      "address": "Balmaceda 253, Castro"
+    },
+    {
+      "stationId": "unidad_8757c154-b3d0-4cdb-9fb1-e89412f9dc75",
+      "name": "Brigada de Investigación Criminal Ancud",
+      "lat": -41.8711352,
+      "lng": -73.8232424,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Ancud",
+      "institution": "PDI",
+      "address": "Errázuriz 671, Ancud"
+    },
+    {
+      "stationId": "unidad_80fe7b7a-8393-4ba9-abed-516ef9fea975",
+      "name": "Brigada Investigadora de Delitos Sexuales Ancud",
+      "lat": -41.8712729,
+      "lng": -73.8232849,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Ancud",
+      "institution": "PDI",
+      "address": "Errázuriz 671, Ancud"
+    },
+    {
+      "stationId": "unidad_a17ab38d-a11c-406e-be3e-f284c70424da",
+      "name": "Sección Migraciones y Policía Internacional Castro",
+      "lat": -42.483669,
+      "lng": -73.7648731,
+      "regionName": "Región de Los Lagos",
+      "comunaName": "Castro",
+      "institution": "PDI",
+      "address": "Balmaceda 253, Castro"
+    },
+    {
+      "stationId": "unidad_35966edf-23ba-4307-8210-4d5733618aca",
+      "name": "Brigada de Investigación Criminal Valdivia",
+      "lat": -39.8373968,
+      "lng": -73.2213611,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "Valdivia",
+      "institution": "PDI",
+      "address": "Av Francia 675, Valdivia"
+    },
+    {
+      "stationId": "unidad_03f79e66-7506-432c-8541-999a11d394ae",
+      "name": "Brigada Investigadora de Robos Valdivia",
+      "lat": -39.8373968,
+      "lng": -73.2213611,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "Valdivia",
+      "institution": "PDI",
+      "address": "Av Francia 675, Valdivia"
+    },
+    {
+      "stationId": "unidad_51874535-d7d8-4366-aec0-85263fe71064",
+      "name": "Brigada Investigadora de Lavado de Activos Valdivia",
+      "lat": -39.8373968,
+      "lng": -73.2213611,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "Valdivia",
+      "institution": "PDI",
+      "address": "Avenida Francia 675 Valdivia"
+    },
+    {
+      "stationId": "unidad_59b5337c-cb64-43d5-8956-fac0c886aaf8",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Valdivia",
+      "lat": -39.8373968,
+      "lng": -73.2213611,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "Valdivia",
+      "institution": "PDI",
+      "address": "Av Francia 675, Valdivia"
+    },
+    {
+      "stationId": "unidad_a4bd4efc-9f38-4a50-8c13-85723b7501f8",
+      "name": "Brigada de Delitos Económicos Valdivia",
+      "lat": -39.8373968,
+      "lng": -73.2213611,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "Valdivia",
+      "institution": "PDI",
+      "address": "Av Francia 675, Valdivia"
+    },
+    {
+      "stationId": "unidad_f6bfca05-487f-453d-9fb6-22d2fb73dd2e",
+      "name": "Brigada de Delitos Sexuales Valdivia",
+      "lat": -39.8329798,
+      "lng": -73.2148068,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "Valdivia",
+      "institution": "PDI",
+      "address": "Av Francia 675, Valdivia"
+    },
+    {
+      "stationId": "unidad_978b5fc8-aacd-4c99-b60e-740060e9ed8b",
+      "name": "Brigada de Homicidios Valdivia",
+      "lat": -39.8373968,
+      "lng": -73.2213611,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "Valdivia",
+      "institution": "PDI",
+      "address": "Av Francia 675, Valdivia"
+    },
+    {
+      "stationId": "unidad_d7aa3846-5fcf-457a-bb20-6e4c29ee338d",
+      "name": "Brigada Investigadora de Delitos Contra el Medio Ambiente y Patrimonio Cultural Valdivia",
+      "lat": -39.8373968,
+      "lng": -73.2213611,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "Valdivia",
+      "institution": "PDI",
+      "address": "Av Francia 675, Valdivia"
+    },
+    {
+      "stationId": "unidad_7d443ecf-bad4-43d3-b3cb-98da774fe35d",
+      "name": "Brigada de Investigación Criminal la Unión",
+      "lat": -40.2919705,
+      "lng": -73.0812903,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "La Unión",
+      "institution": "PDI",
+      "address": "Arturo Prat 927, La Unión"
+    },
+    {
+      "stationId": "unidad_969a5e46-81ab-4d78-946b-bebe6a9b4a52",
+      "name": "Departamento de Migraciones y Policía Internacional Valdivia",
+      "lat": -39.8373968,
+      "lng": -73.2213611,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "Valdivia",
+      "institution": "PDI",
+      "address": "Av Francia 675, Valdivia"
+    },
+    {
+      "stationId": "unidad_fb22034e-e370-40a4-981c-2fc4f6a39446",
+      "name": "Departamento de Asesoría Técnica Valdivia",
+      "lat": -39.8373968,
+      "lng": -73.2213611,
+      "regionName": "Región de Los Ríos",
+      "comunaName": "Valdivia",
+      "institution": "PDI",
+      "address": "Av Francia 675, Valdivia"
+    },
+    {
+      "stationId": "unidad_de5666f7-8ecb-4cfd-a723-ee49d17215ec",
+      "name": "Brigada de Investigación Criminal Punta Arenas",
+      "lat": -53.1651528,
+      "lng": -70.9072529,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Punta Arenas",
+      "institution": "PDI",
+      "address": "Errázuriz 977, Punta Arenas"
+    },
+    {
+      "stationId": "unidad_1f31d191-3ccb-4b55-95ff-9e532a5c2cef",
+      "name": "Brigada de Delitos Económicos Punta Arenas",
+      "lat": -53.1653015,
+      "lng": -70.9074344,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Punta Arenas",
+      "institution": "PDI",
+      "address": "Errázuriz 977, Punta Arenas"
+    },
+    {
+      "stationId": "unidad_eda3af75-8f07-4e45-812a-e96820ed9a15",
+      "name": "Brigada Investigadora de Lavado de Activos Punta Arenas",
+      "lat": -53.1653036,
+      "lng": -70.9070226,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Punta Arenas",
+      "institution": "PDI",
+      "address": "Errázuriz 977, Punta Arenas"
+    },
+    {
+      "stationId": "unidad_4aa87cbd-e7f0-4996-9f7c-0faf8d4e71f0",
+      "name": "Brigada Investigadora de Delitos Sexuales Punta Arenas",
+      "lat": -53.1651148,
+      "lng": -70.9069035,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Punta Arenas",
+      "institution": "PDI",
+      "address": "Errázuriz 977, Punta Arenas"
+    },
+    {
+      "stationId": "unidad_6c2d656e-4bfd-4a00-8577-28ec29c91485",
+      "name": "Brigada de Homicidios Punta Arenas",
+      "lat": -53.1655787,
+      "lng": -70.9067933,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Punta Arenas",
+      "institution": "PDI",
+      "address": "Errázuriz 977, Punta Arenas"
+    },
+    {
+      "stationId": "unidad_7c495e36-748a-46d6-bc25-0550dbfdeb84",
+      "name": "Brigada Investigadora de Robos Punta Arenas",
+      "lat": -53.1654812,
+      "lng": -70.9070429,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Punta Arenas",
+      "institution": "PDI",
+      "address": "Errázuriz 977, Punta Arenas"
+    },
+    {
+      "stationId": "unidad_3f932b88-d33f-4071-80d7-e909d8e0a651",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Punta Arenas",
+      "lat": -53.1653036,
+      "lng": -70.9070226,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Punta Arenas",
+      "institution": "PDI",
+      "address": "Errázuriz 977, Punta Arenas"
+    },
+    {
+      "stationId": "unidad_e4c11ae2-ca82-4b00-beba-51a63651f709",
+      "name": "Laboratorio de Criminalística Regional Punta Arenas",
+      "lat": -53.1656109,
+      "lng": -70.9071768,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Punta Arenas",
+      "institution": "PDI",
+      "address": "Errázuriz 977, Punta Arenas"
+    },
+    {
+      "stationId": "unidad_7c163d35-6ece-4d77-9913-b387c1d45bfa",
+      "name": "Departamento de Migraciones Y Policía Internacional Punta Arenas",
+      "lat": -53.1653036,
+      "lng": -70.9070226,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Punta Arenas",
+      "institution": "PDI",
+      "address": "Errázuriz 977, Punta Arenas"
+    },
+    {
+      "stationId": "unidad_75b98f65-95a9-430d-b2d2-02cec02a6b5b",
+      "name": "Brigada de Investigación Criminal Puerto Natales",
+      "lat": -51.7254536,
+      "lng": -72.5072235,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Puerto Natales",
+      "institution": "PDI",
+      "address": "Bories 408, Puerto Natales"
+    },
+    {
+      "stationId": "unidad_8891ad76-98f5-4e85-9e89-27d6e252093c",
+      "name": "Departamento de Migraciones Y Policía Internacional Puerto Natales",
+      "lat": -51.7257898,
+      "lng": -72.506946,
+      "regionName": "Región de Magallanes y la Antártica Chilena",
+      "comunaName": "Puerto Natales",
+      "institution": "PDI",
+      "address": "Bories 408, Puerto Natales"
+    },
+    {
+      "stationId": "unidad_77d12875-4651-480d-aaac-f6e4d74fc330",
+      "name": "Brigada de Investigación Criminal Chillán",
+      "lat": -36.6031051,
+      "lng": -72.1054393,
+      "regionName": "Región de Ñuble",
+      "comunaName": "Chillán",
+      "institution": "PDI",
+      "address": "Arauco 950, Chillán"
+    },
+    {
+      "stationId": "unidad_3ce1492b-3dbb-4b30-b610-76b9ba891dbb",
+      "name": "Brigada Investigadora de Robos Chillán",
+      "lat": -36.615837,
+      "lng": -72.1165207,
+      "regionName": "Región de Ñuble",
+      "comunaName": "Chillán",
+      "institution": "PDI",
+      "address": "Avenida O´Higgins 1490, Chillán"
+    },
+    {
+      "stationId": "unidad_e7e90cb9-5add-4513-bca1-045bd7af81f0",
+      "name": "Brigada Investigadora de Lavado de Activos Chillán",
+      "lat": -36.6159619,
+      "lng": -72.1160508,
+      "regionName": "Región de Ñuble",
+      "comunaName": "Chillán",
+      "institution": "PDI",
+      "address": "Avenida O´Higgins 1490, Chillán"
+    },
+    {
+      "stationId": "unidad_63b196c2-61ea-4a17-a9a8-aa4960c5cc3f",
+      "name": "Departamento de Migraciones y Policía Internacional Chillán",
+      "lat": -36.6116973,
+      "lng": -72.1044948,
+      "regionName": "Región de Ñuble",
+      "comunaName": "Chillán",
+      "institution": "PDI",
+      "address": "Arauco 950, Chillán"
+    },
+    {
+      "stationId": "unidad_c544bdf0-d86b-4907-b20a-8f8bbd39fa79",
+      "name": "Brigada de Delitos Sexuales Chillán",
+      "lat": -36.6030655,
+      "lng": -72.1048051,
+      "regionName": "Región de Ñuble",
+      "comunaName": "Chillán",
+      "institution": "PDI",
+      "address": "Vega de Saldías 350, Chillán"
+    },
+    {
+      "stationId": "unidad_02c931ac-32ef-49b6-9534-714d2d26d77c",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Chillán",
+      "lat": -36.6033498,
+      "lng": -72.1054801,
+      "regionName": "Región de Ñuble",
+      "comunaName": "Chillán",
+      "institution": "PDI",
+      "address": "Avenida O´higgins 1490, Chillán"
+    },
+    {
+      "stationId": "unidad_9c613683-c159-4a9a-a05b-0a405d65686f",
+      "name": "Laboratorio de Criminalística Regional",
+      "lat": -36.602982,
+      "lng": -72.1055879,
+      "regionName": "Región de Ñuble",
+      "comunaName": "Chillán",
+      "institution": "PDI",
+      "address": "Vega de Saldías 350, Chillán"
+    },
+    {
+      "stationId": "unidad_3eed6f8b-86bb-439c-b10a-54f1a9308343",
+      "name": "Departamento de Asesoría Técnica",
+      "lat": -36.6033498,
+      "lng": -72.1054801,
+      "regionName": "Región de Ñuble",
+      "comunaName": "Chillán",
+      "institution": "PDI",
+      "address": "Vega de Saldías 350, Chillán"
+    },
+    {
+      "stationId": "unidad_3d9a5183-59aa-42cc-b13d-3aa76a7d13a1",
+      "name": "Brigada de Delitos Económicos Chillán",
+      "lat": -36.6032343,
+      "lng": -72.1056968,
+      "regionName": "Región de Ñuble",
+      "comunaName": "Chillán",
+      "institution": "PDI",
+      "address": "Arauco 950, Chillán"
+    },
+    {
+      "stationId": "unidad_168269ec-510e-496d-b7eb-d5fd840a1bc3",
+      "name": "Brigada de Homicidios Chillán",
+      "lat": -36.6029481,
+      "lng": -72.1053421,
+      "regionName": "Región de Ñuble",
+      "comunaName": "Chillán",
+      "institution": "PDI",
+      "address": "Vega de Saldías 350, Chillán"
+    },
+    {
+      "stationId": "unidad_149c2673-fadd-41e4-8fac-a9a532e10eb8",
+      "name": "Brigada de Investigación Criminal San Carlos",
+      "lat": -36.4277677,
+      "lng": -71.9603077,
+      "regionName": "Región de Ñuble",
+      "comunaName": "San Carlos",
+      "institution": "PDI",
+      "address": "General Venegas 494, San Carlos"
+    },
+    {
+      "stationId": "unidad_eee49e6c-44e4-4dc6-91bf-115792c7bbe9",
+      "name": "Brigada Investigadora de Delitos en Recintos Portuarios Iquique",
+      "lat": -20.2102848,
+      "lng": -70.1555608,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Iquique",
+      "institution": "PDI",
+      "address": "Jorge Barrera 62"
+    },
+    {
+      "stationId": "unidad_b996f255-aaff-439c-95de-cf9cf70ce0b9",
+      "name": "Brigada Investigadora de Robos Iquique",
+      "lat": -20.2183893,
+      "lng": -70.1476689,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Iquique",
+      "institution": "PDI",
+      "address": "Salvador Allende 2901, Iquique"
+    },
+    {
+      "stationId": "unidad_076c8b45-df9d-4722-ae96-cad83b18f4e5",
+      "name": "Brigada Investigadora de Lavado de Activos Iquique",
+      "lat": -20.2409564,
+      "lng": -70.134452,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Iquique",
+      "institution": "PDI",
+      "address": "Calle Esmeralda 475 Iquique"
+    },
+    {
+      "stationId": "unidad_9363d1a9-831d-47fb-bf67-ede86f60b2f1",
+      "name": "Brigada de Homicidios Iquique",
+      "lat": -20.2410587,
+      "lng": -70.1346442,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Iquique",
+      "institution": "PDI",
+      "address": "Salvador Allende 2901, Iquique"
+    },
+    {
+      "stationId": "unidad_b5cef500-3176-4e74-8618-3b64ed1807d2",
+      "name": "Brigada de Investigación Criminal Iquique",
+      "lat": -20.2182145,
+      "lng": -70.1476921,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Iquique",
+      "institution": "PDI",
+      "address": "Barros Arana 1099, Iquique"
+    },
+    {
+      "stationId": "unidad_33b91823-ba35-4433-917b-a574d3e8a5c3",
+      "name": "Departamento de Migraciones y Policía Internacional Iquique",
+      "lat": -20.2407365,
+      "lng": -70.134588,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Iquique",
+      "institution": "PDI",
+      "address": "Salvador Allende 2901, Iquique"
+    },
+    {
+      "stationId": "unidad_d51cffe2-2e9e-46ba-a47e-b459f54e1a39",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Iquique",
+      "lat": -20.2407365,
+      "lng": -70.134588,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Iquique",
+      "institution": "PDI",
+      "address": "Salvador Allende 2901, Iquique"
+    },
+    {
+      "stationId": "unidad_2eee7757-8a9b-4b1b-b164-ff7b232b59ef",
+      "name": "Brigada Investigadora de Delitos Sexuales Iquique",
+      "lat": -20.240494,
+      "lng": -70.134639,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Iquique",
+      "institution": "PDI",
+      "address": "Barros Arana 1699, Iquique"
+    },
+    {
+      "stationId": "unidad_ed003f80-8432-4110-bccb-aa2a631fbf2c",
+      "name": "Laboratorio de Criminalística Cobertura Zona Norte Iquique",
+      "lat": -20.2407365,
+      "lng": -70.134588,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Iquique",
+      "institution": "PDI",
+      "address": "Salvador Allende 2901, Iquique"
+    },
+    {
+      "stationId": "unidad_ec90c1cd-e232-45cb-8fa6-adbcae230cbc",
+      "name": "Brigada de Delitos Económicos Iquique",
+      "lat": -20.2183114,
+      "lng": -70.1475218,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Iquique",
+      "institution": "PDI",
+      "address": "Barros Arana 1099, Iquique"
+    },
+    {
+      "stationId": "unidad_4a92bec7-2fe0-4a97-8308-8da1c39b58c3",
+      "name": "Brigada de Investigación Criminal Alto Hospicio",
+      "lat": -20.2877067,
+      "lng": -70.1028001,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Alto Hospicio",
+      "institution": "PDI",
+      "address": "Las Américas 4190, Alto Hospicio"
+    },
+    {
+      "stationId": "unidad_c5e20943-7a07-4903-9805-caa260e30e65",
+      "name": "Brigada Investigadora de Trata de Personas Iquique",
+      "lat": -20.287684,
+      "lng": -70.1023604,
+      "regionName": "Región de Tarapacá",
+      "comunaName": "Alto Hospicio",
+      "institution": "PDI",
+      "address": "Calle Esmeralda 475 Iquique"
+    },
+    {
+      "stationId": "unidad_5b6b065e-0703-42e6-964d-0e879da31ba9",
+      "name": "Brigada de Investigación Criminal Valparaíso",
+      "lat": -33.0288896,
+      "lng": -71.5311909,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Tupungato 3850, Placilla, Valparaíso"
+    },
+    {
+      "stationId": "unidad_14e38096-4c04-46d4-8f9f-a5b61ce92efc",
+      "name": "Brigada de Investigación Criminal Isla de Pascua",
+      "lat": -27.1605796,
+      "lng": -109.4385155,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Isla de Pascua",
+      "institution": "PDI",
+      "address": "Mataveri , Isla de Pascua"
+    },
+    {
+      "stationId": "unidad_78f62048-c37d-4cc1-a3c0-d0e4a84f20a8",
+      "name": "Brigada Investigadora de Lavado de Activos Valparaíso",
+      "lat": -33.1326198,
+      "lng": -71.5609476,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Tupungato 3850"
+    },
+    {
+      "stationId": "unidad_1d548ea4-5e92-4f04-a116-cecae642112d",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Valparaíso",
+      "lat": -33.1326198,
+      "lng": -71.5609476,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Tupungato 3850, Placilla, Valparaíso"
+    },
+    {
+      "stationId": "unidad_2ea371ee-5f32-401b-baf6-a0839654f816",
+      "name": "Brigada de Homicidios Valparaíso",
+      "lat": -33.0222756,
+      "lng": -71.5471002,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Tupungato 3850, Placilla, Valparaíso"
+    },
+    {
+      "stationId": "unidad_d526cf92-7239-48df-8b3d-833c9a589c05",
+      "name": "Brigada de Delitos Económicos Valparaíso",
+      "lat": -32.8336124,
+      "lng": -70.6000495,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Tupungato 3850, Placilla, Valparaíso"
+    },
+    {
+      "stationId": "unidad_47909ee5-b4d8-4c51-983b-d4c85629cc94",
+      "name": "Brigada de Delitos Sexuales Valparaíso",
+      "lat": -32.8338397,
+      "lng": -70.5993196,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Tupungato 3850, Placilla, Valparaíso"
+    },
+    {
+      "stationId": "unidad_57c13289-f1a8-4b24-a375-4463185a7914",
+      "name": "Brigada de Robos Valparaíso",
+      "lat": -33.1326198,
+      "lng": -71.5609476,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Tupungato 3850, Placilla, Valparaíso"
+    },
+    {
+      "stationId": "unidad_6cb84bd7-80da-4f9c-9cab-90ad517003a7",
+      "name": "Brigada de Delitos en Recintos Portuarios Valparaíso",
+      "lat": -33.1326198,
+      "lng": -71.5609476,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Tupungato 3850, Placilla, Valparaíso"
+    },
+    {
+      "stationId": "unidad_71059c4a-63d2-4d2f-b98a-19aa30b93977",
+      "name": "Brigada Investigadora del Ciber Crimen Valparaíso",
+      "lat": -33.0454087,
+      "lng": -71.6081114,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Tupungato 3850, Placilla, Valparaíso"
+    },
+    {
+      "stationId": "unidad_a48b8600-697f-412b-8e10-45ea4dc4dade",
+      "name": "Departamento de Migraciones y Policía Internacional Valparaíso",
+      "lat": -33.0454087,
+      "lng": -71.6081114,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Uruguay 174, Valparaíso"
+    },
+    {
+      "stationId": "unidad_be7fe9f0-e3bd-4b4c-b4e6-5907659f62dd",
+      "name": "Centro de Atención a Víctimas de Atentados Sexuales V Región",
+      "lat": -33.0245329,
+      "lng": -71.5598128,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Viña del Mar",
+      "institution": "PDI",
+      "address": "Av Ecuador 251, of 21, Viña del Mar"
+    },
+    {
+      "stationId": "unidad_5edb512b-bfe8-4a8e-b6e5-29e2f3c01f92",
+      "name": "Brigada de Investigación Criminal Viña del Mar",
+      "lat": -33.0288896,
+      "lng": -71.5311909,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Viña del Mar",
+      "institution": "PDI",
+      "address": "Los Acacios 2140, Miraflores Bajo, Viña del Mar"
+    },
+    {
+      "stationId": "unidad_14bbff76-2a75-433c-b042-6c99c3adb0ce",
+      "name": "Departamento de Extranjería y Policía Internacional Viña del Mar",
+      "lat": -33.0289088,
+      "lng": -71.5312376,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Viña del Mar",
+      "institution": "PDI",
+      "address": "Los Acacios 2140, Miraflores Bajo, Viña del Mar"
+    },
+    {
+      "stationId": "unidad_2563ba55-71c6-43c9-ac0b-d81e6e6b8106",
+      "name": "Brigada de Investigación Criminal Quintero",
+      "lat": -32.7795796,
+      "lng": -71.5331938,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Quintero",
+      "institution": "PDI",
+      "address": "Vicuña Mackenna 1360, Quintero"
+    },
+    {
+      "stationId": "unidad_4bdee632-8a03-49a0-9701-909d9e249fa0",
+      "name": "Brigada de Investigación Criminal Quilpué",
+      "lat": -33.0457633,
+      "lng": -71.4466201,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Quilpué",
+      "institution": "PDI",
+      "address": "Manuel Rodríguez 625, Quilpué"
+    },
+    {
+      "stationId": "unidad_7c986a48-4962-4a43-a813-8bc8bcf206ec",
+      "name": "Brigada de Investigación Criminal Villa Alemana",
+      "lat": -33.0462398,
+      "lng": -71.3592682,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Villa Alemana",
+      "institution": "PDI",
+      "address": "Calle Victoria 0409, Villa Alemana"
+    },
+    {
+      "stationId": "unidad_d8c88691-c8d9-497b-81d2-1541dd66f1a5",
+      "name": "Brigada de Investigación Criminal Limache",
+      "lat": -33.002665,
+      "lng": -71.2639789,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Limache",
+      "institution": "PDI",
+      "address": "Calle Manuel Rodríguez 185, Limache"
+    },
+    {
+      "stationId": "unidad_d91b819b-408a-4521-9f4a-df4dab04fa6a",
+      "name": "Brigada de Investigación Criminal Quillota",
+      "lat": -32.8801039,
+      "lng": -71.2483326,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Quillota",
+      "institution": "PDI",
+      "address": "Concepción 161, Quillota"
+    },
+    {
+      "stationId": "unidad_2bd7c89f-235f-475e-8e1d-ef43045e3fc9",
+      "name": "Brigada de Investigación Criminal La Calera",
+      "lat": -32.7843529,
+      "lng": -71.1924678,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "La Calera",
+      "institution": "PDI",
+      "address": "Diego Lillo 573, La Calera"
+    },
+    {
+      "stationId": "unidad_0cac9793-7abd-4c47-b8b9-938c39649c63",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado La Calera",
+      "lat": -32.7843529,
+      "lng": -71.1924678,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "La Calera",
+      "institution": "PDI",
+      "address": "Diego Lillo 573, La Calera"
+    },
+    {
+      "stationId": "unidad_05548aee-95cc-4f5d-ae26-2942ef82c0e1",
+      "name": "Brigada de Investigación Criminal San Antonio",
+      "lat": -33.5865868,
+      "lng": -71.6117331,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "San Antonio",
+      "institution": "PDI",
+      "address": "21 de Mayo 712, San Antonio"
+    },
+    {
+      "stationId": "unidad_6481c386-2821-4aed-84a0-16963d6d367b",
+      "name": "Brigada de Homicidios San Antonio",
+      "lat": -33.5864179,
+      "lng": -71.6115745,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "San Antonio",
+      "institution": "PDI",
+      "address": "21 de mayo 712, San Antonio"
+    },
+    {
+      "stationId": "unidad_7f2f7aeb-9505-4a52-bebb-4e9a37a196b4",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado San Antonio",
+      "lat": -33.5864179,
+      "lng": -71.6115745,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "San Antonio",
+      "institution": "PDI",
+      "address": "21 de Mayo 712, San Antonio"
+    },
+    {
+      "stationId": "unidad_78b79937-c738-4e3b-9676-a3afe02e9938",
+      "name": "Departamento de Migraciones y Policía Internacional San Antonio",
+      "lat": -33.5864179,
+      "lng": -71.6115745,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "San Antonio",
+      "institution": "PDI",
+      "address": "21 de Mayo 712, San Antonio"
+    },
+    {
+      "stationId": "unidad_814c54e9-ddc5-482a-ae45-355030c82927",
+      "name": "Brigada de Investigación Criminal Los Andes",
+      "lat": -32.8336256,
+      "lng": -70.5995285,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Los Andes",
+      "institution": "PDI",
+      "address": "Hermanos Clark 280, Los Andes"
+    },
+    {
+      "stationId": "unidad_6e8b5c4f-2d06-40e4-b368-b450ecec93bf",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Los Andes",
+      "lat": -32.8287463,
+      "lng": -70.5954437,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Los Andes",
+      "institution": "PDI",
+      "address": "Hermanos Clark 280, Los Andes"
+    },
+    {
+      "stationId": "unidad_cece5483-47f2-4c63-8051-484663d2fc2f",
+      "name": "Brigada de Homicidios Los Andes",
+      "lat": -32.8334159,
+      "lng": -70.5996643,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Los Andes",
+      "institution": "PDI",
+      "address": "Hermanos Clark 280, Los Andes"
+    },
+    {
+      "stationId": "unidad_efda5b1f-e80e-49aa-a86d-9c46a7daebf7",
+      "name": "Brigada de Delitos Económicos Los Andes",
+      "lat": -32.8336124,
+      "lng": -70.6000495,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Los Andes",
+      "institution": "PDI",
+      "address": "Hermanos Clark 280, Los Andes"
+    },
+    {
+      "stationId": "unidad_3da0c902-62f4-417f-8a15-d54abefcdcca",
+      "name": "Brigada Investigadora de Robos Concón",
+      "lat": -32.931757,
+      "lng": -71.5173023,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Concón",
+      "institution": "PDI",
+      "address": "Avenida Magallanes 633, Concón"
+    },
+    {
+      "stationId": "unidad_1d2ea97a-5ce2-4dda-ba32-96806916aa72",
+      "name": "Brigada de Delitos Sexuales Los Andes",
+      "lat": -32.8338397,
+      "lng": -70.5993196,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Los Andes",
+      "institution": "PDI",
+      "address": "Hermanos Clark 280, Los Andes"
+    },
+    {
+      "stationId": "unidad_ef90dc03-332e-4876-a0b6-f7dcbebd17bc",
+      "name": "Brigada de Robos Los Andes",
+      "lat": -32.833335,
+      "lng": -70.5999584,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Los Andes",
+      "institution": "PDI",
+      "address": "Hermanos Clark 280, Los Andes"
+    },
+    {
+      "stationId": "unidad_d15dda60-3ba5-48ce-87c9-4d25ef954c85",
+      "name": "Departamento de Migraciones y Policía Internacional Los Andes",
+      "lat": -32.8287463,
+      "lng": -70.5954437,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Los Andes",
+      "institution": "PDI",
+      "address": "Hermanos Clark 280, Los Andes"
+    },
+    {
+      "stationId": "unidad_44911c8a-1417-4781-83b4-249a9d7bbd34",
+      "name": "Brigada de Investigación Criminal San Felipe",
+      "lat": -32.7523454,
+      "lng": -70.7246381,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "San Felipe",
+      "institution": "PDI",
+      "address": "Freire 0911, San Felipe"
+    },
+    {
+      "stationId": "unidad_4bb253db-3b28-4dee-b3fb-06655f3a944e",
+      "name": "Brigada de Investigación Criminal La Ligua",
+      "lat": -32.4492851,
+      "lng": -71.2289493,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "La Ligua",
+      "institution": "PDI",
+      "address": "Prat 198, La Ligua"
+    },
+    {
+      "stationId": "unidad_ff3deb7d-3bbb-45fc-8aac-cd5c1211305f",
+      "name": "Brigada de Investigación Criminal Costa Norte",
+      "lat": -32.5028352,
+      "lng": -71.4544656,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Papudo",
+      "institution": "PDI",
+      "address": "Calle Orella 103, Papudo"
+    },
+    {
+      "stationId": "unidad_b2c0437d-35e9-45f8-888b-ed9ce50178fc",
+      "name": "Avanzada Los Libertadores",
+      "lat": -32.8335881,
+      "lng": -70.5990908,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Los Andes",
+      "institution": "PDI",
+      "address": "O'Higgins 475, Los Andes"
+    },
+    {
+      "stationId": "unidad_14d391a9-78c8-4f6b-b2f2-887fafd3fefc",
+      "name": "Brigada Investigadora de Delitos Contra el Medioambiente y Patrimonio Cultural Valparaíso",
+      "lat": -33.1326198,
+      "lng": -71.5609476,
+      "regionName": "Región de Valparaíso",
+      "comunaName": "Valparaíso",
+      "institution": "PDI",
+      "address": "Tupungato 3850, Placilla, Valparaíso"
+    },
+    {
+      "stationId": "unidad_ccb064a2-d356-498a-ae31-712b63aa1199",
+      "name": "Brigada Investigadora del Cibercrimen Metropolitana",
+      "lat": -33.3890277,
+      "lng": -70.6155826,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Huechuraba",
+      "institution": "PDI",
+      "address": "Av del Parque 5045"
+    },
+    {
+      "stationId": "unidad_ca953a67-e32b-4287-9492-8ed912bff441",
+      "name": "Brigada de Investigación Criminal Lampa",
+      "lat": -33.2946695,
+      "lng": -70.8807336,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Lampa",
+      "institution": "PDI",
+      "address": "Trincaco poniente 2150, Lampa"
+    },
+    {
+      "stationId": "unidad_212c61a5-913d-46c7-9e8c-c20556f59e48",
+      "name": "Brigada de Investigación Criminal Cerrillos",
+      "lat": -33.4802286,
+      "lng": -70.7199959,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Cerrillos",
+      "institution": "PDI",
+      "address": "Calle Francia 4040, Cerrillos"
+    },
+    {
+      "stationId": "unidad_bae78337-a6d0-4f6e-a6df-88b974992cab",
+      "name": "Brigada de Investigación Criminal Santiago",
+      "lat": -33.4309103,
+      "lng": -70.6548834,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Independencia",
+      "institution": "PDI",
+      "address": "General Borgoño 1204, piso 3, Independencia"
+    },
+    {
+      "stationId": "unidad_b46f2797-5c4f-454e-9e45-d7e282d9615f",
+      "name": "Brigada de Investigación Criminal Independencia",
+      "lat": -33.430733,
+      "lng": -70.6555241,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Independencia",
+      "institution": "PDI",
+      "address": "General Borgoño 1204, piso 5, Independencia"
+    },
+    {
+      "stationId": "unidad_08b6b207-0eab-4f75-9af8-c0c126348226",
+      "name": "Brigada de Investigación Criminal Conchalí",
+      "lat": -33.3975719,
+      "lng": -70.6642987,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Conchalí",
+      "institution": "PDI",
+      "address": "Pedro Fontova 7792, Huechuraba"
+    },
+    {
+      "stationId": "unidad_bf35ad5c-eec6-4d79-9961-06129438abec",
+      "name": "Brigada de Investigación Criminal Colina",
+      "lat": -33.2111502,
+      "lng": -70.680093,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Colina",
+      "institution": "PDI",
+      "address": "El Tranque 0100, Población el Roble, Colina"
+    },
+    {
+      "stationId": "unidad_eaddcc6e-de54-409a-a47c-ad861bba6f60",
+      "name": "Brigada de Investigación Criminal Renca",
+      "lat": -33.4021728,
+      "lng": -70.6972871,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Renca",
+      "institution": "PDI",
+      "address": "Apostol Santiago 1672, Renca"
+    },
+    {
+      "stationId": "unidad_f4acb614-9d83-459f-88ef-19a9add69775",
+      "name": "Brigada de Investigación Criminal Quinta Normal Cerro Navia",
+      "lat": -33.4274353,
+      "lng": -70.691105,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Quinta Normal",
+      "institution": "PDI",
+      "address": "Doctor Lucas Sierra 4112 Quinta Normal"
+    },
+    {
+      "stationId": "unidad_a570f7df-bf09-4db4-a82b-74f4f9096f70",
+      "name": "Brigada de Investigación Criminal Providencia",
+      "lat": -33.4387485,
+      "lng": -70.6214546,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Providencia",
+      "institution": "PDI",
+      "address": "José Manuel Infante 820, Providencia"
+    },
+    {
+      "stationId": "unidad_ae379f33-245e-4b0b-b294-1343dfa5287b",
+      "name": "Brigada de Investigación Criminal Las Condes",
+      "lat": -33.397149,
+      "lng": -70.5528094,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Las Condes",
+      "institution": "PDI",
+      "address": "Vicente Huidobro 191, Las Condes"
+    },
+    {
+      "stationId": "unidad_87494046-998e-4852-ab13-d7af551c20a6",
+      "name": "Brigada de Investigación Criminal La Florida",
+      "lat": -33.5505459,
+      "lng": -70.5814252,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "La Florida",
+      "institution": "PDI",
+      "address": "José Miguel Carrera 475, La Florida"
+    },
+    {
+      "stationId": "unidad_2794b5a8-06d5-4837-9538-e0a9f848aad2",
+      "name": "Brigada de Investigación Criminal Peñalolén",
+      "lat": -33.4716311,
+      "lng": -70.5763465,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Peñalolén",
+      "institution": "PDI",
+      "address": "Calle El Lago 5720, Peñalolén"
+    },
+    {
+      "stationId": "unidad_cf6d4cba-abc9-4b4c-ab69-d7d05e0cd3e4",
+      "name": "Brigada de Investigación Criminal Lo Barnechea",
+      "lat": -33.3516439,
+      "lng": -70.5080369,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Lo Barnechea",
+      "institution": "PDI",
+      "address": "Av El Rodeo 13541, Lo Barnechea"
+    },
+    {
+      "stationId": "unidad_25f78048-cf68-4e4a-980e-93c7410dc123",
+      "name": "Brigada de Investigación Criminal Macul",
+      "lat": -33.4947651,
+      "lng": -70.5880009,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Macul",
+      "institution": "PDI",
+      "address": "San Vicente de Paul 4343, Macul"
+    },
+    {
+      "stationId": "unidad_0c782fe1-1390-4298-84b0-80ce6a56608b",
+      "name": "Brigada de Investigación Criminal San Miguel",
+      "lat": -33.5556651,
+      "lng": -70.6318734,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "San Ramón",
+      "institution": "PDI",
+      "address": "Santa Rosa 10235, Ramón"
+    },
+    {
+      "stationId": "unidad_de14a2c9-9a04-4416-ba5d-03fb73c45fd2",
+      "name": "Brigada de Investigación Criminal La Cisterna",
+      "lat": -33.5235256,
+      "lng": -70.6579894,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "La Cisterna",
+      "institution": "PDI",
+      "address": "Fernández Albano 172, La Cisterna"
+    },
+    {
+      "stationId": "unidad_331f1b3e-0114-49c2-b9ae-770f180d5e20",
+      "name": "Brigada de Investigación Criminal José María Caro",
+      "lat": -33.511101,
+      "lng": -70.688296,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Lo Espejo",
+      "institution": "PDI",
+      "address": "Av Obispo Javier Vásquez 6969, José María Caro, Lo Espejo"
+    },
+    {
+      "stationId": "unidad_b9ddca0c-a13a-4985-a612-fcda880507bb",
+      "name": "Brigada de Investigación Criminal Puente Alto",
+      "lat": -33.6059311,
+      "lng": -70.5793621,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Puente Alto",
+      "institution": "PDI",
+      "address": "Ernesto Alvear 165, Puente Alto"
+    },
+    {
+      "stationId": "unidad_a2f5da79-c36f-41ed-9a0f-e2f26ba7b607",
+      "name": "Brigada de Investigación Criminal San Ramón",
+      "lat": -33.5263269,
+      "lng": -70.6610676,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "La Cisterna",
+      "institution": "PDI",
+      "address": "Santa Rosa 10235, San Ramón"
+    },
+    {
+      "stationId": "unidad_c5be9483-9c36-4392-a8f2-2be9c0bd3095",
+      "name": "Brigada de Investigación Criminal La Pintana",
+      "lat": -33.586828,
+      "lng": -70.6292159,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "La Pintana",
+      "institution": "PDI",
+      "address": "Av Santa Rosa 13129, La Pintana"
+    },
+    {
+      "stationId": "unidad_9566d8b0-dfb8-42c9-9159-d534bb01c25e",
+      "name": "Brigada de Investigación Criminal Maipú",
+      "lat": -33.5047547,
+      "lng": -70.7592284,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Maipú",
+      "institution": "PDI",
+      "address": "Monumento 2450, Maipú"
+    },
+    {
+      "stationId": "unidad_f3cb4559-f7dd-41d1-a0a9-4dd8ea4a2df7",
+      "name": "Brigada de Investigación Criminal Pudahuel",
+      "lat": -33.4400453,
+      "lng": -70.763311,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Pudahuel",
+      "institution": "PDI",
+      "address": "José Manuel Guzmán 1335, Pudahuel"
+    },
+    {
+      "stationId": "unidad_fa9cafdd-51d0-49a3-aa55-3320c7607a79",
+      "name": "Brigada de Investigación Criminal Talagante",
+      "lat": -33.6604572,
+      "lng": -70.9208206,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Talagante",
+      "institution": "PDI",
+      "address": "Av Bernardo O'Higgins 451, Talagante"
+    },
+    {
+      "stationId": "unidad_1e8d3986-12d8-40d6-aa8f-02bfeb2ba1e0",
+      "name": "Brigada de Investigación Criminal Melipillla",
+      "lat": -33.6944471,
+      "lng": -71.2169685,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Melipilla",
+      "institution": "PDI",
+      "address": "Silva Chavez 1139, Melipilla"
+    },
+    {
+      "stationId": "unidad_0ea211c8-2688-47e5-9f39-885e9c01d5a2",
+      "name": "Brigada de Investigación Criminal Peñaflor",
+      "lat": -33.6109794,
+      "lng": -70.8781632,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Peñaflor",
+      "institution": "PDI",
+      "address": "Vicuña Mackenna 1910, Peñaflor"
+    },
+    {
+      "stationId": "unidad_0fe64170-ce6e-4215-9e41-af910e617d78",
+      "name": "Brigada de Investigación Criminal Buin",
+      "lat": -33.7291488,
+      "lng": -70.7364023,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Buin",
+      "institution": "PDI",
+      "address": "Av Bajos de Matte 02, Buin"
+    },
+    {
+      "stationId": "unidad_425f894d-ea99-4fc9-ae03-198c09254d61",
+      "name": "Brigada de Investigación Criminal San Bernardo",
+      "lat": -33.5969111,
+      "lng": -70.7064825,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "San Bernardo",
+      "institution": "PDI",
+      "address": "Eyzaguirre 737, San Bernardo"
+    },
+    {
+      "stationId": "unidad_92896b4c-a03a-4fe5-abab-037cf8a97aee",
+      "name": "Brigada Investigadora de Delitos Sexuales Metropolitana",
+      "lat": -33.4717446,
+      "lng": -70.6210603,
+      "regionName": "Región Metropolitana de Santiago",
+      "comunaName": "Ñuñoa",
+      "institution": "PDI",
+      "address": "Williams Rebolledo 1799"
+    },
+    {
+      "stationId": "unidad_4f186dd4-fc67-4f76-9cd1-a9e923300e86",
+      "name": "Brigada de Investigación Criminal Concepción",
+      "lat": -36.8247783,
+      "lng": -73.0573927,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Concepción",
+      "institution": "PDI",
+      "address": "Angol 815, Concepción"
+    },
+    {
+      "stationId": "unidad_9d688196-0813-4906-a802-6e4ea5edf917",
+      "name": "Brigada de Investigación Criminal Chiguayante",
+      "lat": -36.9092153,
+      "lng": -73.0313201,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Chiguayante",
+      "institution": "PDI",
+      "address": "Obispo San Miguel 1691, Chiguayante"
+    },
+    {
+      "stationId": "unidad_1aa06676-8dc7-4f08-a6c7-49e8d9e76307",
+      "name": "Brigada de Delitos Sexuales Concepción",
+      "lat": -36.8247783,
+      "lng": -73.0573927,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Concepción",
+      "institution": "PDI",
+      "address": "Angol 815, Concepción"
+    },
+    {
+      "stationId": "unidad_79736254-7a7b-4dce-8779-31e5ea9c2883",
+      "name": "Brigada Investigadora del Cibercrimen Concepción",
+      "lat": -36.8247783,
+      "lng": -73.0573927,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Concepción",
+      "institution": "PDI",
+      "address": "Angol 815, Concepción"
+    },
+    {
+      "stationId": "unidad_bd0ea975-e3f0-4eb4-b92d-34ac0641cba1",
+      "name": "Laboratorio de Criminalística Cobertura Zona Sur Concepción",
+      "lat": -36.8179725,
+      "lng": -73.061556,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Concepción",
+      "institution": "PDI",
+      "address": "Angol 861, Concepción"
+    },
+    {
+      "stationId": "unidad_8dee86d6-b9c5-413b-9cfe-3ec5b82aa030",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Concepción",
+      "lat": -36.8319853,
+      "lng": -73.100776,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Concepción",
+      "institution": "PDI",
+      "address": "Enrique Soro #1520, San Pedro de la Paz, Concepción"
+    },
+    {
+      "stationId": "unidad_ca2fceb2-5084-400f-b00f-ae043b66c681",
+      "name": "Brigada de Reacción Táctica Concepción",
+      "lat": -36.8319853,
+      "lng": -73.100776,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Concepción",
+      "institution": "PDI",
+      "address": "Enrique Soro #1520, San Pedro de la Paz, Concepción"
+    },
+    {
+      "stationId": "unidad_89465595-6e0d-4299-864d-2ab7b02cc4a1",
+      "name": "Brigada Investigadora de Robos Concepción",
+      "lat": -36.8418087,
+      "lng": -73.0916997,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "San Pedro",
+      "institution": "PDI",
+      "address": "Michimalongo 939, San Pedro"
+    },
+    {
+      "stationId": "unidad_b2e7f963-2c9a-44e2-8481-5e25f1f507cd",
+      "name": "Brigada Investigadora de Delitos Económicos Concepción",
+      "lat": -36.8179725,
+      "lng": -73.061556,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Concepción",
+      "institution": "PDI",
+      "address": "Angol 861, Concepción"
+    },
+    {
+      "stationId": "unidad_099c02f9-c173-46c0-8167-736a32ab3647",
+      "name": "Departamento de Migraciones y Policía Internacional Concepción",
+      "lat": -36.8179725,
+      "lng": -73.061556,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Concepción",
+      "institution": "PDI",
+      "address": "Angol 861, Concepción"
+    },
+    {
+      "stationId": "unidad_78aeefa0-8e62-42b5-8dfd-70e2b69d3f91",
+      "name": "Brigada de Investigación Criminal Tomé",
+      "lat": -36.6193515,
+      "lng": -72.9562882,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Tomé",
+      "institution": "PDI",
+      "address": "Mariano Egaña 909, Tomé"
+    },
+    {
+      "stationId": "unidad_7528b076-0e40-4f38-933c-bd78b84c5514",
+      "name": "Brigada de Investigación Criminal Coronel",
+      "lat": -36.986627,
+      "lng": -73.1632392,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Coronel",
+      "institution": "PDI",
+      "address": "Juan Antonio Ríos 2257, Coronel"
+    },
+    {
+      "stationId": "unidad_5632a274-7f41-44d8-80bc-2ca35ee32b4d",
+      "name": "Departamento de Migraciones y Policía Internacional Coronel",
+      "lat": -36.986627,
+      "lng": -73.1632392,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Coronel",
+      "institution": "PDI",
+      "address": "Juan Antonio Ríos 2257, Coronel"
+    },
+    {
+      "stationId": "unidad_db481a04-24b4-4571-a8c0-0b4272ed7156",
+      "name": "Brigada de Investigación Criminal Lota",
+      "lat": -37.0962448,
+      "lng": -73.1523865,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Lota",
+      "institution": "PDI",
+      "address": "Condell 01, Lota"
+    },
+    {
+      "stationId": "unidad_8a074612-eee8-4eb0-be75-21828c8836fe",
+      "name": "Brigada de Investigación Criminal Los Ángeles",
+      "lat": -37.4823013,
+      "lng": -72.3518562,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Los Ángeles",
+      "institution": "PDI",
+      "address": "Av O’Higgins 151, Los Ángeles"
+    },
+    {
+      "stationId": "unidad_f11fe448-0a5c-4352-a381-bd3ef766a440",
+      "name": "Brigada de Homicidios Los Ángeles",
+      "lat": -37.4823013,
+      "lng": -72.3518562,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Los Ángeles",
+      "institution": "PDI",
+      "address": "Av O’Higgins 151, Los Ángeles"
+    },
+    {
+      "stationId": "unidad_06562b58-2587-4eb1-bf30-59b9b45cc6f9",
+      "name": "Brigada de Delitos Sexuales Los Ángeles",
+      "lat": -37.4823013,
+      "lng": -72.3518562,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Los Ángeles",
+      "institution": "PDI",
+      "address": "Av O’Higgins 151, Los Ángeles"
+    },
+    {
+      "stationId": "unidad_2d2e0923-2690-415e-a173-9adb535cdd82",
+      "name": "Brigada de Investigación Criminal Cabrero",
+      "lat": -37.0339433,
+      "lng": -72.4132168,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Cabrero",
+      "institution": "PDI",
+      "address": "Río Claro 1030, Cabrero"
+    },
+    {
+      "stationId": "unidad_6c1e7ed7-dfa1-4756-b2d2-d685a69e4559",
+      "name": "Departamento de Migraciones y Policía Internacional Los Ángeles",
+      "lat": -37.4823013,
+      "lng": -72.3518562,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Los Ángeles",
+      "institution": "PDI",
+      "address": "Av O’Higgins 151, Los Ángeles"
+    },
+    {
+      "stationId": "unidad_8e5802f3-8afc-42c4-a768-ff2e262560e8",
+      "name": "Brigada de Investigación Criminal Mulchén",
+      "lat": -37.7197839,
+      "lng": -72.2435483,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Mulchén",
+      "institution": "PDI",
+      "address": "Pedro Lagos 410, Mulchén"
+    },
+    {
+      "stationId": "unidad_43da1cd2-b3ed-4581-9698-0d0c6ac18cd5",
+      "name": "Brigada de Investigación Criminal Lebu",
+      "lat": -37.609599,
+      "lng": -73.6570145,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Lebu",
+      "institution": "PDI",
+      "address": "Freire 615, Lebu"
+    },
+    {
+      "stationId": "unidad_a8044d7f-1f9e-44ca-afad-d93ca91d07a8",
+      "name": "Brigada de Investigación Criminal Cañete",
+      "lat": -37.9312343,
+      "lng": -73.4333897,
+      "regionName": "Región Policial del Bío Bío",
+      "comunaName": "Cañete",
+      "institution": "PDI",
+      "address": "Paicavi 165, Cañete"
+    },
+    {
+      "stationId": "unidad_5dd497d3-9b55-4f7b-a23c-ad85b0b6ef30",
+      "name": "Departamento de Migraciones y Policía Internacional Rancagua",
+      "lat": -34.1513012,
+      "lng": -70.7395915,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "Rancagua",
+      "institution": "PDI",
+      "address": "Florencio Durán 580, Rancagua"
+    },
+    {
+      "stationId": "unidad_00778ec6-0133-42e7-87fa-9e04ddca7c56",
+      "name": "Brigada de Delitos Económicos Rancagua",
+      "lat": -34.1513012,
+      "lng": -70.7395915,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "Rancagua",
+      "institution": "PDI",
+      "address": "Florencio Durán 580, Rancagua"
+    },
+    {
+      "stationId": "unidad_67036ceb-a270-4813-9918-3140af2733b6",
+      "name": "Brigada Investigadora de Lavado de Activos Rancagua",
+      "lat": -34.0067927,
+      "lng": -70.7158432,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "Mostazal",
+      "institution": "PDI",
+      "address": "Longitudinal Antiguo 120, Mostazal"
+    },
+    {
+      "stationId": "unidad_343933a1-a44a-4cdb-b167-e11430da8f95",
+      "name": "Brigada de Homicidios Rancagua",
+      "lat": -34.1513012,
+      "lng": -70.7395915,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "Rancagua",
+      "institution": "PDI",
+      "address": "Florencio Durán 580, Rancagua"
+    },
+    {
+      "stationId": "unidad_62a7dca3-1cec-4e2d-895d-107cdb7fc0e4",
+      "name": "Brigada Investigadora de Robos Rancagua",
+      "lat": -34.1513012,
+      "lng": -70.7395915,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "Rancagua",
+      "institution": "PDI",
+      "address": "Florencio Duran 580, Rancagua"
+    },
+    {
+      "stationId": "unidad_2646eb3f-997a-4d10-89be-c5d82d2542bf",
+      "name": "Brigada de Delitos Sexuales Rancagua",
+      "lat": -34.1513012,
+      "lng": -70.7395915,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "Rancagua",
+      "institution": "PDI",
+      "address": "Florencio Durán 580, Rancagua"
+    },
+    {
+      "stationId": "unidad_5f3b3a42-5371-4989-ab6f-6769c6bcaf26",
+      "name": "Brigada Investigadora de Robos Rancagua",
+      "lat": -34.1513012,
+      "lng": -70.7395915,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "Rancagua",
+      "institution": "PDI",
+      "address": "Florencio Duran 580, Rancagua"
+    },
+    {
+      "stationId": "unidad_30e4e877-d881-49c6-861f-2d46274e7b79",
+      "name": "Brigada de Investigación Criminal San Fernando",
+      "lat": -34.5879087,
+      "lng": -70.9927825,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "San Fernando",
+      "institution": "PDI",
+      "address": "Olegario Lazo 496, San Fernando"
+    },
+    {
+      "stationId": "unidad_fa687f6c-8546-48b3-ba93-11572f187ce7",
+      "name": "Departamento de Migraciones y Policía Internacional San Fernando",
+      "lat": -34.5879087,
+      "lng": -70.9927825,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "San Fernando",
+      "institution": "PDI",
+      "address": "Olegario Lazo 496, San Fernando"
+    },
+    {
+      "stationId": "unidad_9240d3ed-0be1-4bf7-8d4e-0279b6b9dbba",
+      "name": "Brigada de Investigación Criminal Pichilemu",
+      "lat": -34.3857284,
+      "lng": -71.999839,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "Pichilemu",
+      "institution": "PDI",
+      "address": "Av Anibal Pinto 433, Pichilemu"
+    },
+    {
+      "stationId": "unidad_d118be3e-9d5d-4299-819e-1f05eea2eaa5",
+      "name": "Brigada de Investigación Criminal San Vicente de Tagua Tagua",
+      "lat": -34.438475,
+      "lng": -71.0740358,
+      "regionName": "Región Policial del Libertador General Bernardo O'Higgins",
+      "comunaName": "San Vicente de Tagua Tagua",
+      "institution": "PDI",
+      "address": "Avenida España 1292, San Vicente de Tagua Tagua"
+    },
+    {
+      "stationId": "unidad_7b51ce76-a069-429f-9acf-586e231f26a0",
+      "name": "Brigada de Investigación Criminal Talca",
+      "lat": -35.4294664,
+      "lng": -71.6510123,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Talca",
+      "institution": "PDI",
+      "address": "2 Sur 1628, Talca"
+    },
+    {
+      "stationId": "unidad_72d80774-7b17-468b-9491-29c930600e61",
+      "name": "Brigada Investigadora de Delitos Económicos Talca",
+      "lat": -35.3984334,
+      "lng": -71.6539394,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Talca",
+      "institution": "PDI",
+      "address": "3 Oriente 1282, Talca"
+    },
+    {
+      "stationId": "unidad_2054de96-2131-4286-98e6-fa7528870efb",
+      "name": "Brigada Investigadora de Lavado de Activos Talca",
+      "lat": -35.3984334,
+      "lng": -71.6539394,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Talca",
+      "institution": "PDI",
+      "address": "3 Oriente 1282"
+    },
+    {
+      "stationId": "unidad_5e4e554e-d1de-4167-8667-15c897c05fc7",
+      "name": "Brigada de Homicidios Talca",
+      "lat": -35.4294664,
+      "lng": -71.6510123,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Talca",
+      "institution": "PDI",
+      "address": "2 Sur 1628, Talca"
+    },
+    {
+      "stationId": "unidad_c166e95d-ecab-45b6-882a-d4790b2302be",
+      "name": "Brigada de Investigadora de Robos Talca",
+      "lat": -35.4294664,
+      "lng": -71.6510123,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Talca",
+      "institution": "PDI",
+      "address": "2 Sur 1628, Talca"
+    },
+    {
+      "stationId": "unidad_e56b286f-bac9-48f0-a185-fc9cabae7cf1",
+      "name": "Brigada Investigadora de Delitos Sexuales Talca",
+      "lat": -35.4251237,
+      "lng": -71.6622673,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Talca",
+      "institution": "PDI",
+      "address": "Calle 3 Oriente 1282, Talca"
+    },
+    {
+      "stationId": "unidad_7863d8e5-2392-4d93-9ae5-ea05c1d2962a",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Talca",
+      "lat": -35.3984334,
+      "lng": -71.6539394,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Talca",
+      "institution": "PDI",
+      "address": "3 Oriente 1282, Talca"
+    },
+    {
+      "stationId": "unidad_875d8fcb-8ff4-4954-9112-525515860c39",
+      "name": "Brigada de Investigación Criminal Constitución",
+      "lat": -35.3312146,
+      "lng": -72.4105026,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Constitución",
+      "institution": "PDI",
+      "address": "O´Higgins 575, Constitución"
+    },
+    {
+      "stationId": "unidad_6caff8c0-151d-480e-8a53-27a70ea7cae0",
+      "name": "Brigada de Investigación Criminal Cauquenes",
+      "lat": -35.9629733,
+      "lng": -72.3159789,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Cauquenes",
+      "institution": "PDI",
+      "address": "Carrera 298, Cauquenes"
+    },
+    {
+      "stationId": "unidad_688bb377-a488-439a-b5eb-5b12e35c8b11",
+      "name": "Sección de Migraciones y Policía Internacional Cauquenes",
+      "lat": -35.9664048,
+      "lng": -72.3206882,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Cauquenes",
+      "institution": "PDI",
+      "address": "Antonio Varas 350, Cauquenes"
+    },
+    {
+      "stationId": "unidad_54cf781d-0024-4c3c-8290-e4a576634dee",
+      "name": "Brigada de Investigación Criminal Linares",
+      "lat": -35.8485139,
+      "lng": -71.5981017,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Linares",
+      "institution": "PDI",
+      "address": "Valentín Letelier 417, Linares"
+    },
+    {
+      "stationId": "unidad_30521056-4764-41be-92be-9874482b7b48",
+      "name": "Brigada de Delitos Sexuales Linares",
+      "lat": -35.8485139,
+      "lng": -71.5981017,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Linares",
+      "institution": "PDI",
+      "address": "Valentín Letelier 417, Linares"
+    },
+    {
+      "stationId": "unidad_d0b82b00-c4ff-4298-b040-b69aea6d5ab4",
+      "name": "Brigada Investigadora de Robos Linares",
+      "lat": -35.8485139,
+      "lng": -71.5981017,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Linares",
+      "institution": "PDI",
+      "address": "Valentín Letelier 417, Linares"
+    },
+    {
+      "stationId": "unidad_34835d2a-2341-46a0-989f-aa7eec23821a",
+      "name": "Departamento de Migraciones y Policía Internacional Linares",
+      "lat": -35.8485139,
+      "lng": -71.5981017,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Linares",
+      "institution": "PDI",
+      "address": "Valentín Letelier 417, Linares"
+    },
+    {
+      "stationId": "unidad_b038a871-1b4c-4551-aadf-8cced3b19732",
+      "name": "Brigada Investigadora de Delitos Económicos Linares",
+      "lat": -35.8485139,
+      "lng": -71.5981017,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Linares",
+      "institution": "PDI",
+      "address": "Valentín Letelier 417, Linares"
+    },
+    {
+      "stationId": "unidad_c9cc48dd-b143-404a-950d-13dbaf3869a5",
+      "name": "Brigada de Homicidios Linares",
+      "lat": -35.8485139,
+      "lng": -71.5981017,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Linares",
+      "institution": "PDI",
+      "address": "Valentín Letelier 417, Linares"
+    },
+    {
+      "stationId": "unidad_497b0418-cca3-4238-bd55-1243bc5bf145",
+      "name": "Brigada Antinarcóticos y Contra el Crimen Organizado Linares",
+      "lat": -35.8485139,
+      "lng": -71.5981017,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Linares",
+      "institution": "PDI",
+      "address": "Valentín Letelier 417, Linares"
+    },
+    {
+      "stationId": "unidad_daa8e6de-48ff-49c9-8a1b-2e6e8d638f22",
+      "name": "Brigada de Investigación Criminal San Javier",
+      "lat": -35.5975347,
+      "lng": -71.7313163,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "San Javier",
+      "institution": "PDI",
+      "address": "Av Chorrillos 1581, San Javier"
+    },
+    {
+      "stationId": "unidad_d4247a14-3cc6-44d2-b607-f635ff565a9c",
+      "name": "Brigada de Investigación Criminal Molina",
+      "lat": -35.4398085,
+      "lng": -71.6623018,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Molina",
+      "institution": "PDI",
+      "address": "Calle Independencia 1964, Molina"
+    },
+    {
+      "stationId": "unidad_e2e005f8-1caf-4ef9-9fb0-618d70df7fda",
+      "name": "Laboratorio de Criminalística Regional Talca",
+      "lat": -35.4491,
+      "lng": -71.6322812,
+      "regionName": "Región Policial del Maule",
+      "comunaName": "Talca",
+      "institution": "PDI",
+      "address": "Calle 13 Sur 160, Talca"
+    }
+  ]
+}

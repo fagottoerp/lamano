@@ -125,6 +125,15 @@ class _MapCardState extends State<_MapCard> {
   }
 
   Future<void> _open() async {
+    if (widget.live && widget.active) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Compartiendo ubicación en vivo'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
+
     if (_canOpenGroupLiveMap) {
       await Navigator.push(
         context,
@@ -160,6 +169,74 @@ class _MapCardState extends State<_MapCard> {
         (widget.lat != 0.0 || widget.lng != 0.0);
     final canOpen = _canOpenGroupLiveMap || hasPos;
 
+    // ── Live location: show map directly, no header, tap = open big map ──
+    if (widget.live) {
+      return GestureDetector(
+        onTap: canOpen ? _open : null,
+        child: Container(
+          width: 240,
+          height: 160,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: widget.active ? const Color(0xFF25D366) : Colors.grey.shade400,
+              width: widget.active ? 2 : 1,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              hasPos
+                  ? _MiniMap(
+                      key: ValueKey('${widget.lat}_${widget.lng}_live'),
+                      lat: widget.lat!,
+                      lng: widget.lng!,
+                      live: widget.active,
+                    )
+                  : Container(
+                      color: const Color(0xFFE8F5E9),
+                      child: const Center(
+                        child: Icon(Icons.location_searching, color: Color(0xFF25D366), size: 32),
+                      ),
+                    ),
+              // Bottom label
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  color: Colors.black.withOpacity(0.45),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.active) ...[
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF25D366),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        const Text('Compartiendo ubicación en vivo',
+                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w500)),
+                      ] else
+                        const Text('Ubicación finalizada',
+                            style: TextStyle(color: Colors.white70, fontSize: 10)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // ── Static location: collapsible card ──
     return Container(
       width: 240,
       decoration: BoxDecoration(
@@ -173,7 +250,6 @@ class _MapCardState extends State<_MapCard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header con toggle minimizar — tap en cualquier lado del header
           Material(
             color: ColorConstants.primaryColor,
             child: InkWell(
@@ -182,49 +258,28 @@ class _MapCardState extends State<_MapCard> {
                 padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
                 child: Row(
                   children: [
-                    Icon(
-                      widget.live
-                          ? (widget.active ? Icons.location_on : Icons.location_off)
-                          : Icons.place,
-                      size: 16,
-                      color: widget.live
-                          ? (widget.active ? const Color(0xFFB9FBD4) : Colors.redAccent.shade100)
-                          : Colors.white,
-                    ),
+                    const Icon(Icons.place, size: 16, color: Colors.white),
                     const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        widget.live
-                            ? (widget.active ? 'Ubicación en vivo 🔴' : 'Ubicación finalizada')
-                          : 'Ubicación compartida',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    const Expanded(
+                      child: Text('Ubicación compartida',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                          overflow: TextOverflow.ellipsis),
                     ),
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                            size: 14,
-                            color: Colors.white,
-                          ),
+                          Icon(_expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                              size: 14, color: Colors.white),
                           const SizedBox(width: 2),
-                          Text(
-                            _expanded ? 'Ocultar' : 'Ver mapa',
-                            style: const TextStyle(color: Colors.white, fontSize: 10),
-                          ),
+                          Text(_expanded ? 'Ocultar' : 'Ver mapa',
+                              style: const TextStyle(color: Colors.white, fontSize: 10)),
                         ],
                       ),
                     ),
@@ -233,7 +288,6 @@ class _MapCardState extends State<_MapCard> {
               ),
             ),
           ),
-          // Mapa colapsable
           AnimatedCrossFade(
             firstChild: InkWell(
               onTap: canOpen ? _open : null,
@@ -244,10 +298,10 @@ class _MapCardState extends State<_MapCard> {
                     Positioned.fill(
                       child: hasPos
                           ? _MiniMap(
-                              key: ValueKey('${widget.lat}_${widget.lng}_${widget.live ? 1 : 0}'),
+                              key: ValueKey('${widget.lat}_${widget.lng}_static'),
                               lat: widget.lat!,
                               lng: widget.lng!,
-                              live: widget.live && widget.active,
+                              live: false,
                             )
                           : Container(
                               color: ColorConstants.surfaceLight,
@@ -273,10 +327,8 @@ class _MapCardState extends State<_MapCard> {
                               children: [
                                 Icon(Icons.zoom_out_map, color: Colors.white, size: 13),
                                 SizedBox(width: 4),
-                                Text(
-                                  'Tocar para ampliar',
-                                  style: TextStyle(color: Colors.white, fontSize: 10),
-                                ),
+                                Text('Tocar para ampliar',
+                                    style: TextStyle(color: Colors.white, fontSize: 10)),
                               ],
                             ),
                           ),
