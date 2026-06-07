@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
@@ -46,6 +46,17 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     _AlertCategory('emergencia_menor', 'Emergencia menor', Icons.health_and_safety, Colors.purple, isHelp: true),
   ];
 
+  static const List<_AlertVisualOption> _adminCustomIconOptions = [
+    _AlertVisualOption('warning', Icons.warning_amber_rounded, Color(0xFFD84315)),
+    _AlertVisualOption('police', Icons.local_police, Color(0xFF1E4E8A)),
+    _AlertVisualOption('accident', Icons.car_crash, Color(0xFFC62828)),
+    _AlertVisualOption('roadblock', Icons.block, Color(0xFF6D4C41)),
+    _AlertVisualOption('fire', Icons.local_fire_department, Color(0xFFFF6F00)),
+    _AlertVisualOption('medical', Icons.medical_services, Color(0xFF2E7D32)),
+    _AlertVisualOption('traffic', Icons.traffic, Color(0xFFF9A825)),
+    _AlertVisualOption('camera', Icons.videocam, Color(0xFF455A64)),
+  ];
+
   final MapController _mapController = MapController();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FlutterLocalNotificationsPlugin _localNotif = FlutterLocalNotificationsPlugin();
@@ -73,6 +84,10 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   String _pendingNote = '';
   _AlertPublishConfig? _pendingPublishConfig;
   String _pendingCustomLabel = '';
+  String? _pendingCustomIconKey;
+  XFile? _pendingCreatePhoto;
+  bool _pendingForcePriority = false;
+  bool _pendingForceApproved = false;
 
   final Set<String> _notifiedNearAlerts = <String>{};
   final Set<String> _notifiedGlobalAlerts = <String>{};
@@ -187,11 +202,42 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     return [..._priorityCategories, ..._categories];
   }
 
+  bool get _isIosAdmin =>
+      _isAdmin && !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
   _AlertCategory _categoryByKey(String key) {
     return _categoriesForCreate().firstWhere(
       (c) => c.key == key,
       orElse: () => const _AlertCategory('otro', 'Alerta', Icons.warning, Colors.red),
     );
+  }
+
+  _AlertVisualOption? _customIconByKey(String? key) {
+    if (key == null || key.isEmpty) return null;
+    for (final opt in _adminCustomIconOptions) {
+      if (opt.key == key) return opt;
+    }
+    return null;
+  }
+
+  IconData _alertIcon(_CitizenAlert alert, _AlertCategory category) {
+    if (alert.customIconKey != null) {
+      return _customIconByKey(alert.customIconKey)?.icon ?? Icons.warning_amber_rounded;
+    }
+    if (alert.isHelp) {
+      return alert.helperMembers.isEmpty ? Icons.help_center : Icons.handshake;
+    }
+    return category.icon;
+  }
+
+  Color _alertIconColor(_CitizenAlert alert, _AlertCategory category) {
+    if (alert.customIconKey != null) {
+      return _customIconByKey(alert.customIconKey)?.color ?? const Color(0xFFD84315);
+    }
+    if (alert.isHelp) {
+      return alert.helperMembers.isEmpty ? Colors.deepPurple : Colors.green;
+    }
+    return category.color;
   }
 
   Future<void> _initLocalNotifications() async {
@@ -790,6 +836,21 @@ class _MapaMundisPageState extends State<MapaMundisPage>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (_isIosAdmin)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        _openCustomAdminAlertSheet();
+                      },
+                      icon: const Icon(Icons.admin_panel_settings_outlined),
+                      label: const Text('Crear propia alerta (solo admin iOS)'),
+                    ),
+                  ),
+                ),
               const Text(
                 'Nueva alerta ciudadana',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
@@ -839,6 +900,268 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
     if (selected == null || !mounted) return;
     _openCreateModeSheet(selected);
+  }
+
+  Future<void> _openCustomAdminAlertSheet() async {
+    if (!_isIosAdmin) return;
+
+    final category = const _AlertCategory(
+      'admin_custom',
+      'Alerta personalizada',
+      Icons.warning_amber_rounded,
+      Color(0xFFD84315),
+    );
+
+    final nameCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    var publishMode = 'hours';
+    var hours = 6;
+    var selectedIconKey = _adminCustomIconOptions.first.key;
+    XFile? selectedPhoto;
+
+    final mode = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Crear propia alerta (admin iOS)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: nameCtrl,
+                  maxLength: 80,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre de la alerta',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: noteCtrl,
+                  maxLength: 140,
+                  decoration: const InputDecoration(
+                    labelText: 'Descripcion alerta',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Permanencia',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  initialValue: publishMode,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'hours', child: Text('Por cantidad de horas')),
+                    DropdownMenuItem(value: 'permanent', child: Text('Siempre visible')),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setModalState(() => publishMode = v);
+                  },
+                ),
+                if (publishMode == 'hours') ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Text('Horas: '),
+                      Expanded(
+                        child: Slider(
+                          min: 1,
+                          max: 168,
+                          divisions: 167,
+                          value: hours.toDouble(),
+                          label: '$hours h',
+                          onChanged: (v) {
+                            setModalState(() => hours = v.round());
+                          },
+                        ),
+                      ),
+                      Text('$hours h'),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 8),
+                const Text(
+                  'Foto opcional',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final picker = ImagePicker();
+                          final picked = await picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 85,
+                            maxWidth: 1600,
+                          );
+                          if (picked == null) return;
+                          setModalState(() => selectedPhoto = picked);
+                        },
+                        icon: const Icon(Icons.photo_library_outlined),
+                        label: Text(
+                          selectedPhoto == null ? 'Incluir foto' : 'Cambiar foto',
+                        ),
+                      ),
+                    ),
+                    if (selectedPhoto != null) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () => setModalState(() => selectedPhoto = null),
+                        icon: const Icon(Icons.delete_outline),
+                        tooltip: 'Quitar foto',
+                      ),
+                    ],
+                  ],
+                ),
+                if (selectedPhoto != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Foto: ${selectedPhoto!.name}',
+                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Icono de alerta',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _adminCustomIconOptions
+                      .map(
+                        (opt) => ChoiceChip(
+                          selected: selectedIconKey == opt.key,
+                          onSelected: (_) => setModalState(() => selectedIconKey = opt.key),
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(opt.icon, size: 18, color: opt.color),
+                              const SizedBox(width: 6),
+                              Text(opt.key),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(context).pop('my_location'),
+                        icon: const Icon(Icons.my_location),
+                        label: const Text('Usar mi ubicacion'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).pop('pick_map'),
+                        icon: const Icon(Icons.touch_app),
+                        label: const Text('Marcar en mapa'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final note = noteCtrl.text.trim();
+    final customLabel = nameCtrl.text.trim();
+    noteCtrl.dispose();
+    nameCtrl.dispose();
+
+    if (mode == null || !mounted) return;
+    if (customLabel.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debes ingresar un nombre para la alerta.')),
+      );
+      return;
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final publishConfig = publishMode == 'permanent'
+        ? _AlertPublishConfig(
+            startAtMs: now,
+            expiresAtMs: now + const Duration(days: 3650).inMilliseconds,
+            isPermanent: true,
+          )
+        : _AlertPublishConfig(
+            startAtMs: now,
+            expiresAtMs: now + Duration(hours: hours).inMilliseconds,
+            isPermanent: false,
+          );
+
+    if (mode == 'my_location') {
+      if (_myPosition == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No hay ubicacion disponible.')),
+        );
+        return;
+      }
+      await _createAlert(
+        category: category,
+        point: LatLng(_myPosition!.latitude, _myPosition!.longitude),
+        note: note,
+        publishConfig: publishConfig,
+        customLabel: customLabel,
+        customIconKey: selectedIconKey,
+        initialPhoto: selectedPhoto,
+        forcePriority: true,
+        forceApproved: true,
+      );
+      return;
+    }
+
+    setState(() {
+      _pendingCategory = category;
+      _pendingNote = note;
+      _pendingPublishConfig = publishConfig;
+      _pendingCustomLabel = customLabel;
+      _pendingCustomIconKey = selectedIconKey;
+      _pendingCreatePhoto = selectedPhoto;
+      _pendingForcePriority = true;
+      _pendingForceApproved = true;
+      _pickPointOnMap = true;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Toca el mapa para publicar la alerta.')),
+    );
   }
 
   Future<void> _openCreateModeSheet(_AlertCategory category) async {
@@ -1079,6 +1402,10 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       _pendingNote = note;
       _pendingPublishConfig = publishConfig;
       _pendingCustomLabel = customLabel;
+      _pendingCustomIconKey = null;
+      _pendingCreatePhoto = null;
+      _pendingForcePriority = false;
+      _pendingForceApproved = false;
       _pickPointOnMap = true;
     });
 
@@ -1093,6 +1420,10 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     required String note,
     required _AlertPublishConfig publishConfig,
     required String customLabel,
+    String? customIconKey,
+    XFile? initialPhoto,
+    bool forcePriority = false,
+    bool forceApproved = false,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     final uid = user?.uid ?? '';
@@ -1100,19 +1431,51 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         (user?.displayName?.trim().isNotEmpty == true) ? user!.displayName!.trim() : 'Usuario';
 
     final now = DateTime.now().millisecondsSinceEpoch;
+    final isPriority = forcePriority || category.isPriorityTemplate;
+    final approvedByAdmin = forceApproved || category.isPriorityTemplate;
 
-    await _firestore.collection(_alertsCollection).add({
+    final doc = _firestore.collection(_alertsCollection).doc();
+    final evidenceItems = <Map<String, dynamic>>[];
+    var initialPhotoFailed = false;
+
+    if (initialPhoto != null && uid.isNotEmpty) {
+      try {
+        final bytes = await initialPhoto.readAsBytes();
+        final ext = initialPhoto.name.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+        final ref = FirebaseStorage.instance
+            .ref()
+            .child('citizen_alert_evidence/${doc.id}/${uid}_$now.$ext');
+
+        await ref.putData(
+          bytes,
+          SettableMetadata(contentType: ext == 'png' ? 'image/png' : 'image/jpeg'),
+        );
+        final url = await ref.getDownloadURL();
+        evidenceItems.add({
+          'url': url,
+          'note': 'Foto inicial de la alerta',
+          'uploadedByUid': uid,
+          'uploadedByName': nickname,
+          'uploadedAtMs': now,
+        });
+      } catch (_) {
+        initialPhotoFailed = true;
+      }
+    }
+
+    await doc.set({
       'category': category.key,
       'categoryLabel': customLabel,
       'isHelp': category.isHelp,
-      'isPriority': category.isPriorityTemplate,
+      'isPriority': isPriority,
       'priorityTemplateKey': category.isPriorityTemplate ? category.key : null,
-      'approvedByAdmin': category.isPriorityTemplate,
-      'approvedAtMs': category.isPriorityTemplate ? now : null,
+      'approvedByAdmin': approvedByAdmin,
+      'approvedAtMs': approvedByAdmin ? now : null,
       'isPermanent': publishConfig.isPermanent,
       'note': note,
       'lat': point.latitude,
       'lng': point.longitude,
+      'customIconKey': customIconKey,
       'createdByUid': uid,
       'createdByName': nickname,
       'createdAtMs': now,
@@ -1132,13 +1495,19 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       'helperLat': null,
       'helperLng': null,
       'helperMembers': <Map<String, dynamic>>[],
-      'evidenceItems': <Map<String, dynamic>>[],
+      'evidenceItems': evidenceItems,
     });
 
     if (!mounted) return;
     SystemSound.play(SystemSoundType.alert);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Alerta publicada para toda la comunidad.')),
+      SnackBar(
+        content: Text(
+          initialPhotoFailed
+              ? 'Alerta publicada, pero no se pudo subir la foto inicial.'
+              : 'Alerta publicada para toda la comunidad.',
+        ),
+      ),
     );
   }
 
@@ -1465,6 +1834,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
             final originLabel = live.createdByUid.isEmpty
                 ? 'del sistema'
                 : '${live.createdByName} (usuario)';
+            final liveIcon = _alertIcon(live, category);
+            final liveColor = _alertIconColor(live, category);
 
             return SafeArea(
               child: Padding(
@@ -1475,7 +1846,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   children: [
                     Row(
                       children: [
-                        Icon(category.icon, color: category.color),
+                        Icon(liveIcon, color: liveColor),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -1736,12 +2107,14 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                         itemBuilder: (_, i) {
                           final a = _activeAlerts[i];
                           final c = _categoryByKey(a.category);
+                          final itemIcon = _alertIcon(a, c);
+                          final itemColor = _alertIconColor(a, c);
                           final dist = _distanceKmTo(a.lat, a.lng);
                           final stateLabel = _alertStateLabel(a);
                           return ListTile(
                             leading: Icon(
-                              a.isPriority ? Icons.priority_high : c.icon,
-                              color: a.isPriority ? const Color(0xFFC62828) : c.color,
+                              a.isPriority ? Icons.priority_high : itemIcon,
+                              color: a.isPriority ? const Color(0xFFC62828) : itemColor,
                             ),
                             title: Text(a.categoryLabel),
                             subtitle: Text(
@@ -1815,16 +2188,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       final c = _categoryByKey(a.category);
       final risk = _riskLevelOf(a);
       final riskColor = _riskColor(risk);
-      final icon = a.isHelp
-          ? (a.helperMembers.isEmpty
-              ? Icons.help_center
-              : Icons.handshake)
-          : c.icon;
-      final color = a.isHelp
-          ? (a.helperMembers.isEmpty
-              ? Colors.deepPurple
-              : Colors.green)
-          : c.color;
+      final icon = _alertIcon(a, c);
+      final color = _alertIconColor(a, c);
       final bearing = _alertMarkerBearing(a, myLatLng);
       final stateLabel = _alertStateLabel(a);
       final timeLabel = _fmtCompactDateTime(a.createdAtMs);
@@ -1995,12 +2360,20 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                 final note = _pendingNote;
                 final publishConfig = _pendingPublishConfig;
                 final customLabel = _pendingCustomLabel;
+                final customIconKey = _pendingCustomIconKey;
+                final pendingPhoto = _pendingCreatePhoto;
+                final forcePriority = _pendingForcePriority;
+                final forceApproved = _pendingForceApproved;
                 setState(() {
                   _pickPointOnMap = false;
                   _pendingCategory = null;
                   _pendingNote = '';
                   _pendingPublishConfig = null;
                   _pendingCustomLabel = '';
+                  _pendingCustomIconKey = null;
+                  _pendingCreatePhoto = null;
+                  _pendingForcePriority = false;
+                  _pendingForceApproved = false;
                 });
                 if (publishConfig == null) return;
                 await _createAlert(
@@ -2009,6 +2382,10 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   note: note,
                   publishConfig: publishConfig,
                   customLabel: customLabel,
+                  customIconKey: customIconKey,
+                  initialPhoto: pendingPhoto,
+                  forcePriority: forcePriority,
+                  forceApproved: forceApproved,
                 );
               },
             ),
@@ -2076,6 +2453,10 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   _pendingNote = '';
                   _pendingPublishConfig = null;
                   _pendingCustomLabel = '';
+                  _pendingCustomIconKey = null;
+                  _pendingCreatePhoto = null;
+                  _pendingForcePriority = false;
+                  _pendingForceApproved = false;
                 });
               },
               tooltip: 'Cancelar marcado',
@@ -2266,6 +2647,14 @@ class _AlertPublishConfig {
   });
 }
 
+class _AlertVisualOption {
+  final String key;
+  final IconData icon;
+  final Color color;
+
+  const _AlertVisualOption(this.key, this.icon, this.color);
+}
+
 class _CitizenAlert {
   final String id;
   final String category;
@@ -2287,6 +2676,7 @@ class _CitizenAlert {
   final int? scheduleEndMinute;
   final bool approvedByAdmin;
   final int? approvedAtMs;
+  final String? customIconKey;
   final List<String> confirmUids;
   final List<String> discardUids;
   final String? helperUid;
@@ -2322,6 +2712,7 @@ class _CitizenAlert {
     required this.scheduleEndMinute,
     required this.approvedByAdmin,
     required this.approvedAtMs,
+    required this.customIconKey,
     required this.confirmUids,
     required this.discardUids,
     required this.helperUid,
@@ -2389,6 +2780,9 @@ class _CitizenAlert {
       scheduleEndMinute: (d['scheduleEndMinute'] as num?)?.toInt(),
       approvedByAdmin: d['approvedByAdmin'] == true,
       approvedAtMs: (d['approvedAtMs'] as num?)?.toInt(),
+        customIconKey: (d['customIconKey'] ?? '').toString().isEmpty
+          ? null
+          : (d['customIconKey'] ?? '').toString(),
       confirmUids: (d['confirmUids'] as List<dynamic>? ?? const []).map((e) => '$e').toList(),
       discardUids: (d['discardUids'] as List<dynamic>? ?? const []).map((e) => '$e').toList(),
       helperUid: d['helperUid'] as String?,
