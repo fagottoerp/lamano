@@ -30,8 +30,11 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   with SingleTickerProviderStateMixin {
   static const LatLng _santiagoCenter = LatLng(-33.4489, -70.6693);
   static const String _alertsCollection = 'citizen_alerts';
+  static const String _geoZonesCollection = 'geo_zones';
   static const String _priorityTemplatesApiUrl =
       'http://38.247.147.220/lamano/api_priority_alert_templates.php';
+    static const String _wazeProxyApiUrl =
+      'http://38.247.147.220/lamano/api_waze_alerts_proxy.php';
 
   static final List<_AlertCategory> _categories = [
     _AlertCategory('bache', 'Bache en la via', Icons.construction, Colors.orange),
@@ -62,15 +65,18 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   final FlutterLocalNotificationsPlugin _localNotif = FlutterLocalNotificationsPlugin();
 
   StreamSubscription<QuerySnapshot>? _alertsSub;
+  StreamSubscription<QuerySnapshot>? _zonesSub;
   StreamSubscription<Position>? _positionSub;
   Timer? _dispatchRotateTimer;
   Timer? _alertVisibilityTimer;
+  Timer? _proximityBannerTimer;
   late final AnimationController _scannerCtrl;
 
   List<_Comisaria> _allStations = const [];
   List<_CitizenAlert> _activeAlerts = const [];
   List<_CitizenAlert> _allFetchedAlerts = const [];
   List<_AlertCategory> _priorityCategories = const [];
+  List<_GeoZone> _geoZones = const [];
 
   Position? _myPosition;
   bool _loading = true;
@@ -80,6 +86,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   double _mapZoom = 9.2;
 
   bool _pickPointOnMap = false;
+  bool _pickWazePointOnMap = false;
+  bool _wazeLoading = false;
+  final int _wazeRadiusMeters = 500;
   _AlertCategory? _pendingCategory;
   String _pendingNote = '';
   _AlertPublishConfig? _pendingPublishConfig;
@@ -92,14 +101,25 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   final Set<String> _notifiedNearAlerts = <String>{};
   final Set<String> _notifiedGlobalAlerts = <String>{};
   final Set<String> _insideInstitutionRadius = <String>{};
+  final Set<String> _insideAlertRadius = <String>{};
+  final Set<String> _insideZoneRadius = <String>{};
   final Map<String, int> _userReputation = <String, int>{};
   int _dispatchIndex = 0;
   bool _alertsPrimed = false;
   bool _isAdmin = false;
+  bool _drawZoneMode = false;
+  List<LatLng> _zoneDraftPoints = const [];
+  String _zoneDraftName = '';
+  Color _zoneDraftColor = const Color(0xFFD32F2F);
   String _currentNickname = 'Usuario';
   double _headingDeg = 0;
   bool _hasHeading = false;
   final bool _autoRotateMap = true;
+  _MobileMapMode _mobileMapMode = _MobileMapMode.roadmap;
+  String? _proximityBannerTitle;
+  String? _proximityBannerBody;
+  IconData _proximityBannerIcon = Icons.warning_amber_rounded;
+  Color _proximityBannerColor = const Color(0xFFC62828);
 
   @override
   void initState() {
@@ -118,11 +138,37 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   @override
   void dispose() {
     _alertsSub?.cancel();
+    _zonesSub?.cancel();
     _positionSub?.cancel();
     _dispatchRotateTimer?.cancel();
     _alertVisibilityTimer?.cancel();
+    _proximityBannerTimer?.cancel();
     _scannerCtrl.dispose();
     super.dispose();
+  }
+
+  void _showProximityBanner({
+    required String title,
+    required String body,
+    required IconData icon,
+    required Color color,
+  }) {
+    _proximityBannerTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _proximityBannerTitle = title;
+      _proximityBannerBody = body;
+      _proximityBannerIcon = icon;
+      _proximityBannerColor = color;
+    });
+
+    _proximityBannerTimer = Timer(const Duration(seconds: 6), () {
+      if (!mounted) return;
+      setState(() {
+        _proximityBannerTitle = null;
+        _proximityBannerBody = null;
+      });
+    });
   }
 
   Future<void> _init() async {
@@ -149,6 +195,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
       _focusInitial();
       _listenLiveAlerts();
+      _listenGeoZones();
       _startPositionTracking();
     } catch (_) {
       if (!mounted) return;
@@ -202,8 +249,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     return [..._priorityCategories, ..._categories];
   }
 
-  bool get _isIosAdmin =>
-      _isAdmin && !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+  bool get _isCustomAdminEnabled => _isAdmin;
 
   _AlertCategory _categoryByKey(String key) {
     return _categoriesForCreate().firstWhere(
@@ -247,6 +293,11 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         iOS: DarwinInitializationSettings(),
       ),
     );
+
+    final ios = _localNotif.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
+    await ios?.requestPermissions(alert: true, badge: true, sound: true);
+    final mac = _localNotif.resolvePlatformSpecificImplementation<MacOSFlutterLocalNotificationsPlugin>();
+    await mac?.requestPermissions(alert: true, badge: true, sound: true);
   }
 
   Future<List<_Comisaria>> _loadStations() async {
@@ -320,6 +371,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       });
       _syncMapOrientationFromHeading();
       _maybeNotifyNearbyAlerts();
+      _maybeNotifyNearbyZones();
       _maybeNotifyNearbyInstitutions();
       _syncHelperLocationForActiveAlerts(p);
     });
@@ -370,7 +422,15 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         .snapshots()
         .listen((snap) {
       if (!mounted) return;
-      _allFetchedAlerts = snap.docs.map(_CitizenAlert.fromDoc).toList();
+      final parsed = <_CitizenAlert>[];
+      for (final doc in snap.docs) {
+        try {
+          parsed.add(_CitizenAlert.fromDoc(doc));
+        } catch (_) {
+          // Skip malformed alert docs to keep real-time stream alive.
+        }
+      }
+      _allFetchedAlerts = parsed;
       _applyAlertVisibility();
     });
 
@@ -378,6 +438,485 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       if (!mounted) return;
       _applyAlertVisibility();
     });
+  }
+
+  void _listenGeoZones() {
+    _zonesSub?.cancel();
+    _zonesSub = _firestore
+        .collection(_geoZonesCollection)
+        .where('status', isEqualTo: 'active')
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final zones = snap.docs
+          .map(_GeoZone.fromDoc)
+          .where((z) => z.points.length >= 3)
+          .toList()
+        ..sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
+      setState(() => _geoZones = zones);
+      _maybeNotifyNearbyZones();
+    });
+  }
+
+  void _startZoneDrawMode({required String name, required Color color}) {
+    if (!_isAdmin) return;
+    setState(() {
+      _drawZoneMode = true;
+      _zoneDraftName = name;
+      _zoneDraftPoints = const [];
+      _zoneDraftColor = color;
+      _pickPointOnMap = false;
+      _pendingCategory = null;
+      _pendingNote = '';
+      _pendingPublishConfig = null;
+      _pendingCustomLabel = '';
+      _pendingCustomIconKey = null;
+      _pendingCreatePhoto = null;
+      _pendingForcePriority = false;
+      _pendingForceApproved = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Modo delimitación activo: toca el mapa para agregar puntos.')),
+    );
+  }
+
+  Future<void> _openZoneDrawSetupSheet() async {
+    if (!_isAdmin) return;
+    final nameCtrl = TextEditingController(text: _zoneDraftName);
+    var selectedColor = _zoneDraftColor;
+
+    final start = await showModalBottomSheet<bool>(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => StatefulBuilder(
+            builder: (context, setModalState) => Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Dibujar delimitación',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: nameCtrl,
+                    maxLength: 80,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre o delimitación',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Selecciona color', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      const Color(0xFFD32F2F),
+                      const Color(0xFFF57C00),
+                      const Color(0xFFFBC02D),
+                      const Color(0xFF2E7D32),
+                      const Color(0xFF1565C0),
+                    ]
+                        .map(
+                          (c) => ChoiceChip(
+                            selected: selectedColor.toARGB32() == c.toARGB32(),
+                            onSelected: (_) => setModalState(() => selectedColor = c),
+                            label: Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: c,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('Cancelar'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('Dibujar'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ) ??
+        false;
+
+    final name = nameCtrl.text.trim();
+    nameCtrl.dispose();
+    if (!mounted || !start) return;
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debes ingresar un nombre para la delimitación.')),
+      );
+      return;
+    }
+    _startZoneDrawMode(name: name, color: selectedColor);
+  }
+
+  void _undoZonePoint() {
+    if (_zoneDraftPoints.isEmpty) return;
+    setState(() {
+      _zoneDraftPoints = _zoneDraftPoints.sublist(0, _zoneDraftPoints.length - 1);
+    });
+  }
+
+  void _clearZoneDraft({bool exitMode = false}) {
+    setState(() {
+      _zoneDraftPoints = const [];
+      if (exitMode) {
+        _drawZoneMode = false;
+        _zoneDraftName = '';
+      }
+    });
+  }
+
+  String _colorToHex(Color color) {
+    final value = color.toARGB32() & 0x00FFFFFF;
+    return '#${value.toRadixString(16).padLeft(6, '0').toUpperCase()}';
+  }
+
+  Future<void> _saveZoneDraft() async {
+    if (!_isAdmin) return;
+    if (_zoneDraftPoints.length < 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debes marcar al menos 3 puntos para cerrar la zona.')),
+      );
+      return;
+    }
+
+    final name = _zoneDraftName.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debes ingresar un nombre para la delimitación.')),
+      );
+      return;
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    await _firestore.collection(_geoZonesCollection).add({
+      'name': name,
+      'color': _colorToHex(_zoneDraftColor),
+      'points': _zoneDraftPoints
+          .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+          .toList(),
+      'status': 'active',
+      'isPermanent': true,
+      'createdAtMs': now,
+      'createdByUid': uid,
+      'createdByName': _currentNickname,
+    });
+
+    if (!mounted) return;
+    setState(() {
+      _drawZoneMode = false;
+      _zoneDraftPoints = const [];
+      _zoneDraftName = '';
+      _zoneDraftColor = const Color(0xFFD32F2F);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Zona delimitada guardada para toda la comunidad.')),
+    );
+  }
+
+  Future<void> _openZoneManageSheet(_GeoZone zone) async {
+    if (!_isAdmin) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Editar delimitación'),
+              subtitle: Text(zone.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              onTap: () => Navigator.of(context).pop('edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Eliminar delimitación', style: TextStyle(color: Colors.red)),
+              subtitle: const Text('Se ocultará para todos los usuarios.'),
+              onTap: () => Navigator.of(context).pop('delete'),
+            ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+    if (action == 'edit') {
+      await _openZoneEditSheet(zone);
+      return;
+    }
+    if (action == 'delete') {
+      await _deleteZone(zone);
+    }
+  }
+
+  Future<void> _openZonesAdminSheet() async {
+    if (!_isAdmin) return;
+    if (_geoZones.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay delimitaciones activas para gestionar.')),
+      );
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Delimitaciones activas',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 360,
+                child: ListView.separated(
+                  itemCount: _geoZones.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final zone = _geoZones[index];
+                    return ListTile(
+                      leading: Container(
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: zone.color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      title: Text(
+                        zone.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text('${zone.points.length} puntos'),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _focusZone(zone);
+                      },
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Editar',
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _openZoneEditSheet(zone);
+                            },
+                            icon: const Icon(Icons.edit_outlined),
+                          ),
+                          IconButton(
+                            tooltip: 'Eliminar',
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _deleteZone(zone);
+                            },
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _focusZone(_GeoZone zone) {
+    if (zone.points.isEmpty) return;
+    final center = zone.labelPoint;
+    setState(() {
+      _mapCenter = center;
+      _mapZoom = 15.0;
+    });
+    _mapController.move(center, 15.0);
+  }
+
+  Future<void> _openZoneEditSheet(_GeoZone zone) async {
+    if (!_isAdmin) return;
+    final nameCtrl = TextEditingController(text: zone.name);
+    var selectedColor = zone.color;
+
+    final save = await showModalBottomSheet<bool>(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => StatefulBuilder(
+            builder: (context, setModalState) => Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Editar delimitación',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: nameCtrl,
+                    maxLength: 80,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre o delimitación',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Color', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      const Color(0xFFD32F2F),
+                      const Color(0xFFF57C00),
+                      const Color(0xFFFBC02D),
+                      const Color(0xFF2E7D32),
+                      const Color(0xFF1565C0),
+                    ]
+                        .map(
+                          (c) => ChoiceChip(
+                            selected: selectedColor.toARGB32() == c.toARGB32(),
+                            onSelected: (_) => setModalState(() => selectedColor = c),
+                            label: Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: c,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('Cancelar'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('Guardar cambios'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ) ??
+        false;
+
+    final newName = nameCtrl.text.trim();
+    nameCtrl.dispose();
+    if (!mounted || !save) return;
+    if (newName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debes ingresar un nombre para la delimitación.')),
+      );
+      return;
+    }
+
+    await _firestore.collection(_geoZonesCollection).doc(zone.id).update({
+      'name': newName,
+      'color': _colorToHex(selectedColor),
+      'updatedAtMs': DateTime.now().millisecondsSinceEpoch,
+      'updatedByUid': FirebaseAuth.instance.currentUser?.uid ?? '',
+      'updatedByName': _currentNickname,
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Delimitación actualizada.')),
+    );
+  }
+
+  Future<void> _deleteZone(_GeoZone zone) async {
+    if (!_isAdmin) return;
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Eliminar delimitación'),
+            content: Text('¿Seguro que deseas eliminar "${zone.name}" para todos?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Eliminar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!mounted || !ok) return;
+
+    await _firestore.collection(_geoZonesCollection).doc(zone.id).update({
+      'status': 'inactive',
+      'deletedAtMs': DateTime.now().millisecondsSinceEpoch,
+      'deletedByUid': FirebaseAuth.instance.currentUser?.uid ?? '',
+      'deletedByName': _currentNickname,
+    });
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Delimitación eliminada para todos.')),
+    );
   }
 
   bool _isAlertVisibleNow(_CitizenAlert alert, int nowMs) {
@@ -501,6 +1040,49 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     _syncMapOrientationFromHeading();
   }
 
+  Future<void> _centerOnMyLocationFromButton() async {
+    if (_myPosition != null) {
+      _goToMyLocation();
+      return;
+    }
+
+    final resolved = await _resolveLocation();
+    if (!mounted) return;
+    if (resolved == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo obtener tu ubicación actual.')),
+      );
+      return;
+    }
+
+    setState(() {
+      _myPosition = resolved;
+    });
+    _goToMyLocation();
+  }
+
+  String _googleTileLayerCode(_MobileMapMode mode) {
+    switch (mode) {
+      case _MobileMapMode.satellite:
+        return 's';
+      case _MobileMapMode.terrain:
+        return 'p';
+      case _MobileMapMode.roadmap:
+        return 'm';
+    }
+  }
+
+  String _mobileMapModeLabel(_MobileMapMode mode) {
+    switch (mode) {
+      case _MobileMapMode.satellite:
+        return 'Satelite';
+      case _MobileMapMode.terrain:
+        return 'Relieve';
+      case _MobileMapMode.roadmap:
+        return 'Mapa';
+    }
+  }
+
   List<_Comisaria> _visibleStationsForMap() {
     if (_allStations.isEmpty) return const [];
     final center = _mapCenter;
@@ -526,17 +1108,23 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   Future<void> _maybeNotifyNearbyAlerts() async {
     if (_myPosition == null || _activeAlerts.isEmpty) return;
 
+    const triggerRadiusM = 200.0;
+    const releaseRadiusM = 240.0;
+
     final myLat = _myPosition!.latitude;
     final myLng = _myPosition!.longitude;
+    final nextInside = <String>{};
 
     for (final alert in _activeAlerts) {
-      if (_notifiedNearAlerts.contains(alert.id)) continue;
-
       final meters = Geolocator.distanceBetween(myLat, myLng, alert.lat, alert.lng);
-      if (meters > 700) continue;
+      if (meters <= releaseRadiusM) {
+        nextInside.add(alert.id);
+      }
 
-      final km = meters / 1000;
-      final body = '${alert.categoryLabel} cerca (${km.toStringAsFixed(1)} km).';
+      final wasInside = _insideAlertRadius.contains(alert.id);
+      if (wasInside || meters > triggerRadiusM) continue;
+
+      final body = '${alert.categoryLabel} a ${meters.toStringAsFixed(0)} m.';
       final notifId = alert.id.hashCode & 0x7fffffff;
 
       await _localNotif.show(
@@ -554,8 +1142,132 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         ),
       );
 
+      _showProximityBanner(
+        title: 'Te estás acercando a una alerta',
+        body: body,
+        icon: Icons.warning_amber_rounded,
+        color: const Color(0xFFD84315),
+      );
+
       _notifiedNearAlerts.add(alert.id);
+      SystemSound.play(SystemSoundType.alert);
     }
+
+    _insideAlertRadius
+      ..clear()
+      ..addAll(nextInside);
+  }
+
+  double _pointToSegmentDistanceMeters(LatLng p, LatLng a, LatLng b) {
+    const mPerDegLat = 111320.0;
+    final avgLatRad = ((a.latitude + b.latitude) / 2) * (math.pi / 180);
+    final mPerDegLng = 111320.0 * math.cos(avgLatRad).abs();
+
+    final ax = a.longitude * mPerDegLng;
+    final ay = a.latitude * mPerDegLat;
+    final bx = b.longitude * mPerDegLng;
+    final by = b.latitude * mPerDegLat;
+    final px = p.longitude * mPerDegLng;
+    final py = p.latitude * mPerDegLat;
+
+    final abx = bx - ax;
+    final aby = by - ay;
+    final apx = px - ax;
+    final apy = py - ay;
+    final ab2 = (abx * abx) + (aby * aby);
+    if (ab2 <= 0.0001) {
+      final dx = px - ax;
+      final dy = py - ay;
+      return math.sqrt((dx * dx) + (dy * dy));
+    }
+    final t = ((apx * abx) + (apy * aby)) / ab2;
+    final clampedT = t.clamp(0.0, 1.0);
+    final qx = ax + (abx * clampedT);
+    final qy = ay + (aby * clampedT);
+    final dx = px - qx;
+    final dy = py - qy;
+    return math.sqrt((dx * dx) + (dy * dy));
+  }
+
+  bool _pointInPolygon(LatLng p, List<LatLng> polygon) {
+    if (polygon.length < 3) return false;
+    var inside = false;
+    var j = polygon.length - 1;
+    for (var i = 0; i < polygon.length; i++) {
+      final xi = polygon[i].longitude;
+      final yi = polygon[i].latitude;
+      final xj = polygon[j].longitude;
+      final yj = polygon[j].latitude;
+      final intersects = ((yi > p.latitude) != (yj > p.latitude)) &&
+          (p.longitude < (xj - xi) * (p.latitude - yi) / ((yj - yi) == 0 ? 0.0000001 : (yj - yi)) + xi);
+      if (intersects) inside = !inside;
+      j = i;
+    }
+    return inside;
+  }
+
+  double _distanceToZoneMeters(LatLng point, _GeoZone zone) {
+    if (zone.points.length < 3) return double.infinity;
+    if (_pointInPolygon(point, zone.points)) return 0;
+
+    var minDistance = double.infinity;
+    for (var i = 0; i < zone.points.length; i++) {
+      final a = zone.points[i];
+      final b = zone.points[(i + 1) % zone.points.length];
+      final d = _pointToSegmentDistanceMeters(point, a, b);
+      if (d < minDistance) minDistance = d;
+    }
+    return minDistance;
+  }
+
+  Future<void> _maybeNotifyNearbyZones() async {
+    if (_myPosition == null || _geoZones.isEmpty) return;
+
+    const triggerRadiusM = 200.0;
+    const releaseRadiusM = 240.0;
+    final me = LatLng(_myPosition!.latitude, _myPosition!.longitude);
+    final nextInside = <String>{};
+
+    for (final zone in _geoZones) {
+      final meters = _distanceToZoneMeters(me, zone);
+      if (meters <= releaseRadiusM) {
+        nextInside.add(zone.id);
+      }
+
+      final wasInside = _insideZoneRadius.contains(zone.id);
+      if (wasInside || meters > triggerRadiusM) continue;
+
+      final body = meters <= 1
+          ? 'Ingresaste a la delimitación ${zone.name}.'
+          : 'Estás a ${meters.toStringAsFixed(0)} m de ${zone.name}.';
+      final notifId = (zone.id.hashCode ^ 0x7831) & 0x7fffffff;
+
+      await _localNotif.show(
+        id: notifId,
+        title: 'Zona comunitaria cercana',
+        body: body,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'geo_zones_proximity_v1',
+            'Delimitaciones comunitarias',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+      );
+      _showProximityBanner(
+        title: 'Zona comunitaria cercana',
+        body: body,
+        icon: Icons.polyline,
+        color: const Color(0xFF1565C0),
+      );
+      SystemSound.play(SystemSoundType.alert);
+    }
+
+    _insideZoneRadius
+      ..clear()
+      ..addAll(nextInside);
   }
 
   bool _isInstitutionForProximity(_Comisaria station) {
@@ -630,12 +1342,178 @@ class _MapaMundisPageState extends State<MapaMundisPage>
           ),
         ),
       );
+      _showProximityBanner(
+        title: 'Te estás acercando a un control',
+        body: body,
+        icon: Icons.local_police,
+        color: const Color(0xFF1E4E8A),
+      );
       SystemSound.play(SystemSoundType.alert);
     }
 
     _insideInstitutionRadius
       ..clear()
       ..addAll(nextInside);
+  }
+
+  String _safeText(dynamic value, [String fallback = '']) {
+    final text = (value ?? '').toString().trim();
+    return text.isEmpty ? fallback : text;
+  }
+
+  String _wazeCategoryLabel(Map<String, dynamic> item) {
+    final type = _safeText(item['type'], 'HAZARD').replaceAll('_', ' ');
+    final subtype = _safeText(item['subtype']).replaceAll('_', ' ');
+    final base = subtype.isNotEmpty ? subtype : type;
+    return 'Waze API: $base';
+  }
+
+  String _wazeStableId(String raw) {
+    final input = _safeText(raw, 'waze_api');
+    var hash = 0;
+    for (var i = 0; i < input.length; i++) {
+      hash = ((hash << 5) - hash) + input.codeUnitAt(i);
+      hash |= 0;
+    }
+    return 'waze_api_${hash.abs()}';
+  }
+
+  Future<void> _openWazeAdminMode() async {
+    if (!_isAdmin) return;
+    setState(() {
+      _pickWazePointOnMap = true;
+      _pickPointOnMap = false;
+      _pendingCategory = null;
+      _pendingNote = '';
+      _pendingPublishConfig = null;
+      _pendingCustomLabel = '';
+      _pendingCustomIconKey = null;
+      _pendingCreatePhoto = null;
+      _pendingForcePriority = false;
+      _pendingForceApproved = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Waze admin activo: toca el mapa para consultar 500m y guardar alertas.')),
+    );
+  }
+
+  Future<void> _fetchWazeAndPersistAt(LatLng center) async {
+    if (!_isAdmin || _wazeLoading) return;
+    setState(() => _wazeLoading = true);
+    try {
+      final uri = Uri.parse(
+        '$_wazeProxyApiUrl?lat=${center.latitude.toStringAsFixed(5)}&lng=${center.longitude.toStringAsFixed(5)}&radius_m=$_wazeRadiusMeters',
+      );
+      final resp = await http.get(uri);
+      if (resp.statusCode != 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo consultar Waze API.')),
+        );
+        return;
+      }
+
+      final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
+      final data = (decoded['data'] as Map<String, dynamic>? ?? const {});
+      final items = [
+        ...((data['alerts'] as List<dynamic>? ?? const [])),
+        ...((data['jams'] as List<dynamic>? ?? const [])),
+      ]
+          .whereType<Map<String, dynamic>>()
+          .toList();
+
+      if (items.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Waze: sin resultados en 500m.')),
+        );
+        return;
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final expiresAtMs = now + const Duration(hours: 2).inMilliseconds;
+      final authUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final byName = _currentNickname;
+      var saved = 0;
+
+      for (final item in items) {
+        final coords = (item['line_coordinates'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+        final firstCoord = coords.isEmpty ? null : coords.first;
+        final ilat = (item['latitude'] as num?)?.toDouble() ??
+          (firstCoord?['lat'] as num?)?.toDouble();
+        final ilng = (item['longitude'] as num?)?.toDouble() ??
+          (firstCoord?['lon'] as num?)?.toDouble();
+        if (ilat == null || ilng == null) continue;
+
+        final type = _safeText(item['type'], 'HAZARD').toUpperCase();
+        final subtype = _safeText(item['subtype']).toUpperCase();
+        final extId = _safeText(item['uuid'] ?? item['id'] ?? item['jam_uuid'] ?? item['alert_uuid']);
+        final key = extId.isNotEmpty
+            ? extId
+            : '${type}_${subtype}_${ilat.toStringAsFixed(5)}_${ilng.toStringAsFixed(5)}';
+        final docId = _wazeStableId(key);
+
+        final noteParts = [
+          'Consulta generada por API Waze',
+          'Radio: ${_wazeRadiusMeters}m',
+          _safeText(item['description']),
+        ].where((e) => e.trim().isNotEmpty).toList();
+
+        await _firestore.collection(_alertsCollection).doc(docId).set({
+          'category': 'api_waze',
+          'categoryLabel': _wazeCategoryLabel(item),
+          'isHelp': false,
+          'isPriority': true,
+          'priorityTemplateKey': null,
+          'approvedByAdmin': true,
+          'approvedAtMs': now,
+          'isPermanent': false,
+          'note': noteParts.join(' · '),
+          'lat': ilat,
+          'lng': ilng,
+          'createdByUid': authUid,
+          'createdByName': byName,
+          'createdAtMs': now,
+          'startAtMs': now,
+          'expiresAtMs': expiresAtMs,
+          'status': 'active',
+          'confirmUids': <String>[],
+          'discardUids': <String>[],
+          'helperUid': null,
+          'helperName': null,
+          'helperDistanceKm': null,
+          'helperEtaMin': null,
+          'helperAcceptedAtMs': null,
+          'helperLat': null,
+          'helperLng': null,
+          'helperMembers': <Map<String, dynamic>>[],
+          'evidenceItems': <Map<String, dynamic>>[],
+          'source': 'waze_api',
+          'sourceLabel': 'Consulta generada por API',
+          'sourceCenterLat': double.parse(center.latitude.toStringAsFixed(6)),
+          'sourceCenterLng': double.parse(center.longitude.toStringAsFixed(6)),
+          'sourceRadiusM': _wazeRadiusMeters,
+          'sourceExternalKey': key,
+          'sourceType': type,
+          'sourceSubtype': subtype,
+        }, SetOptions(merge: true));
+        saved++;
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Waze 500m: detectadas ${items.length}, guardadas $saved alertas comunitarias.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error consultando Waze.')),
+      );
+    } finally {
+      if (mounted) setState(() => _wazeLoading = false);
+    }
   }
 
   Future<void> _openInGoogleMaps(double lat, double lng) async {
@@ -825,6 +1703,13 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   }
 
   Future<void> _openCreateAlertSheet() async {
+    // Refresh templates here so users immediately see new admin categories.
+    final freshTemplates = await _loadPriorityCategories();
+    if (!mounted) return;
+    setState(() {
+      _priorityCategories = freshTemplates;
+    });
+
     final selectableCategories = _categoriesForCreate();
     final selected = await showModalBottomSheet<_AlertCategory>(
       context: context,
@@ -836,7 +1721,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (_isIosAdmin)
+              if (_isCustomAdminEnabled)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: SizedBox(
@@ -847,7 +1732,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                         _openCustomAdminAlertSheet();
                       },
                       icon: const Icon(Icons.admin_panel_settings_outlined),
-                      label: const Text('Crear propia alerta (solo admin iOS)'),
+                      label: const Text('Crear propia alerta (solo admin)'),
                     ),
                   ),
                 ),
@@ -903,7 +1788,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   }
 
   Future<void> _openCustomAdminAlertSheet() async {
-    if (!_isIosAdmin) return;
+    if (!_isCustomAdminEnabled) return;
 
     final category = const _AlertCategory(
       'admin_custom',
@@ -936,7 +1821,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Crear propia alerta (admin iOS)',
+                  'Crear propia alerta (admin)',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
@@ -2319,10 +3204,76 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         })
         .toList();
 
+    final zonePolygons = _geoZones
+        .where((z) => z.points.length >= 3)
+        .map(
+          (z) => Polygon(
+            points: z.points,
+            color: z.color.withValues(alpha: 0.36),
+            borderColor: z.color,
+            borderStrokeWidth: 2,
+          ),
+        )
+        .toList();
+
+    final draftZoneMarkers = _zoneDraftPoints
+        .map(
+          (p) => Marker(
+            point: p,
+            width: 18,
+            height: 18,
+            child: Container(
+              decoration: BoxDecoration(
+                color: _zoneDraftColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+            ),
+          ),
+        )
+        .toList();
+
+    final zoneNameMarkers = _geoZones
+        .where((z) => z.points.length >= 3)
+        .map(
+          (z) => Marker(
+            point: z.labelPoint,
+            width: 140,
+            height: 28,
+            child: Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _isAdmin ? () => _openZoneManageSheet(z) : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: z.color, width: 1.5),
+                  ),
+                  child: Text(
+                    z.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: z.color,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        )
+        .toList();
+
     final markers = <Marker>[
       ...stationMarkers,
       ...alertMarkers,
       ...helperMarkers,
+      ...zoneNameMarkers,
+      ...draftZoneMarkers,
       if (myLatLng != null)
         Marker(
           point: myLatLng,
@@ -2355,6 +3306,19 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                 });
               },
               onTap: (_, point) async {
+                if (_drawZoneMode && _isAdmin) {
+                  setState(() {
+                    _zoneDraftPoints = [..._zoneDraftPoints, point];
+                  });
+                  return;
+                }
+                if (_pickWazePointOnMap && _isAdmin) {
+                  setState(() {
+                    _pickWazePointOnMap = false;
+                  });
+                  await _fetchWazeAndPersistAt(point);
+                  return;
+                }
                 if (!_pickPointOnMap || _pendingCategory == null) return;
                 final category = _pendingCategory!;
                 final note = _pendingNote;
@@ -2391,10 +3355,13 @@ class _MapaMundisPageState extends State<MapaMundisPage>
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
+                urlTemplate:
+                    'https://mt{s}.google.com/vt/lyrs=${_googleTileLayerCode(_mobileMapMode)}&x={x}&y={y}&z={z}',
+                subdomains: const ['0', '1', '2', '3'],
                 userAgentPackageName: 'com.lamano.clonewhatsapp',
               ),
+              if (zonePolygons.isNotEmpty)
+                PolygonLayer(polygons: zonePolygons),
               if (alertRiskCircles.isNotEmpty)
                 CircleLayer(circles: alertRiskCircles),
               MarkerLayer(markers: markers),
@@ -2425,21 +3392,78 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         Positioned(
           right: 12,
           top: 70,
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
-              border: Border.all(color: Colors.black12),
-            ),
-            child: Transform.rotate(
-              angle: ((_hasHeading ? _headingDeg : 0) * math.pi) / 180,
-              child: const Icon(Icons.navigation, color: Color(0xFF37474F), size: 26),
+          child: Material(
+            color: Colors.white,
+            shape: const CircleBorder(),
+            elevation: 8,
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: _centerOnMyLocationFromButton,
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.black12),
+                ),
+                child: Transform.rotate(
+                  angle: ((_hasHeading ? _headingDeg : 0) * math.pi) / 180,
+                  child: const Icon(Icons.navigation, color: Color(0xFF37474F), size: 26),
+                ),
+              ),
             ),
           ),
         ),
+        if (_proximityBannerTitle != null && _proximityBannerBody != null)
+          Positioned(
+            left: 12,
+            right: 70,
+            top: 18,
+            child: Material(
+              color: Colors.white,
+              elevation: 10,
+              borderRadius: BorderRadius.circular(14),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: _proximityBannerColor.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(_proximityBannerIcon, size: 16, color: _proximityBannerColor),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _proximityBannerTitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _proximityBannerBody!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11, color: Colors.black87),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         if (_pickPointOnMap)
           Positioned(
             right: 12,
@@ -2449,6 +3473,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
               onPressed: () {
                 setState(() {
                   _pickPointOnMap = false;
+                  _pickWazePointOnMap = false;
                   _pendingCategory = null;
                   _pendingNote = '';
                   _pendingPublishConfig = null;
@@ -2463,6 +3488,212 @@ class _MapaMundisPageState extends State<MapaMundisPage>
               child: const Icon(Icons.close),
             ),
           ),
+        if (_pickWazePointOnMap)
+          Positioned(
+            right: 12,
+            bottom: 72,
+            child: FloatingActionButton.small(
+              heroTag: 'fab_cancel_waze_pick',
+              onPressed: () {
+                setState(() {
+                  _pickWazePointOnMap = false;
+                });
+              },
+              tooltip: 'Cancelar selección Waze',
+              child: const Icon(Icons.close),
+            ),
+          ),
+        if (_isAdmin)
+          Positioned(
+            left: 12,
+            top: 126,
+            child: Material(
+              color: Colors.black.withValues(alpha: 0.36),
+              borderRadius: BorderRadius.circular(999),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: _drawZoneMode ? null : _openZoneDrawSetupSheet,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _drawZoneMode ? Icons.draw : Icons.polyline,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _drawZoneMode ? 'Dibujando...' : 'Dibujar',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (_isAdmin)
+          Positioned(
+            left: 12,
+            top: 168,
+            child: Material(
+              color: _pickWazePointOnMap
+                  ? const Color(0xFFF59E0B).withValues(alpha: 0.92)
+                  : Colors.black.withValues(alpha: 0.36),
+              borderRadius: BorderRadius.circular(999),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: _wazeLoading
+                    ? null
+                    : () {
+                        if (_pickWazePointOnMap) {
+                          setState(() => _pickWazePointOnMap = false);
+                          return;
+                        }
+                        _openWazeAdminMode();
+                      },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _wazeLoading
+                            ? Icons.hourglass_top
+                            : (_pickWazePointOnMap ? Icons.place : Icons.traffic),
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _wazeLoading
+                            ? 'Waze...'
+                            : (_pickWazePointOnMap ? 'Waze 500m: toca mapa' : 'Waze 500m'),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (_isAdmin)
+          Positioned(
+            left: 12,
+            top: 210,
+            child: Material(
+              color: Colors.black.withValues(alpha: 0.36),
+              borderRadius: BorderRadius.circular(999),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: _openZonesAdminSheet,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.list_alt, size: 16, color: Colors.white),
+                      SizedBox(width: 6),
+                      Text(
+                        'Zonas',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (_isAdmin && _drawZoneMode)
+          Positioned(
+            left: 12,
+            right: 92,
+            bottom: 18,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.42),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${_zoneDraftName.isEmpty ? 'Zona' : _zoneDraftName} · ${_zoneDraftPoints.length} pts',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _undoZonePoint,
+                    tooltip: 'Deshacer',
+                    icon: const Icon(Icons.undo, color: Colors.white, size: 20),
+                  ),
+                  IconButton(
+                    onPressed: _saveZoneDraft,
+                    tooltip: 'Guardar',
+                    icon: const Icon(Icons.check, color: Colors.white, size: 20),
+                  ),
+                  IconButton(
+                    onPressed: () => _clearZoneDraft(exitMode: true),
+                    tooltip: 'Cancelar',
+                    icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        Positioned(
+          right: 14,
+          bottom: 158,
+          child: Material(
+            color: Colors.white,
+            elevation: 8,
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<_MobileMapMode>(
+                  value: _mobileMapMode,
+                  isDense: true,
+                  borderRadius: BorderRadius.circular(10),
+                  icon: const Icon(Icons.layers_outlined),
+                  items: _MobileMapMode.values
+                      .map(
+                        (mode) => DropdownMenuItem<_MobileMapMode>(
+                          value: mode,
+                          child: Text(_mobileMapModeLabel(mode)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (mode) {
+                    if (mode == null) return;
+                    setState(() => _mobileMapMode = mode);
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
         Positioned(
           right: 14,
           bottom: 96,
@@ -2525,6 +3756,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     );
   }
 }
+
+enum _MobileMapMode { roadmap, satellite, terrain }
 
 enum _RiskLevel { low, medium, high }
 
@@ -2793,6 +4026,65 @@ class _CitizenAlert {
       helperLng: (d['helperLng'] as num?)?.toDouble(),
       helperMembers: parsedHelpers,
       evidenceItems: parsedEvidence,
+    );
+  }
+}
+
+class _GeoZone {
+  final String id;
+  final String name;
+  final Color color;
+  final List<LatLng> points;
+  final int createdAtMs;
+
+  LatLng get labelPoint {
+    if (points.isEmpty) return const LatLng(-33.4489, -70.6693);
+    var sumLat = 0.0;
+    var sumLng = 0.0;
+    for (final p in points) {
+      sumLat += p.latitude;
+      sumLng += p.longitude;
+    }
+    return LatLng(sumLat / points.length, sumLng / points.length);
+  }
+
+  const _GeoZone({
+    required this.id,
+    required this.name,
+    required this.color,
+    required this.points,
+    required this.createdAtMs,
+  });
+
+  static Color _colorFromHex(String raw) {
+    final hex = raw.trim().replaceAll('#', '');
+    if (hex.length == 6) {
+      final value = int.tryParse(hex, radix: 16);
+      if (value != null) return Color(0xFF000000 | value);
+    }
+    return const Color(0xFFD32F2F);
+  }
+
+  factory _GeoZone.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data();
+    final rawPoints = (d['points'] as List<dynamic>? ?? const []);
+    final points = rawPoints
+        .map((p) => Map<String, dynamic>.from(p as Map))
+        .map(
+          (p) => LatLng(
+            (p['lat'] as num?)?.toDouble() ?? 0,
+            (p['lng'] as num?)?.toDouble() ?? 0,
+          ),
+        )
+        .where((p) => p.latitude != 0 || p.longitude != 0)
+        .toList();
+
+    return _GeoZone(
+      id: doc.id,
+      name: (d['name'] ?? 'Zona').toString(),
+      color: _colorFromHex((d['color'] ?? '#D32F2F').toString()),
+      points: points,
+      createdAtMs: (d['createdAtMs'] as num?)?.toInt() ?? 0,
     );
   }
 }
