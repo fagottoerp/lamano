@@ -4031,13 +4031,17 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
         return Marker(
           point: LatLng(lat, lng),
-          width: 40,
-          height: 40,
+          width: 50,
+          height: 50,
           child: GestureDetector(
             onTap: () => _showPoiDetails(p),
             behavior: HitTestBehavior.opaque,
-            child: Center(
-              child: Icon(iconData, size: 26, color: iconColor),
+            child: Container(
+              width: 50,
+              height: 50,
+              alignment: Alignment.center,
+              color: Colors.transparent,
+              child: Icon(iconData, size: 28, color: iconColor),
             ),
           ),
         );
