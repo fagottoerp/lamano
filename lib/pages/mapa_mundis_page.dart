@@ -737,7 +737,6 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return null;
-
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -756,6 +755,268 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     } catch (_) {
       return null;
     }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Google Places API - Buscar negocio cercano cuando tap en mapa
+  // ══════════════════════════════════════════════════════════════════════════
+  Future<void> _searchAndShowGooglePlace(LatLng point) async {
+    if (!mounted) return;
+    
+    // Mostrar loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text('Buscando negocio...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    
+    try {
+      final uri = Uri.parse('http://38.247.147.220/lamano/api_google_place_tap.php?lat=${point.latitude}&lng=${point.longitude}');
+      final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+      
+      if (!mounted) return;
+      Navigator.of(context).pop(); // cerrar loading
+      
+      if (resp.statusCode != 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error buscando negocio')),
+        );
+        return;
+      }
+      
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (data['ok'] != true || data['place'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['error'] ?? 'No se encontró negocio aquí')),
+        );
+        return;
+      }
+      
+      final place = data['place'] as Map<String, dynamic>;
+      _showGooglePlaceBottomSheet(place);
+      
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop(); // cerrar loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+  
+  void _showGooglePlaceBottomSheet(Map<String, dynamic> place) {
+    final name = place['name'] ?? 'Negocio';
+    final address = place['address'] ?? '';
+    final phone = place['phone'] ?? '';
+    final rating = place['rating'];
+    final ratingsTotal = place['user_ratings_total'];
+    final website = place['website'];
+    final openNow = place['open_now'];
+    final typesEs = (place['types_es'] as List?)?.cast<String>() ?? [];
+    final openingHours = place['opening_hours'] as List?;
+    final photoUrl = place['photo_url'];
+    final lat = (place['lat'] as num?)?.toDouble() ?? 0;
+    final lng = (place['lng'] as num?)?.toDouble() ?? 0;
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.5,
+          minChildSize: 0.3,
+          maxChildSize: 0.85,
+          expand: false,
+          builder: (_, scrollController) {
+            return SingleChildScrollView(
+              controller: scrollController,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Foto del lugar
+                    if (photoUrl != null && photoUrl.isNotEmpty)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          photoUrl,
+                          height: 150,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    if (photoUrl != null && photoUrl.isNotEmpty) const SizedBox(height: 12),
+                    
+                    // Nombre y estado
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        if (openNow != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: openNow == true ? Colors.green[600] : Colors.red[400],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              openNow == true ? 'Abierto' : 'Cerrado',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    
+                    // Tipos
+                    if (typesEs.isNotEmpty)
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: typesEs.take(3).map((t) => Chip(
+                          label: Text(t, style: const TextStyle(fontSize: 12)),
+                          backgroundColor: Colors.blue[50],
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        )).toList(),
+                      ),
+                    if (typesEs.isNotEmpty) const SizedBox(height: 8),
+                    
+                    // Rating
+                    if (rating != null)
+                      Row(
+                        children: [
+                          Icon(Icons.star, color: Colors.amber[600], size: 20),
+                          const SizedBox(width: 4),
+                          Text('$rating', style: const TextStyle(fontWeight: FontWeight.w600)),
+                          if (ratingsTotal != null) Text(' ($ratingsTotal reseñas)', style: const TextStyle(color: Colors.grey)),
+                        ],
+                      ),
+                    if (rating != null) const SizedBox(height: 8),
+                    
+                    // Dirección
+                    if (address.isNotEmpty) ...[
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.location_on, size: 18, color: Colors.grey),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text(address)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    
+                    // Teléfono
+                    if (phone.isNotEmpty)
+                      GestureDetector(
+                        onTap: () async {
+                          final uri = Uri.parse('tel:${phone.replaceAll(RegExp(r"\\s+"), "")}');
+                          if (await canLaunchUrl(uri)) await launchUrl(uri);
+                        },
+                        child: Row(
+                          children: [
+                            const Icon(Icons.phone, size: 18, color: Colors.blueAccent),
+                            const SizedBox(width: 6),
+                            Text(phone, style: const TextStyle(color: Colors.blueAccent)),
+                          ],
+                        ),
+                      ),
+                    if (phone.isNotEmpty) const SizedBox(height: 8),
+                    
+                    // Website
+                    if (website != null && website.isNotEmpty)
+                      GestureDetector(
+                        onTap: () async {
+                          final uri = Uri.parse(website);
+                          if (await canLaunchUrl(uri)) await launchUrl(uri);
+                        },
+                        child: Row(
+                          children: [
+                            const Icon(Icons.language, size: 18, color: Colors.blueAccent),
+                            const SizedBox(width: 6),
+                            const Text('Sitio web', style: TextStyle(color: Colors.blueAccent)),
+                          ],
+                        ),
+                      ),
+                    if (website != null && website.isNotEmpty) const SizedBox(height: 12),
+                    
+                    // Horarios
+                    if (openingHours != null && openingHours.isNotEmpty) ...[
+                      const Text('Horarios:', style: TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      ...openingHours.map((h) => Padding(
+                        padding: const EdgeInsets.only(left: 8, bottom: 2),
+                        child: Text(h.toString(), style: const TextStyle(fontSize: 13)),
+                      )),
+                      const SizedBox(height: 12),
+                    ],
+                    
+                    // Botones de acción
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            _mapController.move(LatLng(lat, lng), 17);
+                          },
+                          icon: const Icon(Icons.center_focus_strong),
+                          label: const Text('Centrar'),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            Navigator.of(context).pop();
+                            final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+                            if (await canLaunchUrl(uri)) await launchUrl(uri);
+                          },
+                          icon: const Icon(Icons.directions),
+                          label: const Text('Cómo llegar'),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            Navigator.of(context).pop();
+                            final wazeUri = Uri.parse('https://waze.com/ul?ll=$lat,$lng&navigate=yes');
+                            if (await canLaunchUrl(wazeUri)) await launchUrl(wazeUri);
+                          },
+                          icon: const Icon(Icons.navigation),
+                          label: const Text('Waze'),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.cyan),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   void _startPositionTracking() {
@@ -4211,6 +4472,17 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                       }
                     } catch (_) {}
                   }
+                }
+                // ═══════════════════════════════════════════════════════════════
+                
+                // ═══════════════════════════════════════════════════════════════
+                // GOOGLE PLACES - Buscar negocio de Google si no hay POI local
+                // Solo si no estamos en modo especial (dibujar zona, crear alerta, etc)
+                // ═══════════════════════════════════════════════════════════════
+                if (!_drawZoneMode && !_pickWazePointOnMap && !_pickPointOnMap) {
+                  // Buscar negocio de Google cercano al punto tocado
+                  await _searchAndShowGooglePlace(point);
+                  return;
                 }
                 // ═══════════════════════════════════════════════════════════════
                 
