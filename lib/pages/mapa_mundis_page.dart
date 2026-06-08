@@ -4031,15 +4031,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
         return Marker(
           point: LatLng(lat, lng),
-          width: 56,
-          height: 56,
-          child: IconButton(
-            icon: Icon(iconData, size: 32, color: iconColor),
-            onPressed: () => _showPoiDetails(p),
-            padding: EdgeInsets.zero,
-            iconSize: 56,
-            splashRadius: 28,
-          ),
+          width: 40,
+          height: 40,
+          child: Icon(iconData, size: 32, color: iconColor),
         );
       } catch (_) {
         return Marker(point: _mapCenter, width: 1, height: 1, child: const SizedBox.shrink());
@@ -4200,7 +4194,26 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   _mapZoom = zoom;
                 });
               },
-              onTap: (_, point) async {
+              onTap: (tapPosition, point) async {
+                // ═══════════════════════════════════════════════════════════════
+                // POI TAP DETECTION - Detectar si el tap está cerca de un POI
+                // ═══════════════════════════════════════════════════════════════
+                if (_layerVisible['pois'] == true && _pois.isNotEmpty) {
+                  const double tapRadius = 0.0005; // ~50 metros en lat/lng
+                  for (final poi in _pois) {
+                    try {
+                      final poiLat = (poi['lat'] as num).toDouble();
+                      final poiLng = (poi['lng'] as num).toDouble();
+                      final distance = (point.latitude - poiLat).abs() + (point.longitude - poiLng).abs();
+                      if (distance < tapRadius) {
+                        _showPoiDetails(poi);
+                        return;
+                      }
+                    } catch (_) {}
+                  }
+                }
+                // ═══════════════════════════════════════════════════════════════
+                
                 if (_drawZoneMode && _isAdmin) {
                   setState(() {
                     _zoneDraftPoints = [..._zoneDraftPoints, point];
