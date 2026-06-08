@@ -185,6 +185,61 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     );
   }
 
+  Future<void> _openFiltersSheet() async {
+    await showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Filtrar capas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildFilterChip('👮', 'Carabineros', 'carabineros'),
+                  _buildFilterChip('🛡️', 'PDI', 'pdi'),
+                  _buildFilterChip('⛽', 'Bencineras', 'bencineras'),
+                  _buildFilterChip('📍', 'POIs', 'pois'),
+                  _buildFilterChip('🚨', 'Críticos', 'criticos'),
+                  _buildFilterChip('🛣️', 'Peajes', 'peajes'),
+                  _buildFilterChip('📣', 'Alertas', 'citizen'),
+                  _buildFilterChip('⚡', 'Rápidas', 'rapidas'),
+                  _buildFilterChip('🧭', 'Zonas', 'zones'),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Listo'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  FilterChip _buildFilterChip(String emoji, String label, String key) {
+    final active = _layerVisible[key] == true;
+    return FilterChip(
+      label: Text('$emoji $label'),
+      selected: active,
+      onSelected: (selected) {
+        setState(() {
+          _layerVisible[key] = selected;
+        });
+      },
+    );
+  }
+
   @override
   void dispose() {
     _alertsSub?.cancel();
@@ -1695,6 +1750,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     return i == 'CARABINEROS' || i == 'PDI' || i == 'CRITICO';
   }
 
+  bool _isSecurityContext(_Comisaria station) => _isInstitutionForProximity(station);
+
   String _institutionProximityTypeLabel(String institution) {
     switch (institution) {
       case 'PDI':
@@ -1977,10 +2034,27 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   }
 
   Future<void> _openInGoogleMaps(double lat, double lng) async {
-    final uri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
-    );
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      final shortUrl = Uri.parse('https://maps.app.goo.gl/?q=$lat,$lng');
+      if (await canLaunchUrl(shortUrl)) {
+        await launchUrl(shortUrl, mode: LaunchMode.externalApplication);
+      } else {
+        final fullUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+        if (await canLaunchUrl(fullUrl)) {
+          await launchUrl(fullUrl, mode: LaunchMode.externalApplication);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo abrir Google Maps')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
   }
 
   String _fuelLabel(String key) {
@@ -2155,6 +2229,29 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   ),
                 ],
               ),
+              if (_isSecurityContext(station)) ...
+              [
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      await _markPlaceAsSafe(
+                        LatLng(station.lat, station.lng),
+                        name: 'Zona segura: ${station.brand.isNotEmpty ? station.brand : station.name}',
+                      );
+                      if (mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Zona segura creada')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.security_outlined),
+                    label: const Text('Marcar como zona segura'),
+                  ),
+                ),
+              ]
             ],
           ),
         ),
@@ -3907,40 +4004,20 @@ class _MapaMundisPageState extends State<MapaMundisPage>
             ],
           ),
         ),
-        // Filter bar (top) — toggle which layers are visible
+        // Filter button (top) — opens modal to select visible layers
         Positioned(
           left: 8,
           right: 8,
           top: 8,
           child: SafeArea(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.95), borderRadius: BorderRadius.circular(10)),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    const SizedBox(width: 4),
-                    _layerChip('👮', 'Carabineros', 'carabineros'),
-                    const SizedBox(width: 6),
-                    _layerChip('🛡️', 'PDI', 'pdi'),
-                    const SizedBox(width: 6),
-                    _layerChip('⛽', 'Bencineras', 'bencineras'),
-                    const SizedBox(width: 6),
-                    _layerChip('📍', 'POIs', 'pois'),
-                    const SizedBox(width: 6),
-                    _layerChip('🚨', 'Puntos críticos', 'criticos'),
-                    const SizedBox(width: 6),
-                    _layerChip('🛣️', 'Peajes', 'peajes'),
-                    const SizedBox(width: 6),
-                    _layerChip('📣', 'Alertas', 'citizen'),
-                    const SizedBox(width: 6),
-                    _layerChip('⚡', 'Rápidas', 'rapidas'),
-                    const SizedBox(width: 6),
-                    _layerChip('🧭', 'Zonas', 'zones'),
-                  ],
+            child: Row(
+              children: [
+                FilledButton.icon(
+                  onPressed: _openFiltersSheet,
+                  icon: const Icon(Icons.filter_list),
+                  label: const Text('Filtros'),
                 ),
-              ),
+              ],
             ),
           ),
         ),
