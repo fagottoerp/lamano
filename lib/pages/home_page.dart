@@ -797,7 +797,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
     }
 
-    final appBarTitles = <String>['Mapa Mundis (GTA)', 'Inicio', 'Chats'];
+    final appBarTitles = <String>['Red de Información Operativa', 'Inicio', 'Chats'];
     if (_canSeeTempChats) appBarTitles.add('Chat Temporales');
     if (_canSeeCaminadorMenu) appBarTitles.add('Caminador');
     if (_isMotoboy) appBarTitles.add('Mis Órdenes');
@@ -871,7 +871,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildBottomNav() {
     final items = [
-      {'key': 'mapa_mundis', 'icon': Icons.public_outlined, 'active': Icons.public, 'label': 'Mapa Mundis (GTA)'},
+      {'key': 'mapa_mundis', 'icon': Icons.public_outlined, 'active': Icons.public, 'label': 'Mapa Mundis (GTA) RED'},
       {'key': 'home', 'icon': Icons.home_outlined, 'active': Icons.home, 'label': 'Inicio'},
       {'key': 'chats', 'icon': Icons.chat_bubble_outline, 'active': Icons.chat_bubble, 'label': 'Chats'},
       if (_canSeeTempChats) {'key': 'temp', 'icon': Icons.forum_outlined, 'active': Icons.forum, 'label': 'Chat Temp.'},

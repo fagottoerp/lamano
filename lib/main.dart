@@ -270,6 +270,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   bool _locked = false;
+  PinMode _pinMode = PinMode.verify;
 
   void _setOnline(bool online) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -297,7 +298,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   Future<void> _checkInitialPin() async {
     final has = await hasPinSet();
-    if (has) setState(() => _locked = true);
+    setState(() {
+      _pinMode = has ? PinMode.verify : PinMode.setup;
+      _locked = true; // always require PIN flow on startup; enforce setup when missing
+    });
   }
 
   @override
@@ -313,14 +317,19 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   Future<void> _checkResumePin() async {
     final has = await hasPinSet();
-    if (has && mounted) setState(() => _locked = true);
+    if (has && mounted) {
+      setState(() {
+        _pinMode = PinMode.verify;
+        _locked = true;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_locked) {
       return PinLockPage(
-        mode: PinMode.verify,
+        mode: _pinMode,
         onSuccess: () => setState(() => _locked = false),
       );
     }

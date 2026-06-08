@@ -35,6 +35,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       'http://38.247.147.220/lamano/api_priority_alert_templates.php';
     static const String _wazeProxyApiUrl =
       'http://38.247.147.220/lamano/api_waze_alerts_proxy.php';
+      static const String _poisApiUrl =
+        'http://38.247.147.220/lamano/api_pois.php';
+    static const String _safePlacesCollection = 'safe_places';
 
   static final List<_AlertCategory> _categories = [
     _AlertCategory('bache', 'Bache en la via', Icons.construction, Colors.orange),
@@ -66,6 +69,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
   StreamSubscription<QuerySnapshot>? _alertsSub;
   StreamSubscription<QuerySnapshot>? _zonesSub;
+  StreamSubscription<QuerySnapshot>? _safePlacesSub;
   StreamSubscription<Position>? _positionSub;
   Timer? _dispatchRotateTimer;
   Timer? _alertVisibilityTimer;
@@ -77,6 +81,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   List<_CitizenAlert> _allFetchedAlerts = const [];
   List<_AlertCategory> _priorityCategories = const [];
   List<_GeoZone> _geoZones = const [];
+  List<_SafePlace> _safePlaces = const [];
+  List<Map<String, dynamic>> _pois = const [];
 
   Position? _myPosition;
   bool _loading = true;
@@ -88,7 +94,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   bool _pickPointOnMap = false;
   bool _pickWazePointOnMap = false;
   bool _wazeLoading = false;
-  final int _wazeRadiusMeters = 500;
+  final int _wazeRadiusMeters = 1000;
   _AlertCategory? _pendingCategory;
   String _pendingNote = '';
   _AlertPublishConfig? _pendingPublishConfig;
@@ -121,6 +127,23 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   IconData _proximityBannerIcon = Icons.warning_amber_rounded;
   Color _proximityBannerColor = const Color(0xFFC62828);
 
+  // Layer visibility state for mobile filter UI
+  final Map<String, bool> _layerVisible = {
+    'map': true,
+    'carabineros': true,
+    'pdi': true,
+    'bencineras': true,
+    'pois': true,
+    'criticos': true,
+    'peajes': true,
+    'citizen': true,
+    'rapidas': true,
+    'zones': true,
+    'traffic': false,
+    'transit': false,
+    'bike': false,
+  };
+
   @override
   void initState() {
     super.initState();
@@ -135,10 +158,38 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     _init();
   }
 
+  Widget _layerChip(String emoji, String label, String key) {
+    final active = _layerVisible[key] == true;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _layerVisible[key] = !active;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? Colors.green.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: active ? Colors.green : Colors.black12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(emoji),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(fontSize: 13, color: active ? Colors.black : Colors.grey[700])),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _alertsSub?.cancel();
     _zonesSub?.cancel();
+    _safePlacesSub?.cancel();
     _positionSub?.cancel();
     _dispatchRotateTimer?.cancel();
     _alertVisibilityTimer?.cancel();
@@ -179,13 +230,15 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       final stationsFuture = _loadStations();
       final locationFuture = _resolveLocation();
       final templatesFuture = _loadPriorityCategories();
-      final results = await Future.wait([stationsFuture, locationFuture, templatesFuture]);
+      final poisFuture = _loadPoisFromApi();
+      final results = await Future.wait([stationsFuture, locationFuture, templatesFuture, poisFuture]);
 
       if (!mounted) return;
       setState(() {
         _allStations = results[0] as List<_Comisaria>;
         _myPosition = results[1] as Position?;
         _priorityCategories = results[2] as List<_AlertCategory>;
+        _pois = (results[3] as List<Map<String, dynamic>>);
         if (_myPosition != null) {
           _mapCenter = LatLng(_myPosition!.latitude, _myPosition!.longitude);
           _mapZoom = 12.5;
@@ -196,12 +249,13 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       _focusInitial();
       _listenLiveAlerts();
       _listenGeoZones();
+      _listenSafePlaces();
       _startPositionTracking();
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'No se pudo cargar el Mapa Mundis (GTA).';
+        _error = 'No se pudo cargar la Red de Información Operativa.';
       });
     }
   }
@@ -325,6 +379,228 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     }
 
     return list;
+  }
+
+  Future<List<Map<String, dynamic>>> _loadPoisFromApi() async {
+    try {
+      final uri = Uri.parse(_poisApiUrl);
+      final resp = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (resp.statusCode != 200) return const [];
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final rows = (data['pois'] as List<dynamic>? ?? const []);
+      return rows
+          .map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  String _weekdayKeyNow() {
+    final d = DateTime.now().weekday; // 1 = Mon, 7 = Sun
+    switch (d) {
+      case DateTime.monday:
+        return 'mon';
+      case DateTime.tuesday:
+        return 'tue';
+      case DateTime.wednesday:
+        return 'wed';
+      case DateTime.thursday:
+        return 'thu';
+      case DateTime.friday:
+        return 'fri';
+      case DateTime.saturday:
+        return 'sat';
+      case DateTime.sunday:
+      default:
+        return 'sun';
+    }
+  }
+
+  bool _isPoiOpen(Map<String, dynamic> poi) {
+    try {
+      final ohRaw = poi['opening_hours'];
+      if (ohRaw == null) return false;
+      final Map<String, dynamic> oh = Map<String, dynamic>.from(ohRaw as Map);
+      final dayKey = _weekdayKeyNow();
+      final today = (oh[dayKey] as List<dynamic>?)?.cast<String>() ?? <String>[];
+      if (today.isEmpty) return false;
+      final now = DateTime.now();
+      final partsOpen = today[0].split(':');
+      final partsClose = today.length > 1 ? today[1].split(':') : null;
+      if (partsOpen.length < 2) return false;
+      final open = DateTime(now.year, now.month, now.day, int.parse(partsOpen[0]), int.parse(partsOpen[1]));
+      DateTime close;
+      if (partsClose == null || partsClose.length < 2) {
+        close = open.add(const Duration(hours: 24));
+      } else {
+        close = DateTime(now.year, now.month, now.day, int.parse(partsClose[0]), int.parse(partsClose[1]));
+      }
+      if (close.isBefore(open)) {
+        // crosses midnight
+        if (now.isAfter(open) || now.isBefore(close)) return true;
+        return false;
+      }
+      return now.isAfter(open) && now.isBefore(close);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _showPoiDetails(Map<String, dynamic> poi) async {
+    if (!mounted) return;
+    var enriched = Map<String, dynamic>.from(poi);
+    bool fetchedDetails = false;
+
+    // If no opening_hours or phone info, try server-side Places lookup
+    if ((enriched['opening_hours'] == null || enriched['opening_hours'] == {}) &&
+        (enriched['phone'] == null && enriched['formatted_phone_number'] == null && enriched['tel'] == null)) {
+      try {
+        final lat = (enriched['lat'] as num).toDouble();
+        final lng = (enriched['lng'] as num).toDouble();
+        final uri = Uri.parse('http://38.247.147.220/lamano/api_poi_details.php?lat=$lat&lng=$lng');
+        final resp = await http.get(uri).timeout(const Duration(seconds: 8));
+        if (resp.statusCode == 200) {
+          final data = jsonDecode(resp.body) as Map<String, dynamic>;
+          if (data['ok'] == true && data['place'] is Map<String, dynamic>) {
+            final place = Map<String, dynamic>.from(data['place'] as Map);
+            // Normalize fields into our enriched map
+            if (place.containsKey('formatted_phone_number')) enriched['phone'] = place['formatted_phone_number'];
+            if (place.containsKey('formatted_address')) enriched['address'] = place['formatted_address'];
+            if (place.containsKey('opening_hours')) enriched['place_opening_hours'] = place['opening_hours'];
+            if (place.containsKey('plus_code')) enriched['plus_code'] = place['plus_code'];
+            fetchedDetails = true;
+          }
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    final name = (enriched['name'] ?? 'Punto') as String;
+    final category = (enriched['category'] ?? 'otro') as String;
+
+    final openNow = fetchedDetails && enriched['place_opening_hours'] != null
+        ? (enriched['place_opening_hours']['open_now'] == true)
+        : _isPoiOpen(enriched);
+
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) {
+        String todayHours = 'Horario no disponible';
+        if (fetchedDetails && enriched['place_opening_hours'] is Map) {
+          final oh = Map<String, dynamic>.from(enriched['place_opening_hours'] as Map);
+          if (oh['weekday_text'] is List) {
+            final list = (oh['weekday_text'] as List).cast<String>();
+            final wk = DateTime.now().weekday; // 1..7
+            final idx = (wk % 7); // because Google starts with Sunday in our other logic
+            if (idx >= 0 && idx < list.length) {
+              todayHours = list[idx];
+            } else {
+              todayHours = list.join(' · ');
+            }
+          }
+        } else {
+          final k = _weekdayKeyNow();
+          final opening = enriched['opening_hours'] ?? {};
+          final today = (opening[k] as List<dynamic>?)?.cast<String>() ?? [];
+          if (today.isEmpty) todayHours = 'Cerrado hoy';
+          else todayHours = '${today[0]} - ${today.length > 1 ? today[1] : ''}';
+        }
+
+        final phone = (enriched['phone'] ?? enriched['formatted_phone_number'] ?? enriched['tel'] ?? '') as String;
+        final address = (enriched['address'] ?? enriched['vicinity'] ?? enriched['formatted_address'] ?? '') as String;
+        final plus = (enriched['plus_code'] is Map) ? (enriched['plus_code']['global_code'] ?? enriched['plus_code']['compound_code']) : (enriched['plus_code'] ?? '');
+
+        return Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(child: Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: openNow ? Colors.green[600] : Colors.grey[300],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(openNow ? 'Abierto' : 'Cerrado', style: TextStyle(color: openNow ? Colors.white : Colors.black87)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text('Categoría: ' + category.replaceAll('_', ' ')),
+              const SizedBox(height: 8),
+              const Text('Horario (hoy):', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Text(todayHours),
+              if (address.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(address, style: const TextStyle(color: Colors.grey)),
+              ],
+              if (phone.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () async {
+                    final uri = Uri.parse('tel:${phone.replaceAll(RegExp(r"\\s+"), '')}');
+                    if (await canLaunchUrl(uri)) await launchUrl(uri);
+                  },
+                  child: Text('📞 ' + phone, style: const TextStyle(color: Colors.blueAccent)),
+                ),
+              ],
+              if (plus != null && plus.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('🔢 ' + plus, style: const TextStyle(color: Colors.grey)),
+              ],
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      final lat = (enriched['lat'] as num).toDouble();
+                      final lng = (enriched['lng'] as num).toDouble();
+                      _mapController.move(LatLng(lat, lng), 16);
+                    },
+                    icon: const Icon(Icons.place),
+                    label: const Text('Ir al lugar'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      final lat = (enriched['lat'] as num).toDouble();
+                      final lng = (enriched['lng'] as num).toDouble();
+                      final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+                      if (await canLaunchUrl(uri)) await launchUrl(uri);
+                    },
+                    icon: const Icon(Icons.directions),
+                    label: const Text('Cómo llegar'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      final lat = (enriched['lat'] as num).toDouble();
+                      final lng = (enriched['lng'] as num).toDouble();
+                      await _markPlaceAsSafe(LatLng(lat, lng), name: name);
+                    },
+                    icon: const Icon(Icons.shield),
+                    label: const Text('Marcar como seguro'),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<Position?> _resolveLocation() async {
@@ -456,6 +732,20 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       setState(() => _geoZones = zones);
       _maybeNotifyNearbyZones();
     });
+  }
+
+  void _listenSafePlaces() {
+    _safePlacesSub?.cancel();
+    _safePlacesSub = _firestore.collection(_safePlacesCollection).where('status', isEqualTo: 'active').snapshots().listen((snap) {
+      if (!mounted) return;
+      final list = <_SafePlace>[];
+      for (final doc in snap.docs) {
+        try {
+          list.add(_SafePlace.fromDoc(doc));
+        } catch (_) {}
+      }
+      setState(() => _safePlaces = list);
+    }, onError: (_) {});
   }
 
   void _startZoneDrawMode({required String name, required Color color}) {
@@ -620,7 +910,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
     final now = DateTime.now().millisecondsSinceEpoch;
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    await _firestore.collection(_geoZonesCollection).add({
+    final ref = await _firestore.collection(_geoZonesCollection).add({
       'name': name,
       'color': _colorToHex(_zoneDraftColor),
       'points': _zoneDraftPoints
@@ -632,6 +922,26 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       'createdByUid': uid,
       'createdByName': _currentNickname,
     });
+
+    // After creating, open edit sheet to allow adding schedules immediately
+    try {
+      final doc = await ref.get();
+      final data = (doc.data() as Map<String, dynamic>?) ?? <String, dynamic>{};
+      final rawPoints = (data['points'] as List<dynamic>? ?? const []);
+      final points = rawPoints
+          .map((p) => Map<String, dynamic>.from(p as Map))
+          .map((p) => LatLng((p['lat'] as num?)?.toDouble() ?? 0, (p['lng'] as num?)?.toDouble() ?? 0))
+          .where((p) => p.latitude != 0 || p.longitude != 0)
+          .toList();
+      final schedules = (data['schedules'] as List<dynamic>? ?? const [])
+          .map((s) => Map<String, String>.from(s as Map? ?? <String,String>{}))
+          .map((m) => <String,String>{'start': (m['start'] ?? '').toString(), 'end': (m['end'] ?? '').toString(), 'risk': (m['risk'] ?? '').toString()})
+          .toList();
+      final newZone = _GeoZone(id: ref.id, name: (data['name'] ?? 'Zona').toString(), color: _GeoZone._colorFromHex((data['color'] ?? '#D32F2F').toString()), points: points, createdAtMs: (data['createdAtMs'] as num?)?.toInt() ?? 0, schedules: schedules);
+      await _openZoneEditSheet(newZone);
+    } catch (_) {
+      // ignore
+    }
 
     if (!mounted) return;
     setState(() {
@@ -778,105 +1088,154 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     final nameCtrl = TextEditingController(text: zone.name);
     var selectedColor = zone.color;
 
-    final save = await showModalBottomSheet<bool>(
+    final res = await showModalBottomSheet<Map<String,dynamic>>(
           context: context,
           isScrollControlled: true,
           builder: (_) => StatefulBuilder(
-            builder: (context, setModalState) => Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Editar delimitación',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: nameCtrl,
-                    maxLength: 80,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre o delimitación',
-                      border: OutlineInputBorder(),
+            builder: (context, setModalState) {
+              final startCtrl = TextEditingController();
+              final endCtrl = TextEditingController();
+              String selectedRisk = 'bajo';
+              final schedulesLocal = List<Map<String,String>>.from(zone.schedules);
+
+              void addLocalSchedule() {
+                final s = startCtrl.text.trim();
+                final e = endCtrl.text.trim();
+                if (s.isEmpty || e.isEmpty) return;
+                schedulesLocal.add({'start': s, 'end': e, 'risk': selectedRisk});
+                startCtrl.text = '';
+                endCtrl.text = '';
+                setModalState(() {});
+              }
+
+              return Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 16,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Editar delimitación',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('Color', style: TextStyle(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      const Color(0xFFD32F2F),
-                      const Color(0xFFF57C00),
-                      const Color(0xFFFBC02D),
-                      const Color(0xFF2E7D32),
-                      const Color(0xFF1565C0),
-                    ]
-                        .map(
-                          (c) => ChoiceChip(
-                            selected: selectedColor.toARGB32() == c.toARGB32(),
-                            onSelected: (_) => setModalState(() => selectedColor = c),
-                            label: Container(
-                              width: 16,
-                              height: 16,
-                              decoration: BoxDecoration(
-                                color: c,
-                                borderRadius: BorderRadius.circular(999),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: nameCtrl,
+                      maxLength: 80,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre o delimitación',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('Color', style: TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        const Color(0xFFD32F2F),
+                        const Color(0xFFF57C00),
+                        const Color(0xFFFBC02D),
+                        const Color(0xFF2E7D32),
+                        const Color(0xFF1565C0),
+                      ]
+                          .map(
+                            (c) => ChoiceChip(
+                              selected: selectedColor.toARGB32() == c.toARGB32(),
+                              onSelected: (_) => setModalState(() => selectedColor = c),
+                              label: Container(
+                                width: 16,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color: c,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
                               ),
                             ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text('Horarios y niveles', style: TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Expanded(child: TextField(controller: startCtrl, decoration: const InputDecoration(labelText: 'Inicio (HH:MM)'))),
+                      const SizedBox(width:8),
+                      Expanded(child: TextField(controller: endCtrl, decoration: const InputDecoration(labelText: 'Fin (HH:MM)'))),
+                    ],),
+                    const SizedBox(height:6),
+                    Row(children:[
+                      DropdownButton<String>(value: selectedRisk, items: const [DropdownMenuItem(value:'bajo',child:Text('Bajo')),DropdownMenuItem(value:'medio',child:Text('Medio')),DropdownMenuItem(value:'alto',child:Text('Alto'))], onChanged: (v){ if (v!=null) setModalState(()=> selectedRisk = v); }),
+                      const SizedBox(width:8),
+                      FilledButton(onPressed: addLocalSchedule, child: const Text('Agregar'))
+                    ],),
+                    const SizedBox(height:8),
+                    SizedBox(height:120, child: ListView.builder(itemCount: schedulesLocal.length,itemBuilder: (_,i){ final s = schedulesLocal[i]; return ListTile(title:Text('${s['start']} - ${s['end']} · ${s['risk']}'), trailing: IconButton(icon: const Icon(Icons.delete), onPressed: (){ schedulesLocal.removeAt(i); setModalState((){}); }),); })),
+                    const SizedBox(height: 10),
+                    Row(children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: () => Navigator.of(context).pop(false),
-                          child: const Text('Cancelar'),
+                          onPressed: () async {
+                            // mark zone center as safe place
+                            final center = zone.labelPoint;
+                            await _markPlaceAsSafe(center, name: nameCtrl.text.trim().isEmpty ? zone.name : nameCtrl.text.trim());
+                          },
+                          child: const Text('Marcar zona como segura'),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          child: const Text('Guardar cambios'),
+                    ]),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(null),
+                            child: const Text('Cancelar'),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () => Navigator.of(context).pop({'name': nameCtrl.text.trim(), 'color': _colorToHex(selectedColor), 'schedules': schedulesLocal}),
+                            child: const Text('Guardar cambios'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ) ??
-        false;
+        null;
 
-    final newName = nameCtrl.text.trim();
+    final newName = (res != null && res['name'] != null) ? (res['name']?.toString() ?? '') : nameCtrl.text.trim();
+    final newColor = (res != null && res['color'] != null) ? res['color']?.toString() ?? _colorToHex(selectedColor) : _colorToHex(selectedColor);
+    final newSchedules = (res != null && res['schedules'] is List) ? (res['schedules'] as List).cast<Map<String,String>>() : null;
     nameCtrl.dispose();
-    if (!mounted || !save) return;
+    if (!mounted || res == null) return;
     if (newName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Debes ingresar un nombre para la delimitación.')),
       );
       return;
     }
-
-    await _firestore.collection(_geoZonesCollection).doc(zone.id).update({
+    final updateData = {
       'name': newName,
-      'color': _colorToHex(selectedColor),
+      'color': newColor,
       'updatedAtMs': DateTime.now().millisecondsSinceEpoch,
       'updatedByUid': FirebaseAuth.instance.currentUser?.uid ?? '',
       'updatedByName': _currentNickname,
-    });
+    };
+    if (newSchedules != null) updateData['schedules'] = newSchedules;
+    await _firestore.collection(_geoZonesCollection).doc(zone.id).update(updateData);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Delimitación actualizada.')),
@@ -1107,6 +1466,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
   Future<void> _maybeNotifyNearbyAlerts() async {
     if (_myPosition == null || _activeAlerts.isEmpty) return;
+    if (_isInsideAnySafePlace(_myPosition!)) return; // suppress alerts while inside a safe place
 
     const triggerRadiusM = 200.0;
     const releaseRadiusM = 240.0;
@@ -1220,8 +1580,68 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     return minDistance;
   }
 
+  bool _isInsideAnySafePlace(Position p) {
+    try {
+      if (_safePlaces.isEmpty) return false;
+      final lat = p.latitude;
+      final lng = p.longitude;
+      for (final sp in _safePlaces) {
+        final meters = Geolocator.distanceBetween(lat, lng, sp.lat, sp.lng);
+        if (meters <= (sp.radiusMeters ?? 0)) return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<int?> _showRadiusChoiceDialog() async {
+    final options = [50, 100, 200, 500];
+    return showDialog<int>(context: context, builder: (ctx) {
+      int selected = options[1];
+      return AlertDialog(
+        title: const Text('Selecciona radio (m)'),
+        content: StatefulBuilder(builder: (c, setS) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: options.map((o) => RadioListTile<int>(value: o, groupValue: selected, title: Text('$o m'), onChanged: (v){ if (v!=null) setS(()=> selected = v); })).toList(),
+        )),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(selected), child: const Text('OK')),
+        ],
+      );
+    });
+  }
+
+  Future<void> _markPlaceAsSafe(LatLng pos, {String? name}) async {
+    if (!_isAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Solo administradores pueden marcar lugares seguros.')));
+      return;
+    }
+    final chosen = await _showRadiusChoiceDialog();
+    if (chosen == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    try {
+      await _firestore.collection(_safePlacesCollection).add({
+        'name': name ?? 'Lugar seguro',
+        'location': {'lat': pos.latitude, 'lng': pos.longitude},
+        'radiusMeters': chosen,
+        'status': 'active',
+        'createdAtMs': now,
+        'createdByUid': FirebaseAuth.instance.currentUser?.uid ?? '',
+        'createdByName': _currentNickname,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lugar marcado como seguro.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo marcar el lugar seguro.')));
+    }
+  }
+
   Future<void> _maybeNotifyNearbyZones() async {
     if (_myPosition == null || _geoZones.isEmpty) return;
+    if (_isInsideAnySafePlace(_myPosition!)) return; // suppress zone notifications while inside a safe place
 
     const triggerRadiusM = 200.0;
     const releaseRadiusM = 240.0;
@@ -1295,6 +1715,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
   Future<void> _maybeNotifyNearbyInstitutions() async {
     if (_myPosition == null || _allStations.isEmpty) return;
+    if (_isInsideAnySafePlace(_myPosition!)) return; // suppress institution proximity while inside a safe place
 
     const triggerRadiusM = 200.0;
     const releaseRadiusM = 240.0;
@@ -1431,7 +1852,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       _pendingForceApproved = false;
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Waze admin activo: toca el mapa para consultar 500m y guardar alertas.')),
+      SnackBar(content: Text('Waze admin activo: toca el mapa para consultar ${_wazeRadiusMeters}m y guardar alertas.')),
     );
   }
 
@@ -1463,7 +1884,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       if (items.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Waze: sin resultados en 500m.')),
+          SnackBar(content: Text('Waze: sin resultados en ${_wazeRadiusMeters}m.')),
         );
         return;
       }
@@ -1543,7 +1964,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Waze 500m: detectadas ${items.length}, guardadas $saved alertas comunitarias.')),
+        SnackBar(content: Text('Waze ${_wazeRadiusMeters}m: detectadas ${items.length}, guardadas $saved alertas comunitarias.')),
       );
     } catch (_) {
       if (!mounted) return;
@@ -3093,19 +3514,29 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
     final visibleStations = _visibleStationsForMap();
 
-    final stationMarkers = visibleStations
-        .map(
-          (s) => Marker(
-            point: LatLng(s.lat, s.lng),
-            width: 48,
-            height: 48,
-            child: GestureDetector(
-              onTap: () => _openStationDetails(s),
-              behavior: HitTestBehavior.opaque,
-              child: Center(child: _stationPointMarker(s)),
-            ),
-          ),
-        )
+    final stationMarkersCarab = visibleStations
+        .where((s) => s.institution == 'CARABINEROS')
+        .map((s) => Marker(point: LatLng(s.lat, s.lng), width: 48, height: 48, child: GestureDetector(onTap: () => _openStationDetails(s), behavior: HitTestBehavior.opaque, child: Center(child: _stationPointMarker(s)))))
+        .toList();
+
+    final stationMarkersPdi = visibleStations
+        .where((s) => s.institution == 'PDI')
+        .map((s) => Marker(point: LatLng(s.lat, s.lng), width: 48, height: 48, child: GestureDetector(onTap: () => _openStationDetails(s), behavior: HitTestBehavior.opaque, child: Center(child: _stationPointMarker(s)))))
+        .toList();
+
+    final stationMarkersBenc = visibleStations
+        .where((s) => s.institution == 'BENCINERA')
+        .map((s) => Marker(point: LatLng(s.lat, s.lng), width: 48, height: 48, child: GestureDetector(onTap: () => _openStationDetails(s), behavior: HitTestBehavior.opaque, child: Center(child: _stationPointMarker(s)))))
+        .toList();
+
+    final stationMarkersPeaje = visibleStations
+        .where((s) => s.institution == 'PEAJE')
+        .map((s) => Marker(point: LatLng(s.lat, s.lng), width: 48, height: 48, child: GestureDetector(onTap: () => _openStationDetails(s), behavior: HitTestBehavior.opaque, child: Center(child: _stationPointMarker(s)))))
+        .toList();
+
+    final stationMarkersCrit = visibleStations
+        .where((s) => s.institution == 'CRITICO')
+        .map((s) => Marker(point: LatLng(s.lat, s.lng), width: 48, height: 48, child: GestureDetector(onTap: () => _openStationDetails(s), behavior: HitTestBehavior.opaque, child: Center(child: _stationPointMarker(s)))))
         .toList();
 
     final alertMarkers = _activeAlerts.map((a) {
@@ -3307,11 +3738,59 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         )
         .toList();
 
+    final poiMarkers = _pois.map((p) {
+      try {
+        final lat = (p['lat'] as num).toDouble();
+        final lng = (p['lng'] as num).toDouble();
+        final cat = (p['category'] ?? 'otro') as String;
+        IconData iconData = Icons.place;
+        Color iconColor = Colors.blueGrey;
+        switch (cat) {
+          case 'centro_comercial':
+            iconData = Icons.storefront;
+            iconColor = Colors.deepPurple;
+            break;
+          case 'vulcanizacion':
+            iconData = Icons.build;
+            iconColor = Colors.orange;
+            break;
+          case 'parking':
+            iconData = Icons.local_parking;
+            iconColor = Colors.teal;
+            break;
+          default:
+            iconData = Icons.place;
+            iconColor = Colors.blueGrey;
+        }
+
+        return Marker(
+          point: LatLng(lat, lng),
+          width: 40,
+          height: 40,
+          child: GestureDetector(
+            onTap: () => _showPoiDetails(p),
+            child: Column(
+              children: [
+                Icon(iconData, size: 26, color: iconColor),
+              ],
+            ),
+          ),
+        );
+      } catch (_) {
+        return Marker(point: _mapCenter, width: 1, height: 1, child: const SizedBox.shrink());
+      }
+    }).toList();
+
     final markers = <Marker>[
-      ...stationMarkers,
-      ...alertMarkers,
+      if (_layerVisible['carabineros'] == true) ...stationMarkersCarab,
+      if (_layerVisible['pdi'] == true) ...stationMarkersPdi,
+      if (_layerVisible['bencineras'] == true) ...stationMarkersBenc,
+      if (_layerVisible['peajes'] == true) ...stationMarkersPeaje,
+      if (_layerVisible['criticos'] == true) ...stationMarkersCrit,
+      if ((_layerVisible['citizen'] == true) || (_layerVisible['rapidas'] == true)) ...alertMarkers,
       ...helperMarkers,
-      ...zoneNameMarkers,
+      if (_layerVisible['pois'] == true) ...poiMarkers,
+      if (_layerVisible['zones'] == true) ...zoneNameMarkers,
       ...draftZoneMarkers,
       if (myLatLng != null)
         Marker(
@@ -3426,6 +3905,43 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   ],
                 ),
             ],
+          ),
+        ),
+        // Filter bar (top) — toggle which layers are visible
+        Positioned(
+          left: 8,
+          right: 8,
+          top: 8,
+          child: SafeArea(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.95), borderRadius: BorderRadius.circular(10)),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 4),
+                    _layerChip('👮', 'Carabineros', 'carabineros'),
+                    const SizedBox(width: 6),
+                    _layerChip('🛡️', 'PDI', 'pdi'),
+                    const SizedBox(width: 6),
+                    _layerChip('⛽', 'Bencineras', 'bencineras'),
+                    const SizedBox(width: 6),
+                    _layerChip('📍', 'POIs', 'pois'),
+                    const SizedBox(width: 6),
+                    _layerChip('🚨', 'Puntos críticos', 'criticos'),
+                    const SizedBox(width: 6),
+                    _layerChip('🛣️', 'Peajes', 'peajes'),
+                    const SizedBox(width: 6),
+                    _layerChip('📣', 'Alertas', 'citizen'),
+                    const SizedBox(width: 6),
+                    _layerChip('⚡', 'Rápidas', 'rapidas'),
+                    const SizedBox(width: 6),
+                    _layerChip('🧭', 'Zonas', 'zones'),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
         Positioned(
@@ -3612,8 +4128,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                       const SizedBox(width: 6),
                       Text(
                         _wazeLoading
-                            ? 'Waze...'
-                            : (_pickWazePointOnMap ? 'Waze 500m: toca mapa' : 'Waze 500m'),
+                          ? 'Waze...'
+                          : (_pickWazePointOnMap ? 'Waze ${_wazeRadiusMeters}m: toca mapa' : 'Waze ${_wazeRadiusMeters}m'),
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
@@ -4075,6 +4591,7 @@ class _GeoZone {
   final Color color;
   final List<LatLng> points;
   final int createdAtMs;
+  final List<Map<String, String>> schedules;
 
   LatLng get labelPoint {
     if (points.isEmpty) return const LatLng(-33.4489, -70.6693);
@@ -4093,6 +4610,7 @@ class _GeoZone {
     required this.color,
     required this.points,
     required this.createdAtMs,
+    this.schedules = const [],
   });
 
   static Color _colorFromHex(String raw) {
@@ -4124,6 +4642,32 @@ class _GeoZone {
       color: _colorFromHex((d['color'] ?? '#D32F2F').toString()),
       points: points,
       createdAtMs: (d['createdAtMs'] as num?)?.toInt() ?? 0,
+      schedules: (d['schedules'] as List<dynamic>? ?? const [])
+          .map((s) => Map<String, String>.from(s as Map? ?? <String,String>{}))
+          .map((m) => <String,String>{'start': (m['start'] ?? '').toString(), 'end': (m['end'] ?? '').toString(), 'risk': (m['risk'] ?? '').toString()})
+          .toList(),
+    );
+  }
+}
+
+class _SafePlace {
+  final String id;
+  final String name;
+  final double lat;
+  final double lng;
+  final int? radiusMeters;
+
+  const _SafePlace({required this.id, required this.name, required this.lat, required this.lng, this.radiusMeters});
+
+  factory _SafePlace.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data();
+    final loc = d['location'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    return _SafePlace(
+      id: doc.id,
+      name: (d['name'] ?? 'Lugar seguro').toString(),
+      lat: (loc['lat'] as num?)?.toDouble() ?? 0.0,
+      lng: (loc['lng'] as num?)?.toDouble() ?? 0.0,
+      radiusMeters: (d['radiusMeters'] as num?)?.toInt(),
     );
   }
 }
