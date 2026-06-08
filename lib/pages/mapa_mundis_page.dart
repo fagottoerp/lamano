@@ -83,6 +83,11 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   List<_GeoZone> _geoZones = const [];
   List<_SafePlace> _safePlaces = const [];
   List<Map<String, dynamic>> _pois = const [];
+  
+  // Traspasos GPS tracking
+  List<Map<String, dynamic>> _traspasos = const [];
+  StreamSubscription<QuerySnapshot>? _traspasosLocationsSub;
+  Map<String, Map<String, dynamic>> _traspasoMembersLocations = {};
 
   Position? _myPosition;
   bool _loading = true;
@@ -118,6 +123,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   String _zoneDraftName = '';
   Color _zoneDraftColor = const Color(0xFFD32F2F);
   String _currentNickname = 'Usuario';
+  String _currentUserId = '';
   double _headingDeg = 0;
   bool _hasHeading = false;
   final bool _autoRotateMap = true;
@@ -246,6 +252,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     _zonesSub?.cancel();
     _safePlacesSub?.cancel();
     _positionSub?.cancel();
+    _traspasosLocationsSub?.cancel();
     _dispatchRotateTimer?.cancel();
     _alertVisibilityTimer?.cancel();
     _proximityBannerTimer?.cancel();
@@ -286,7 +293,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       final locationFuture = _resolveLocation();
       final templatesFuture = _loadPriorityCategories();
       final poisFuture = _loadPoisFromApi();
-      final results = await Future.wait([stationsFuture, locationFuture, templatesFuture, poisFuture]);
+      final traspasosFuture = _loadTraspasos();
+      final results = await Future.wait([stationsFuture, locationFuture, templatesFuture, poisFuture, traspasosFuture]);
 
       if (!mounted) return;
       setState(() {
@@ -294,6 +302,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         _myPosition = results[1] as Position?;
         _priorityCategories = results[2] as List<_AlertCategory>;
         _pois = (results[3] as List<Map<String, dynamic>>);
+        _traspasos = results[4] as List<Map<String, dynamic>>;
         if (_myPosition != null) {
           _mapCenter = LatLng(_myPosition!.latitude, _myPosition!.longitude);
           _mapZoom = 12.5;
@@ -306,6 +315,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       _listenGeoZones();
       _listenSafePlaces();
       _startPositionTracking();
+      _startAutoShareForTraspasos(); // <── Auto-compartir GPS para traspasos
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -321,8 +331,10 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     final rolId = prefs.getString(FirestoreConstants.rolId) ?? '';
     final nickname = prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final lamanoUserId = prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
 
     _currentNickname = nickname;
+    _currentUserId = lamanoUserId.isNotEmpty ? lamanoUserId : uid;
     _isAdmin = rolId == '1' || role.contains('admin') || uid == AppConstants.adminFirebaseUid;
   }
 
@@ -449,6 +461,69 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     } catch (_) {
       return const [];
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadTraspasos() async {
+    try {
+      if (_currentUserId.isEmpty) return const [];
+      final uri = Uri.parse('http://38.247.147.220/lamano/api_traspasos_activos.php?user_id=$_currentUserId');
+      final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200) return const [];
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (data['success'] != true) return const [];
+      final traspasos = List<Map<String, dynamic>>.from(data['traspasos'] ?? []);
+      _listenTraspasoMembersLocations(traspasos);
+      return traspasos;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  void _listenTraspasoMembersLocations(List<Map<String, dynamic>> traspasos) {
+    _traspasosLocationsSub?.cancel();
+    if (traspasos.isEmpty) return;
+
+    // Recopilar todos los user IDs de los traspasos activos
+    final allMemberIds = <String>{};
+    for (final t in traspasos) {
+      final personal = t['personal'] as List<dynamic>? ?? [];
+      for (final p in personal) {
+        final uid = p['usuario_id']?.toString() ?? '';
+        if (uid.isNotEmpty) allMemberIds.add(uid);
+      }
+      // Agregar creador
+      final creatorId = t['usuario_id']?.toString() ?? '';
+      if (creatorId.isNotEmpty) allMemberIds.add(creatorId);
+    }
+
+    if (allMemberIds.isEmpty) return;
+
+    // Escuchar ubicaciones en vivo de todos los miembros
+    _traspasosLocationsSub = _firestore
+        .collection(FirestoreConstants.pathLiveLocations)
+        .where('fromId', whereIn: allMemberIds.take(30).toList()) // Firestore limit 30 per whereIn
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      final locations = <String, Map<String, dynamic>>{};
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final active = data['active'] as bool? ?? false;
+        if (!active) continue;
+        final lat = (data['lat'] as num?)?.toDouble();
+        final lng = (data['lng'] as num?)?.toDouble();
+        if (lat == null || lng == null || (lat == 0.0 && lng == 0.0)) continue;
+        final userId = data['fromId'] as String?;
+        if (userId == null || userId.isEmpty) continue;
+        locations[userId] = {
+          'lat': lat,
+          'lng': lng,
+          'nickname': data['nickname'] ?? 'Usuario',
+          'updatedAt': data['updatedAt'] ?? DateTime.now().millisecondsSinceEpoch,
+        };
+      }
+      setState(() => _traspasoMembersLocations = locations);
+    });
   }
 
   String _weekdayKeyNow() {
@@ -741,6 +816,100 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         next[idx]['updatedAtMs'] = DateTime.now().millisecondsSinceEpoch;
         tx.update(doc, {'helperMembers': next});
       });
+    }
+  }
+
+  void _startAutoShareForTraspasos() async {
+    // Si el usuario tiene traspasos activos, compartir ubicación automáticamente
+    // en el grupo del traspaso
+    if (_traspasos.isEmpty || _currentUserId.isEmpty) return;
+
+    try {
+      // Verificar permisos GPS primero
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever || 
+          permission == LocationPermission.denied) {
+        return;
+      }
+
+      // Para cada traspaso activo, iniciar ubicación en vivo en Firestore
+      for (final traspaso in _traspasos) {
+        final traspasoId = traspaso['id'];
+        final groupId = 'traspaso-$traspasoId';
+        final estado = traspaso['estado'] as String?;
+        
+        // Solo compartir si está en tránsito o aceptado
+        if (estado != 'en_transito' && estado != 'aceptado') continue;
+
+        // Crear documento de ubicación en vivo en Firestore
+        final docId = '${groupId}_$_currentUserId';
+        
+        try {
+          final pos = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+          ).timeout(const Duration(seconds: 5));
+
+          await _firestore
+              .collection(FirestoreConstants.pathLiveLocations)
+              .doc(docId)
+              .set({
+            'active': true,
+            'lat': pos.latitude,
+            'lng': pos.longitude,
+            'fromId': _currentUserId,
+            'chatId': groupId,
+            'nickname': _currentNickname,
+            'updatedAt': DateTime.now().millisecondsSinceEpoch,
+          }, SetOptions(merge: true));
+
+          debugPrint('🚛 Auto-compartiendo GPS para traspaso #$traspasoId');
+        } catch (e) {
+          debugPrint('Error auto-sharing GPS for traspaso $traspasoId: $e');
+        }
+      }
+
+      // Actualizar ubicación cada 30 segundos para traspasos activos
+      Timer.periodic(const Duration(seconds: 30), (timer) async {
+        if (!mounted || _traspasos.isEmpty) {
+          timer.cancel();
+          return;
+        }
+
+        try {
+          final pos = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+          ).timeout(const Duration(seconds: 5));
+
+          for (final traspaso in _traspasos) {
+            final traspasoId = traspaso['id'];
+            final groupId = 'traspaso-$traspasoId';
+            final estado = traspaso['estado'] as String?;
+            
+            if (estado != 'en_transito' && estado != 'aceptado') continue;
+
+            final docId = '${groupId}_$_currentUserId';
+            
+            await _firestore
+                .collection(FirestoreConstants.pathLiveLocations)
+                .doc(docId)
+                .update({
+              'lat': pos.latitude,
+              'lng': pos.longitude,
+              'updatedAt': DateTime.now().millisecondsSinceEpoch,
+            });
+          }
+        } catch (_) {
+          // Silently fail location updates
+        }
+      });
+    } catch (e) {
+      debugPrint('Error in _startAutoShareForTraspasos: $e');
     }
   }
 
@@ -3877,6 +4046,117 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       }
     }).toList();
 
+    // ── Traspasos GPS Markers and Routes ────────────────────────────────────
+    final traspasoRoutes = <Polyline>[];
+    final traspasoMarkers = <Marker>[];
+    
+    for (final traspaso in _traspasos) {
+      final origenLat = (traspaso['origen_lat'] as num?)?.toDouble();
+      final origenLng = (traspaso['origen_lng'] as num?)?.toDouble();
+      final destinoLat = (traspaso['destino_lat'] as num?)?.toDouble();
+      final destinoLng = (traspaso['destino_lng'] as num?)?.toDouble();
+      
+      if (origenLat != null && origenLng != null && destinoLat != null && destinoLng != null) {
+        // Ruta origen → destino
+        traspasoRoutes.add(Polyline(
+          points: [LatLng(origenLat, origenLng), LatLng(destinoLat, destinoLng)],
+          strokeWidth: 4.0,
+          color: const Color(0xFFFF0000), // Rojo GTA
+          borderStrokeWidth: 1.0,
+          borderColor: Colors.white,
+        ));
+        
+        // Marcadores origen y destino
+        traspasoMarkers.add(Marker(
+          point: LatLng(origenLat, origenLng),
+          width: 32,
+          height: 32,
+          child: const Icon(Icons.store, color: Colors.green, size: 28),
+        ));
+        
+        traspasoMarkers.add(Marker(
+          point: LatLng(destinoLat, destinoLng),
+          width: 32,
+          height: 32,
+          child: const Icon(Icons.flag, color: Colors.red, size: 28),
+        ));
+      }
+      
+      // Marcadores GPS de miembros del traspaso
+      final personal = traspaso['personal'] as List<dynamic>? ?? [];
+      final creatorId = traspaso['usuario_id']?.toString() ?? '';
+      
+      for (final p in personal) {
+        final userId = p['usuario_id']?.toString() ?? '';
+        final memberLoc = _traspasoMembersLocations[userId];
+        if (memberLoc != null) {
+          final lat = memberLoc['lat'] as double;
+          final lng = memberLoc['lng'] as double;
+          final nickname = memberLoc['nickname'] as String;
+          
+          traspasoMarkers.add(Marker(
+            point: LatLng(lat, lng),
+            width: 50,
+            height: 50,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                  child: Text(
+                    nickname,
+                    style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const Icon(Icons.navigation, color: Colors.red, size: 24, shadows: [
+                  Shadow(color: Colors.white, blurRadius: 4),
+                ]),
+              ],
+            ),
+          ));
+        }
+      }
+      
+      // Marcador del creador
+      final creatorLoc = _traspasoMembersLocations[creatorId];
+      if (creatorLoc != null) {
+        final lat = creatorLoc['lat'] as double;
+        final lng = creatorLoc['lng'] as double;
+        final nickname = creatorLoc['nickname'] as String;
+        
+        traspasoMarkers.add(Marker(
+          point: LatLng(lat, lng),
+          width: 50,
+          height: 50,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.white, width: 1),
+                ),
+                child: Text(
+                  '$nickname 👑',
+                  style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const Icon(Icons.person_pin_circle, color: Colors.orange, size: 28, shadows: [
+                Shadow(color: Colors.white, blurRadius: 4),
+              ]),
+            ],
+          ),
+        ));
+      }
+    }
+
     final markers = <Marker>[
       if (_layerVisible['carabineros'] == true) ...stationMarkersCarab,
       if (_layerVisible['pdi'] == true) ...stationMarkersPdi,
@@ -3888,6 +4168,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       if (_layerVisible['pois'] == true) ...poiMarkers,
       if (_layerVisible['zones'] == true) ...zoneNameMarkers,
       ...draftZoneMarkers,
+      ...traspasoMarkers, // <── Marcadores de traspasos GPS
       if (myLatLng != null)
         Marker(
           point: myLatLng,
@@ -3976,6 +4257,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
               ),
               if (zonePolygons.isNotEmpty)
                 PolygonLayer(polygons: zonePolygons),
+              if (traspasoRoutes.isNotEmpty)
+                PolylineLayer(polylines: traspasoRoutes), // <── Rutas de traspasos GTA RED
               if (alertRiskCircles.isNotEmpty)
                 CircleLayer(circles: alertRiskCircles),
               MarkerLayer(markers: markers),

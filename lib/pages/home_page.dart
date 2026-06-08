@@ -26,6 +26,7 @@ import 'package:flutter_chat_demo/pages/admin_group_manage_page.dart';
 import 'package:flutter_chat_demo/pages/contacts_page.dart';
 import 'package:flutter_chat_demo/pages/recent_chats_page.dart';
 import 'package:flutter_chat_demo/pages/mapa_mundis_page.dart';
+import 'package:flutter_chat_demo/pages/traspasos_activos_page.dart'; // <── Traspasos
 import 'motoboy_orders_page.dart';
 import 'temp_chats_page.dart';
 import 'package:geolocator/geolocator.dart';
@@ -834,6 +835,14 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 MaterialPageRoute(builder: (_) => const GpsVivoPage()),
               ),
             ),
+          _buildTopAction(
+            icon: Icons.local_shipping_outlined,
+            tooltip: 'Traspasos',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TraspasosActivosPage()),
+            ),
+          ),
           if (_isAdmin)
             _buildTopAction(
               icon: Icons.group_add_outlined,
