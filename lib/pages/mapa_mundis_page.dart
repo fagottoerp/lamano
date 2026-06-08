@@ -3866,10 +3866,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
           height: 40,
           child: GestureDetector(
             onTap: () => _showPoiDetails(p),
-            child: Column(
-              children: [
-                Icon(iconData, size: 26, color: iconColor),
-              ],
+            behavior: HitTestBehavior.opaque,
+            child: Center(
+              child: Icon(iconData, size: 26, color: iconColor),
             ),
           ),
         );
