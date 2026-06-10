@@ -451,12 +451,8 @@ class ChatPageState extends State<ChatPage> {
     setState(() => _isLoading = true);
     for (final xfile in pickedFiles) {
       try {
-        final fileName = 'chat_images/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final snapshot = await _chatProvider.uploadFile(File(xfile.path), fileName);
-        if (snapshot.state == TaskState.success) {
-          final url = await snapshot.ref.getDownloadURL();
-          _onSendMessage(url, TypeMessage.image);
-        }
+        final url = await _chatProvider.uploadFile(File(xfile.path), 'image');
+        _onSendMessage(url, TypeMessage.image);
       } catch (e) {
         Fluttertoast.showToast(msg: 'Error al subir imagen');
       }
@@ -477,12 +473,8 @@ class ChatPageState extends State<ChatPage> {
       setState(() => _isLoading = true);
       try {
         final file = File(pickedXFile.path);
-        final fileName = 'chat_videos/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}.mp4';
-        final snapshot = await _chatProvider.uploadFile(file, fileName);
-        if (snapshot.state == TaskState.success) {
-          final url = await snapshot.ref.getDownloadURL();
-          _onSendMessage(url, TypeMessage.video);
-        }
+        final url = await _chatProvider.uploadFile(file, 'video');
+        _onSendMessage(url, TypeMessage.video);
       } catch (e) {
         Fluttertoast.showToast(msg: 'Error al subir video');
       } finally {
@@ -555,14 +547,7 @@ class ChatPageState extends State<ChatPage> {
     setState(() => _isLoading = true);
     try {
       final file = File(path);
-      final safeName = picked.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-      final remoteName = 'chat_docs/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}_$safeName';
-      final snapshot = await _chatProvider.uploadFile(file, remoteName);
-      if (snapshot.state != TaskState.success) {
-        Fluttertoast.showToast(msg: 'Error al subir documento');
-        return;
-      }
-      final url = await snapshot.ref.getDownloadURL();
+      final url = await _chatProvider.uploadFile(file, 'file');
       _onSendMessage('Documento: ${picked.name}\n$url', TypeMessage.text);
     } catch (_) {
       Fluttertoast.showToast(msg: 'Error al subir documento');
@@ -667,10 +652,7 @@ class ChatPageState extends State<ChatPage> {
     if (!file.existsSync()) return;
     setState(() => _isLoading = true);
     try {
-      final fileName = 'chat_audio/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      final ref = _chatProvider.firebaseStorage.ref().child(fileName);
-      final snapshot = await ref.putFile(file);
-      final url = await snapshot.ref.getDownloadURL();
+      final url = await _chatProvider.uploadFile(file, 'audio');
       setState(() => _isLoading = false);
       _onSendMessage(url, TypeMessage.audio);
     } catch (e) {
@@ -1105,26 +1087,15 @@ class ChatPageState extends State<ChatPage> {
       return;
     }
     setState(() => _isLoading = true);
-    final fileName = 'chat_images/${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final uploadTask = _chatProvider.uploadFile(_imageFile!, fileName);
     try {
-      final snapshot = await uploadTask;
-      if (snapshot.state != TaskState.success) {
-        setState(() => _isLoading = false);
-        Fluttertoast.showToast(msg: 'Error al subir la imagen (estado: ${snapshot.state})');
-        return;
-      }
-      _imageUrl = await snapshot.ref.getDownloadURL();
+      _imageUrl = await _chatProvider.uploadFile(_imageFile!, 'image');
       setState(() {
         _isLoading = false;
         _onSendMessage(_imageUrl, TypeMessage.image);
       });
-    } on FirebaseException catch (e) {
-      setState(() => _isLoading = false);
-      Fluttertoast.showToast(msg: 'Firebase: ${e.code} - ${e.message}');
     } catch (e) {
       setState(() => _isLoading = false);
-      Fluttertoast.showToast(msg: 'Error al subir la imagen');
+      Fluttertoast.showToast(msg: 'Error: $e');
     }
   }
 
@@ -2371,6 +2342,43 @@ class ChatPageState extends State<ChatPage> {
           ? StreamBuilder<QuerySnapshot>(
               stream: _chatProvider.getChatStream(_groupChatId, _limit),
               builder: (_, snapshot) {
+                // DEBUG: Show error if Firebase fails
+                if (snapshot.hasError) {
+                  final errorMsg = snapshot.error.toString();
+                  debugPrint('🔴 FIRESTORE ERROR: $errorMsg');
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                          const SizedBox(height: 12),
+                          const Text('Error de conexión', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: SelectableText(
+                              errorMsg,
+                              style: const TextStyle(fontSize: 12, color: Colors.red),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: () => setState(() {}),
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Reintentar'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
                 if (snapshot.hasData) {
                   _listMessage = snapshot.data!.docs;
                   // Check for incoming call

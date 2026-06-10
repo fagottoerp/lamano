@@ -1679,16 +1679,15 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final avatarColor = avatarColors[name.length % avatarColors.length];
 
             return GestureDetector(
-              onTap: () async {
-                try {
-                  await FirebaseFirestore.instance
-                      .collection('groups')
-                      .doc(doc.id)
-                      .set({
-                    'unreadCounts': {_currentUserId: 0},
-                  }, SetOptions(merge: true));
-                } catch (_) {}
-                if (!context.mounted) return;
+              onTap: () {
+                // Mark as read in background - don't await
+                FirebaseFirestore.instance
+                    .collection('groups')
+                    .doc(doc.id)
+                    .set({
+                  'unreadCounts': {_currentUserId: 0},
+                }, SetOptions(merge: true)).catchError((_) => null);
+                
                 Navigator.push(
                   context,
                   MaterialPageRoute(

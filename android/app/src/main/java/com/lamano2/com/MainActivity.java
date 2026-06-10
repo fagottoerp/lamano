@@ -1,4 +1,4 @@
-package com.dfa.flutterchatdemo;
+package com.lamano2.com;
 
 import android.content.Intent;
 import android.database.Cursor;

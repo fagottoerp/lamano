@@ -126,11 +126,9 @@ class SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _uploadFile() async {
-    final fileName = _userId;
-    final uploadTask = _settingProvider.uploadFile(_avatarFile!, fileName);
+    setState(() => _isLoading = true);
     try {
-      final snapshot = await uploadTask;
-      _avatarUrl = await snapshot.ref.getDownloadURL();
+      _avatarUrl = await _settingProvider.uploadFile(_avatarFile!, 'image');
       final updateInfo = UserChat(
         id: _userId,
         photoUrl: _avatarUrl,

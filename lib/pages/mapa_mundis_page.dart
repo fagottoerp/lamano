@@ -88,6 +88,18 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   List<Map<String, dynamic>> _traspasos = const [];
   StreamSubscription<QuerySnapshot>? _traspasosLocationsSub;
   Map<String, Map<String, dynamic>> _traspasoMembersLocations = {};
+  
+  // Waze police controls (GTA style)
+  List<Map<String, dynamic>> _wazePoliceControls = const [];
+  StreamSubscription<QuerySnapshot>? _wazeControlsSub;
+  
+  // Misión Puerto group members tracking
+  static const String _misionPuertoGroupId = 'dVdziSejP7V6vag2qhZb';
+  List<String> _misionPuertoMembers = const [];
+  Map<String, Map<String, dynamic>> _misionPuertoLocations = {};
+  StreamSubscription<DocumentSnapshot>? _misionPuertoGroupSub;
+  StreamSubscription<QuerySnapshot>? _misionPuertoLocationsSub;
+  bool _isMisionPuertoMember = false;
 
   Position? _myPosition;
   bool _loading = true;
@@ -145,6 +157,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     'citizen': true,
     'rapidas': true,
     'zones': true,
+    'wazeControls': true,
+    'misionPuerto': true,
     'traffic': false,
     'transit': false,
     'bike': false,
@@ -216,6 +230,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   _buildFilterChip('📣', 'Alertas', 'citizen'),
                   _buildFilterChip('⚡', 'Rápidas', 'rapidas'),
                   _buildFilterChip('🧭', 'Zonas', 'zones'),
+                  _buildFilterChip('🚔', 'Controles Waze', 'wazeControls'),
+                  if (_isMisionPuertoMember) _buildFilterChip('🎯', 'Misión Puerto', 'misionPuerto'),
                 ],
               ),
               const SizedBox(height: 16),
@@ -251,6 +267,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     _alertsSub?.cancel();
     _zonesSub?.cancel();
     _safePlacesSub?.cancel();
+    _wazeControlsSub?.cancel();
+    _misionPuertoGroupSub?.cancel();
+    _misionPuertoLocationsSub?.cancel();
     _positionSub?.cancel();
     _traspasosLocationsSub?.cancel();
     _dispatchRotateTimer?.cancel();
@@ -314,6 +333,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       _listenLiveAlerts();
       _listenGeoZones();
       _listenSafePlaces();
+      _listenWazePoliceControls();
+      _listenMisionPuertoGroup();
       _startPositionTracking();
       _startAutoShareForTraspasos(); // <── Auto-compartir GPS para traspasos
     } catch (_) {
@@ -1232,6 +1253,151 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       setState(() => _safePlaces = list);
     }, onError: (_) {});
   }
+
+  void _listenWazePoliceControls() {
+    _wazeControlsSub?.cancel();
+    _wazeControlsSub = _firestore
+        .collection('waze_police_markers')
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final thirtyMinAgo = now - (30 * 60 * 1000);
+      final controls = <Map<String, dynamic>>[];
+      for (final doc in snap.docs) {
+        try {
+          final data = doc.data();
+          final updatedAt = (data['updatedAt'] as num?)?.toInt() ?? 0;
+          // Solo mostrar controles de los últimos 30 minutos
+          if (updatedAt > thirtyMinAgo) {
+            controls.add({
+              'id': doc.id,
+              'lat': (data['lat'] as num?)?.toDouble() ?? 0.0,
+              'lng': (data['lng'] as num?)?.toDouble() ?? 0.0,
+              'location': data['location'] ?? 'Control',
+              'route': data['route'] ?? '',
+              'routeName': data['routeName'] ?? '',
+              'updatedAt': updatedAt,
+            });
+          }
+        } catch (_) {}
+      }
+      setState(() => _wazePoliceControls = controls);
+    }, onError: (e) {
+      debugPrint('Error listening to waze controls: $e');
+    });
+  }
+
+  void _listenMisionPuertoGroup() {
+    _misionPuertoGroupSub?.cancel();
+    _misionPuertoGroupSub = _firestore
+        .collection('groups')
+        .doc(_misionPuertoGroupId)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      if (!snap.exists) {
+        setState(() {
+          _isMisionPuertoMember = false;
+          _misionPuertoMembers = const [];
+        });
+        return;
+      }
+      
+      final data = snap.data() ?? {};
+      final members = List<String>.from(data['members'] ?? []);
+      final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final isMember = members.contains(currentUid);
+      
+      setState(() {
+        _misionPuertoMembers = members;
+        _isMisionPuertoMember = isMember;
+      });
+      
+      // Si es miembro, escuchar ubicaciones
+      if (isMember && members.isNotEmpty) {
+        _listenMisionPuertoLocations(members);
+      } else {
+        _misionPuertoLocationsSub?.cancel();
+        setState(() => _misionPuertoLocations = {});
+      }
+    }, onError: (e) {
+      debugPrint('Error listening to Misión Puerto group: $e');
+    });
+  }
+
+  void _listenMisionPuertoLocations(List<String> memberUids) {
+    _misionPuertoLocationsSub?.cancel();
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    
+    _misionPuertoLocationsSub = _firestore
+        .collection('users_locations')
+        .where(FieldPath.documentId, whereIn: memberUids.take(10).toList()) // Firestore limit
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      
+      final locations = <String, Map<String, dynamic>>{};
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final maxAge = 30 * 60 * 1000; // 30 minutos
+      
+      for (final doc in snap.docs) {
+        try {
+          final data = doc.data();
+          final uid = doc.id;
+          final updatedAt = (data['updatedAt'] as num?)?.toInt() ?? 0;
+          
+          // Solo ubicaciones recientes y no soy yo
+          if ((now - updatedAt) < maxAge && uid != currentUid) {
+            final lat = (data['lat'] as num?)?.toDouble() ?? 0.0;
+            final lng = (data['lng'] as num?)?.toDouble() ?? 0.0;
+            
+            if (lat != 0 && lng != 0) {
+              // Calcular distancia al control más cercano
+              double? nearestControlDist;
+              String? nearestControlName;
+              for (final ctrl in _wazePoliceControls) {
+                final ctrlLat = ctrl['lat'] as double;
+                final ctrlLng = ctrl['lng'] as double;
+                final dist = _haversineKm(lat, lng, ctrlLat, ctrlLng);
+                if (nearestControlDist == null || dist < nearestControlDist) {
+                  nearestControlDist = dist;
+                  nearestControlName = ctrl['location'] as String;
+                }
+              }
+              
+              locations[uid] = {
+                'uid': uid,
+                'nickname': data['nickname'] ?? 'Usuario',
+                'lat': lat,
+                'lng': lng,
+                'online': data['online'] ?? false,
+                'updatedAt': updatedAt,
+                'nearestControlDist': nearestControlDist,
+                'nearestControlName': nearestControlName,
+              };
+            }
+          }
+        } catch (_) {}
+      }
+      
+      setState(() => _misionPuertoLocations = locations);
+    }, onError: (e) {
+      debugPrint('Error listening to Misión Puerto locations: $e');
+    });
+  }
+
+  double _haversineKm(double lat1, double lng1, double lat2, double lng2) {
+    const earthRadius = 6371.0;
+    final dLat = _degToRad(lat2 - lat1);
+    final dLng = _degToRad(lng2 - lng1);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_degToRad(lat1)) * math.cos(_degToRad(lat2)) * math.sin(dLng / 2) * math.sin(dLng / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadius * c;
+  }
+
+  double _degToRad(double deg) => deg * (math.pi / 180);
 
   void _startZoneDrawMode({required String name, required Color color}) {
     if (!_isAdmin) return;
@@ -4412,6 +4578,199 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       }
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // WAZE POLICE CONTROLS MARKERS (GTA STYLE)
+    // ═══════════════════════════════════════════════════════════════
+    final wazeControlMarkers = <Marker>[];
+    if (_layerVisible['wazeControls'] == true) {
+      for (final control in _wazePoliceControls) {
+        final lat = control['lat'] as double;
+        final lng = control['lng'] as double;
+        final location = control['location'] as String;
+        final route = control['route'] as String;
+        
+        wazeControlMarkers.add(Marker(
+          point: LatLng(lat, lng),
+          width: 60,
+          height: 60,
+          child: GestureDetector(
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                  backgroundColor: const Color(0xFF1A1A2E),
+                  title: Row(
+                    children: [
+                      const Icon(Icons.local_police, color: Colors.red, size: 28),
+                      const SizedBox(width: 8),
+                      const Text('🚔 CONTROL POLICIAL', 
+                        style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('📍 $location', style: const TextStyle(color: Colors.white)),
+                      if (route.isNotEmpty) Text('🛣️ Ruta: $route', style: const TextStyle(color: Colors.white70)),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('OK', style: TextStyle(color: Colors.cyan)),
+                    ),
+                  ],
+                ),
+              );
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFB71C1C).withValues(alpha: 0.95),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.yellow, width: 2),
+                    boxShadow: [
+                      BoxShadow(color: Colors.red.withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 2),
+                    ],
+                  ),
+                  child: const Text(
+                    '🚔 CONTROL',
+                    style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const Icon(Icons.star, color: Colors.red, size: 32, shadows: [
+                  Shadow(color: Colors.yellow, blurRadius: 8),
+                  Shadow(color: Colors.red, blurRadius: 12),
+                ]),
+              ],
+            ),
+          ),
+        ));
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // MISIÓN PUERTO MEMBERS MARKERS (GTA STYLE)
+    // ═══════════════════════════════════════════════════════════════
+    final misionPuertoMarkers = <Marker>[];
+    if (_layerVisible['misionPuerto'] == true && _isMisionPuertoMember) {
+      for (final entry in _misionPuertoLocations.entries) {
+        final loc = entry.value;
+        final lat = loc['lat'] as double;
+        final lng = loc['lng'] as double;
+        final nickname = loc['nickname'] as String;
+        final nearestDist = loc['nearestControlDist'] as double?;
+        final nearestName = loc['nearestControlName'] as String?;
+        final online = loc['online'] as bool;
+        
+        // Formatear distancia
+        String distText = '';
+        Color distColor = Colors.green;
+        if (nearestDist != null) {
+          if (nearestDist < 1) {
+            distText = '${(nearestDist * 1000).toInt()}m';
+            distColor = Colors.red;
+          } else if (nearestDist < 5) {
+            distText = '${nearestDist.toStringAsFixed(1)}km';
+            distColor = Colors.orange;
+          } else {
+            distText = '${nearestDist.toStringAsFixed(0)}km';
+            distColor = Colors.green;
+          }
+        }
+        
+        misionPuertoMarkers.add(Marker(
+          point: LatLng(lat, lng),
+          width: 90,
+          height: 70,
+          child: GestureDetector(
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                  backgroundColor: const Color(0xFF1A1A2E),
+                  title: Row(
+                    children: [
+                      Icon(Icons.person_pin, color: online ? Colors.green : Colors.grey, size: 28),
+                      const SizedBox(width: 8),
+                      Text('🎯 $nickname', 
+                        style: const TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('📍 Lat: ${lat.toStringAsFixed(5)}, Lng: ${lng.toStringAsFixed(5)}', 
+                        style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                      if (nearestDist != null) ...[
+                        const SizedBox(height: 8),
+                        Text('🚔 Control más cercano:', style: const TextStyle(color: Colors.white)),
+                        Text('   📍 $nearestName', style: const TextStyle(color: Colors.white70)),
+                        Text('   📏 Distancia: $distText', style: TextStyle(color: distColor, fontWeight: FontWeight.bold)),
+                        if (nearestDist < 5) Text('   ⏱️ ~${(nearestDist / 1.5 * 60).toInt()} min aprox', 
+                          style: const TextStyle(color: Colors.white70)),
+                      ],
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('OK', style: TextStyle(color: Colors.cyan)),
+                    ),
+                  ],
+                ),
+              );
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D47A1).withValues(alpha: 0.95),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.cyan, width: 2),
+                    boxShadow: [
+                      BoxShadow(color: Colors.blue.withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 2),
+                    ],
+                  ),
+                  child: Text(
+                    nickname,
+                    style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (distText.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: distColor.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    child: Text(
+                      '🚔 $distText',
+                      style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                Icon(
+                  online ? Icons.directions_car : Icons.local_taxi,
+                  color: online ? Colors.cyan : Colors.grey,
+                  size: 24,
+                  shadows: const [Shadow(color: Colors.white, blurRadius: 4)],
+                ),
+              ],
+            ),
+          ),
+        ));
+      }
+    }
+
     final markers = <Marker>[
       if (_layerVisible['carabineros'] == true) ...stationMarkersCarab,
       if (_layerVisible['pdi'] == true) ...stationMarkersPdi,
@@ -4424,6 +4783,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       if (_layerVisible['zones'] == true) ...zoneNameMarkers,
       ...draftZoneMarkers,
       ...traspasoMarkers, // <── Marcadores de traspasos GPS
+      ...wazeControlMarkers, // <── Controles policiales Waze (GTA style)
+      ...misionPuertoMarkers, // <── Miembros Misión Puerto con distancia a controles
       if (myLatLng != null)
         Marker(
           point: myLatLng,
@@ -4546,6 +4907,18 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                 PolylineLayer(polylines: traspasoRoutes), // <── Rutas de traspasos GTA RED
               if (alertRiskCircles.isNotEmpty)
                 CircleLayer(circles: alertRiskCircles),
+              // Círculos de peligro para controles Waze (GTA style)
+              if (_layerVisible['wazeControls'] == true && _wazePoliceControls.isNotEmpty)
+                CircleLayer(
+                  circles: _wazePoliceControls.map((c) => CircleMarker(
+                    point: LatLng(c['lat'] as double, c['lng'] as double),
+                    radius: 500,
+                    useRadiusInMeter: true,
+                    color: Colors.red.withValues(alpha: 0.15),
+                    borderColor: Colors.red.withValues(alpha: 0.5),
+                    borderStrokeWidth: 2,
+                  )).toList(),
+                ),
               MarkerLayer(markers: markers),
               if (myLatLng != null)
                 CircleLayer(

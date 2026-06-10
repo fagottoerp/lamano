@@ -6,7 +6,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/app_constants.dart';
@@ -125,11 +124,11 @@ void main() async {
     if (kIsWeb) {
       await Firebase.initializeApp(
         options: const FirebaseOptions(
-          apiKey: 'AIzaSyAtXdcOLOpZdnOxb1ojAc2z4EQmlshFIPo',
-          appId: '1:494184473926:android:0c862d1af3199412bd7147',
-          messagingSenderId: '494184473926',
-          projectId: 'lamano-e4b6c',
-          storageBucket: 'lamano-e4b6c.firebasestorage.app',
+          apiKey: 'AIzaSyAueOUp_lUGkIRKsSo7u09_SH3lfPSQ4ws',
+          appId: '1:415868449671:android:fa3739dfc955fd5c2e1922',
+          messagingSenderId: '415868449671',
+          projectId: 'chat-70137',
+          storageBucket: 'chat-70137.firebasestorage.app',
         ),
       );
     } else {
@@ -151,6 +150,20 @@ void main() async {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   } catch (e) {
     debugPrint('FCM background handler registration failed: $e');
+  }
+
+  // ── MIGRATION FIX: Clear old project data ──
+  try {
+    final currentProject = Firebase.app().options.projectId;
+    if (currentProject != 'chat-70137') {
+      debugPrint('⚠️ Wrong Firebase project detected: $currentProject');
+      debugPrint('🔄 Clearing old data and forcing re-login...');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      await FirebaseAuth.instance.signOut();
+    }
+  } catch (e) {
+    debugPrint('Migration check failed: $e');
   }
 
   // Init foreground GPS task config (no-op if already configured)
@@ -176,7 +189,6 @@ class MyApp extends StatelessWidget {
   MyApp({required this.prefs});
 
   final _firebaseFirestore = FirebaseFirestore.instance;
-  final _firebaseStorage = FirebaseStorage.instance;
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +206,6 @@ class MyApp extends StatelessWidget {
           create: (_) => SettingProvider(
             prefs: this.prefs,
             firebaseFirestore: this._firebaseFirestore,
-            firebaseStorage: this._firebaseStorage,
           ),
         ),
         Provider<HomeProvider>(
@@ -206,7 +217,6 @@ class MyApp extends StatelessWidget {
           create: (_) => ChatProvider(
             prefs: this.prefs,
             firebaseFirestore: this._firebaseFirestore,
-            firebaseStorage: this._firebaseStorage,
           ),
         ),
       ],

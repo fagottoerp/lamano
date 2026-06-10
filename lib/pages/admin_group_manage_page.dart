@@ -91,9 +91,7 @@ class _AdminGroupManagePageState extends State<AdminGroupManagePage> {
       if (xfile == null) return;
       Fluttertoast.showToast(msg: 'Subiendo imagen...');
       final chatProvider = context.read<ChatProvider>();
-      final fileName = 'group_${groupId}_${DateTime.now().millisecondsSinceEpoch}';
-      final snap = await chatProvider.uploadFile(File(xfile.path), fileName);
-      final url = await snap.ref.getDownloadURL();
+      final url = await chatProvider.uploadFile(File(xfile.path), 'image');
       await FirebaseFirestore.instance
           .collection('groups')
           .doc(groupId)

@@ -1,44 +1,36 @@
 {
   "project_info": {
-    "project_number": "494184473926",
-    "project_id": "lamano-e4b6c",
-    "storage_bucket": "lamano-e4b6c.firebasestorage.app"
+    "project_number": "415868449671",
+    "firebase_url": "https://chat-70137.firebaseio.com",
+    "project_id": "chat-70137",
+    "storage_bucket": "chat-70137.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:494184473926:android:0c862d1af3199412bd7147",
+        "mobilesdk_app_id": "1:415868449671:android:fa3739dfc955fd5c2e1922",
         "android_client_info": {
-          "package_name": "com.dfa.flutterchatdemo"
+          "package_name": "com.lamano2.com"
         }
       },
       "oauth_client": [
         {
-          "client_id": "494184473926-kkpgmrjg4ni6da2b7dmif5f2ago07cs5.apps.googleusercontent.com",
+          "client_id": "415868449671-puansdaaqmjqotoduov54p7ejpsqb0k1.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.dfa.flutterchatdemo",
-            "certificate_hash": "d42624fddef49e2d7c556a7558f2ab5269e65450"
+            "package_name": "com.lamano2.com",
+            "certificate_hash": "416147137a8e4a5437733bfea24a95f5aea20c95"
           }
-        },
-        {
-          "client_id": "494184473926-uos42lt3sc20cki7lj42uk73iepm2ogi.apps.googleusercontent.com",
-          "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyAtXdcOLOpZdnOxb1ojAc2z4EQmlshFIPo"
+          "current_key": "AIzaSyAueOUp_lUGkIRKsSo7u09_SH3lfPSQ4ws"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "494184473926-uos42lt3sc20cki7lj42uk73iepm2ogi.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }

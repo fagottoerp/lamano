@@ -1,18 +1,17 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 
 class SettingProvider {
   final SharedPreferences prefs;
   final FirebaseFirestore firebaseFirestore;
-  final FirebaseStorage firebaseStorage;
 
   SettingProvider({
     required this.prefs,
     required this.firebaseFirestore,
-    required this.firebaseStorage,
   });
 
   String? getPref(String key) {
@@ -23,10 +22,27 @@ class SettingProvider {
     return await prefs.setString(key, value);
   }
 
-  UploadTask uploadFile(File image, String fileName) {
-    final reference = firebaseStorage.ref().child(fileName);
-    final uploadTask = reference.putFile(image);
-    return uploadTask;
+  Future<String> uploadFile(File image, String type) async {
+    final userId = prefs.getString('id') ?? 'unknown';
+    
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('http://38.247.147.220/lamano/api_upload_chat_file.php'),
+    );
+    
+    request.fields['userId'] = userId;
+    request.fields['type'] = type;
+    request.files.add(await http.MultipartFile.fromPath('file', image.path));
+    
+    final response = await request.send();
+    final responseBody = await response.stream.bytesToString();
+    
+    if (response.statusCode != 200) {
+      throw Exception('Upload failed: $responseBody');
+    }
+    
+    final json = jsonDecode(responseBody);
+    return json['url'] as String;
   }
 
   Future<void> updateDataFirestore(String collectionPath, String path, Map<String, String> dataNeedUpdate) {

@@ -149,9 +149,7 @@ class _StoriesPageState extends State<StoriesPage> {
     try {
       final chatProvider = context.read<ChatProvider>();
       final file = File(xfile.path);
-      final fileName = 'story_${DateTime.now().millisecondsSinceEpoch}';
-      final snapshot = await chatProvider.uploadFile(file, fileName);
-      final url = await snapshot.ref.getDownloadURL();
+      final url = await chatProvider.uploadFile(file, 'image');
       await _publishStory(imageUrl: url);
     } catch (e) {
       Fluttertoast.showToast(msg: 'Error subiendo imagen');
@@ -213,10 +211,7 @@ class _StoriesPageState extends State<StoriesPage> {
       if (caption == null) return; // user dismissed
       setState(() => _uploading = true);
       final chatProvider = context.read<ChatProvider>();
-      final ext = p.extension(path).isNotEmpty ? p.extension(path) : '.mp3';
-      final fileName = 'story_audio_${DateTime.now().millisecondsSinceEpoch}$ext';
-      final snapshot = await chatProvider.uploadFile(file, fileName);
-      final url = await snapshot.ref.getDownloadURL();
+      final url = await chatProvider.uploadFile(file, 'audio');
       final displayName = picked.name;
       await _publishStory(
         audioUrl: url,
