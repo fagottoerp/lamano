@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../constants/constants.dart';
 import '../services/group_radio_service.dart';
 
@@ -114,28 +115,62 @@ class _GroupRadioWidgetState extends State<GroupRadioWidget> {
   }
 
   Future<void> _connect() async {
-    final success = await _radioService.connectToGroup(
-      groupChatId: widget.groupChatId,
-      userId: widget.currentUserId,
-      userName: widget.currentUserName,
-    );
+    // Verificar permisos de micrófono antes de conectar
+    var micStatus = await Permission.microphone.status;
+    
+    if (!micStatus.isGranted) {
+      // Pedir permiso de micrófono
+      micStatus = await Permission.microphone.request();
+      
+      if (!micStatus.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Permiso de micrófono denegado. Actívalo en Configuración.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+    }
 
-    if (success && mounted) {
+    // Intentar conectar
+    try {
+      final success = await _radioService.connectToGroup(
+        groupChatId: widget.groupChatId,
+        userId: widget.currentUserId,
+        userName: widget.currentUserName,
+      );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('🔊 Conectado a radio ${_radioFrequency}'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('❌ Error al conectar. Verifica permisos de micrófono.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🔊 Conectado a radio ${_radioFrequency}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ Error al conectar. Revisa tu conexión a internet.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 
