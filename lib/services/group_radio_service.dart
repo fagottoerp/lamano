@@ -53,42 +53,30 @@ class GroupRadioService {
   Future<bool> initialize() async {
     try {
       if (_engine != null) {
-        debugPrint('[RADIO] Engine ya inicializado');
         return true;
       }
 
-      debugPrint('[RADIO] Creando Agora RTC Engine...');
       _engine = createAgoraRtcEngine();
-      
-      debugPrint('[RADIO] Inicializando con AppId: $_agoraAppId');
       await _engine!.initialize(const RtcEngineContext(
         appId: _agoraAppId,
         channelProfile: ChannelProfileType.channelProfileCommunication,
       ));
 
       // Configuración para walkie-talkie
-      debugPrint('[RADIO] Configurando rol de broadcaster...');
       await _engine!.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
-      
-      debugPrint('[RADIO] Habilitando audio...');
       await _engine!.enableAudio();
-      
-      debugPrint('[RADIO] Configurando perfil de audio...');
       await _engine!.setAudioProfile(
         profile: AudioProfileType.audioProfileDefault,
         scenario: AudioScenarioType.audioScenarioChatroom,
       );
       
       // Configurar altavoz según estado inicial (por defecto activado)
-      debugPrint('[RADIO] Configurando altavoz inicial...');
       await _engine!.setEnableSpeakerphone(_isSpeakerEnabled);
       
       // Empezar muteado (PTT)
-      debugPrint('[RADIO] Configurando mute inicial (PTT)...');
       await _engine!.muteLocalAudioStream(true);
 
       // Registrar event handlers
-      debugPrint('[RADIO] Registrando event handlers...');
       _engine!.registerEventHandler(RtcEngineEventHandler(
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
           debugPrint('[RADIO] Conectado al canal: ${connection.channelId}');
@@ -124,18 +112,17 @@ class GroupRadioService {
       ));
 
       // Habilitar indicador de volumen
-      debugPrint('[RADIO] Habilitando indicador de volumen...');
       await _engine!.enableAudioVolumeIndication(
         interval: 500,
         smooth: 3,
         reportVad: true,
       );
 
-      debugPrint('[RADIO] ✅ Inicialización completada exitosamente');
+      debugPrint('[RADIO] ✅ Engine inicializado correctamente');
       return true;
     } catch (e, stackTrace) {
-      debugPrint('[RADIO] ❌ ERROR al inicializar Agora: $e');
-      debugPrint('[RADIO] Stack trace: $stackTrace');
+      debugPrint('[RADIO] ❌ ERROR al inicializar: $e');
+      debugPrint('[RADIO] Stack: $stackTrace');
       return false;
     }
   }
@@ -147,35 +134,23 @@ class GroupRadioService {
     required String userName,
   }) async {
     try {
-      debugPrint('[RADIO] Iniciando conexión para usuario $userName...');
-      
       if (_engine == null) {
-        debugPrint('[RADIO] Engine no inicializado, inicializando...');
         final initialized = await initialize();
         if (!initialized) {
-          debugPrint('[RADIO] ERROR: Fallo al inicializar Agora engine');
+          debugPrint('[RADIO] ❌ Fallo al inicializar engine');
           return false;
         }
-        debugPrint('[RADIO] Engine inicializado correctamente');
       }
 
       if (_isConnected && _currentChannelName != null) {
-        debugPrint('[RADIO] Ya conectado a otro canal, desconectando...');
         await disconnect();
       }
 
       // Canal = groupChatId sanitizado
       final channelName = groupChatId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '');
-      debugPrint('[RADIO] Canal objetivo: $channelName');
       
       // Obtener token de Agora
-      debugPrint('[RADIO] Solicitando token de Agora...');
       final token = await _fetchAgoraToken(channelName, userId);
-      if (token.isEmpty) {
-        debugPrint('[RADIO] ADVERTENCIA: Token vacío (modo test)');
-      } else {
-        debugPrint('[RADIO] Token obtenido correctamente');
-      }
       
       _currentChannelName = channelName;
       _currentUserId = userId;
@@ -188,14 +163,12 @@ class GroupRadioService {
         publishMicrophoneTrack: true,
       );
 
-      debugPrint('[RADIO] Uniéndose al canal $channelName...');
       await _engine!.joinChannel(
         token: token,
         channelId: channelName,
         uid: int.tryParse(userId.hashCode.toString()) ?? 0,
         options: options,
       );
-      debugPrint('[RADIO] joinChannel ejecutado (esperando callback onJoinChannelSuccess)');
 
       // CRÍTICO: Forzar configuración de altavoz después de unirse
       // Esto asegura que se escuche correctamente según la preferencia del usuario
@@ -204,7 +177,6 @@ class GroupRadioService {
       debugPrint('[RADIO] Audio configurado: ${_isSpeakerEnabled ? "ALTAVOZ" : "AURICULAR"}');
 
       // Registrar en Firestore
-      debugPrint('[RADIO] Registrando usuario en Firestore...');
       await FirebaseFirestore.instance
           .collection('groups')
           .doc(groupChatId)
@@ -216,13 +188,12 @@ class GroupRadioService {
         'connectedAt': FieldValue.serverTimestamp(),
         'speaking': false,
       });
-      debugPrint('[RADIO] Usuario registrado en Firestore correctamente');
 
-      debugPrint('[RADIO] ✅ Conexión completada exitosamente');
+      debugPrint('[RADIO] ✅ Conexión completada');
       return true;
     } catch (e, stackTrace) {
-      debugPrint('[RADIO] ❌ ERROR al conectar: $e');
-      debugPrint('[RADIO] Stack trace: $stackTrace');
+      debugPrint('[RADIO] ❌ ERROR: $e');
+      debugPrint('[RADIO] Stack: $stackTrace');
       return false;
     }
   }

@@ -137,40 +137,28 @@ class _GroupRadioWidgetState extends State<GroupRadioWidget> {
     }
 
     // Intentar conectar
-    try {
-      final success = await _radioService.connectToGroup(
-        groupChatId: widget.groupChatId,
-        userId: widget.currentUserId,
-        userName: widget.currentUserName,
-      );
+    final success = await _radioService.connectToGroup(
+      groupChatId: widget.groupChatId,
+      userId: widget.currentUserId,
+      userName: widget.currentUserName,
+    );
 
-      if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('🔊 Conectado a radio ${_radioFrequency}'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('❌ Error al conectar. Revisa tu conexión a internet.'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
+    if (success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🔊 Conectado a radio ${_radioFrequency}'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ Error al conectar al radio. Intenta nuevamente.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
     }
   }
 
