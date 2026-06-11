@@ -30,7 +30,7 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     PackageInfo.fromPlatform().then((info) {
-      if (mounted) setState(() => _appVersion = info.version);
+      if (mounted) setState(() => _appVersion = '${info.version} (build ${info.buildNumber})');
     });
     _ytController = YoutubePlayerController.fromVideoId(
       videoId: _videoId,
