@@ -21,12 +21,10 @@ import 'package:flutter_chat_demo/pages/group_chat_page.dart';
 import 'package:flutter_chat_demo/pages/login_page.dart';
 import 'package:flutter_chat_demo/pages/settings_page.dart';
 import 'package:flutter_chat_demo/pages/stories_page.dart' show StoriesPage, StoryViewPage;
-import 'package:flutter_chat_demo/pages/gps_vivo_page.dart';
 import 'package:flutter_chat_demo/pages/admin_group_manage_page.dart';
 import 'package:flutter_chat_demo/pages/contacts_page.dart';
 import 'package:flutter_chat_demo/pages/recent_chats_page.dart';
 import 'package:flutter_chat_demo/pages/mapa_mundis_page.dart';
-import 'package:flutter_chat_demo/pages/traspasos_activos_page.dart'; // <── Traspasos
 import 'motoboy_orders_page.dart';
 import 'temp_chats_page.dart';
 import 'package:geolocator/geolocator.dart';
@@ -74,7 +72,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _shiftLocked = false;
   bool _mustStartShift = false;
   bool _showingShiftDialog = false;
-  int _refreshKey = 0; // increment to force home rebuild
 
   late final _authProvider = context.read<AuthProvider>();
   late final _homeProvider = context.read<HomeProvider>();
@@ -87,7 +84,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   List<MenuSetting> get _dynamicMenus => [
     if (_isShiftUser) MenuSetting(title: 'Apertura y cierre', icon: Icons.manage_history),
-    MenuSetting(title: 'Actualizar app', icon: Icons.system_update_alt),
+    MenuSetting(title: 'Actualizar aplicación', icon: Icons.system_update),
     MenuSetting(title: 'Configuración', icon: Icons.settings),
     MenuSetting(title: 'Cerrar sesión', icon: Icons.exit_to_app),
   ];
@@ -208,7 +205,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         final groupChatId = message.data['groupChatId'] ?? '';
         final senderName = message.data['senderName'] as String? ?? '';
         // If from admin → it's an order notification → increment badge on Mis Órdenes tab
-        final orderTabIndex = 3 + (_canSeeTempChats ? 1 : 0) + (_canSeeCaminadorMenu ? 1 : 0);
+        final orderTabIndex = 2 + (_canSeeTempChats ? 1 : 0) + (_canSeeCaminadorMenu ? 1 : 0);
         if (_isMotoboy && idFrom == AppConstants.adminFirebaseUid && _selectedTab != orderTabIndex) {
           setState(() => _orderBadge++);
         }
@@ -462,8 +459,8 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ),
         ),
       );
-    } else if (choice.title == 'Actualizar app') {
-      AppUpdater.checkAndUpdate(context, force: true, showUpToDate: true);
+    } else if (choice.title == 'Actualizar aplicación') {
+      AppUpdater.checkAndUpdate(context);
     } else if (choice.title == 'Cerrar sesión') {
       _handleSignOut();
     } else {
@@ -798,7 +795,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
     }
 
-    final appBarTitles = <String>['Red de Información Operativa', 'Inicio', 'Chats'];
+    final appBarTitles = <String>['Red de Información Operativa', 'Inicio'];
     if (_canSeeTempChats) appBarTitles.add('Chat Temporales');
     if (_canSeeCaminadorMenu) appBarTitles.add('Caminador');
     if (_isMotoboy) appBarTitles.add('Mis Órdenes');
@@ -820,29 +817,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 child: Icon(Icons.lock_clock, color: Colors.redAccent),
               ),
             ),
-          // ── Refresh button (Inicio tab only) ──
-          if (_selectedTab == 1)
-            _buildTopAction(
-              icon: Icons.refresh,
-              tooltip: 'Refrescar',
-              onTap: () => setState(() => _refreshKey++),
-            ),
-          if (_isAdmin)
-            _buildTopAction(
-              icon: Icons.my_location,
-              tooltip: 'GPS Vivo',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const GpsVivoPage()),
-              ),
-            ),
-          _buildTopAction(
-            icon: Icons.local_shipping_outlined,
-            tooltip: 'Traspasos',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const TraspasosActivosPage()),
-            ),
-          ),
           if (_isAdmin)
             _buildTopAction(
               icon: Icons.group_add_outlined,
@@ -855,10 +829,13 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
           _buildTopAction(
             icon: Icons.people_outline,
             tooltip: 'Contactos',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ContactsPage()),
-            ),
+            onTap: () {
+              setState(() => _selectedTab = 1);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ContactsPage()),
+              );
+            },
           ),
           _buildPopupMenu(),
         ],
@@ -868,7 +845,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         children: [
           const MapaMundisPage(),
           _buildHomeBody(),
-          const RecentChatsPage(),
           if (_canSeeTempChats) const TempChatsPage(),
           if (_canSeeCaminadorMenu) _buildCaminadorTab(),
           if (_isMotoboy) const MotoboOrdersPage(),
@@ -880,9 +856,8 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildBottomNav() {
     final items = [
-      {'key': 'mapa_mundis', 'icon': Icons.public_outlined, 'active': Icons.public, 'label': 'Mapa Mundis (GTA) RED'},
+      {'key': 'mapa_mundis', 'icon': Icons.public_outlined, 'active': Icons.public, 'label': 'Red'},
       {'key': 'home', 'icon': Icons.home_outlined, 'active': Icons.home, 'label': 'Inicio'},
-      {'key': 'chats', 'icon': Icons.chat_bubble_outline, 'active': Icons.chat_bubble, 'label': 'Chats'},
       if (_canSeeTempChats) {'key': 'temp', 'icon': Icons.forum_outlined, 'active': Icons.forum, 'label': 'Chat Temp.'},
       if (_canSeeCaminadorMenu) {'key': 'caminador', 'icon': Icons.directions_walk_outlined, 'active': Icons.directions_walk, 'label': 'Caminador'},
       if (_isMotoboy) {'key': 'orders', 'icon': Icons.delivery_dining_outlined, 'active': Icons.delivery_dining, 'label': 'Mis Órdenes'},
@@ -930,7 +905,6 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       int badgeCount = 0;
                       if (item['key'] == 'orders') badgeCount = _orderBadge;
                       if (item['key'] == 'home') badgeCount = chatsUnread;
-                      if (item['key'] == 'chats') badgeCount = chatsUnread;
                       if (item['key'] == 'temp') badgeCount = tempUnread;
                       return Expanded(
                         child: GestureDetector(
@@ -1217,8 +1191,26 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
             const SizedBox(height: 10),
             _buildGroupsSection(),
 
+            const SizedBox(height: 16),
+
+            // ── Chats (siempre debajo de grupos, estilo WhatsApp) ───────────
+            Row(
+              children: const [
+                Icon(Icons.chat_bubble_outline, color: ColorConstants.themeColor, size: 18),
+                SizedBox(width: 6),
+                Text('Chats',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: ColorConstants.textPrimary,
+                        letterSpacing: 0.3)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const RecentChatsPage(embedded: true),
+
             // ── Panel alertas de pánico (solo admin, debajo de grupos) ──
-            if (_isAdmin) ...[const SizedBox(height: 16), _buildPanicAlertsSection()],
+            // Alertas ahora solo en top bar de mapa_mundis_page
           ],
         ),
       ),
@@ -1419,7 +1411,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // ── Panel de alertas de pánico ────────────────────────────────────────────
   Widget _buildPanicAlertsSection() {
     return KeyedSubtree(
-      key: ValueKey('panic_$_refreshKey'),
+      key: const ValueKey('panic_panel'),
       child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('panic_alerts')

@@ -99,6 +99,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   Map<String, Map<String, dynamic>> _misionPuertoLocations = {};
   StreamSubscription<DocumentSnapshot>? _misionPuertoGroupSub;
   StreamSubscription<QuerySnapshot>? _misionPuertoLocationsSub;
+  StreamSubscription<QuerySnapshot>? _allUsersLocationsSub;
   bool _isMisionPuertoMember = false;
 
   Position? _myPosition;
@@ -127,6 +128,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   final Set<String> _insideAlertRadius = <String>{};
   final Set<String> _insideZoneRadius = <String>{};
   final Map<String, int> _userReputation = <String, int>{};
+  int _alertPushBadge = 0;
   int _dispatchIndex = 0;
   bool _alertsPrimed = false;
   bool _isAdmin = false;
@@ -159,10 +161,13 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     'zones': true,
     'wazeControls': true,
     'misionPuerto': true,
+    'usuarios': true,
     'traffic': false,
     'transit': false,
     'bike': false,
   };
+
+  Map<String, Map<String, dynamic>> _allUsersLocations = {};
 
   @override
   void initState() {
@@ -231,6 +236,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   _buildFilterChip('⚡', 'Rápidas', 'rapidas'),
                   _buildFilterChip('🧭', 'Zonas', 'zones'),
                   _buildFilterChip('🚔', 'Controles Waze', 'wazeControls'),
+                  if (_isAdmin) _buildFilterChip('👥', 'Usuarios', 'usuarios'),
                   if (_isMisionPuertoMember) _buildFilterChip('🎯', 'Misión Puerto', 'misionPuerto'),
                 ],
               ),
@@ -270,6 +276,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     _wazeControlsSub?.cancel();
     _misionPuertoGroupSub?.cancel();
     _misionPuertoLocationsSub?.cancel();
+    _allUsersLocationsSub?.cancel();
     _positionSub?.cancel();
     _traspasosLocationsSub?.cancel();
     _dispatchRotateTimer?.cancel();
@@ -335,6 +342,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       _listenSafePlaces();
       _listenWazePoliceControls();
       _listenMisionPuertoGroup();
+      _listenAllUsersLocationsForAdmin();
       _startPositionTracking();
       _startAutoShareForTraspasos(); // <── Auto-compartir GPS para traspasos
     } catch (_) {
@@ -1387,6 +1395,53 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     });
   }
 
+  void _listenAllUsersLocationsForAdmin() {
+    _allUsersLocationsSub?.cancel();
+    if (!_isAdmin) {
+      if (mounted) {
+        setState(() => _allUsersLocations = {});
+      }
+      return;
+    }
+
+    _allUsersLocationsSub = _firestore
+        .collection('users_locations')
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+
+      final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final locations = <String, Map<String, dynamic>>{};
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final uid = doc.id;
+        if (uid == currentUid) continue;
+
+        final lat = (data['lat'] as num?)?.toDouble() ?? 0.0;
+        final lng = (data['lng'] as num?)?.toDouble() ?? 0.0;
+        if (lat == 0.0 && lng == 0.0) continue;
+
+        final updatedAt = (data['updatedAt'] as num?)?.toInt() ?? 0;
+        // Mostrar todos los usuarios sin filtrar por edad (como gps_vivo.php)
+
+        locations[uid] = {
+          'uid': uid,
+          'nickname': data['nickname'] ?? 'Usuario',
+          'lat': lat,
+          'lng': lng,
+          'online': data['online'] ?? false,
+          'updatedAt': updatedAt,
+        };
+      }
+
+      setState(() => _allUsersLocations = locations);
+    }, onError: (e) {
+      debugPrint('Error listening admin users locations: $e');
+    });
+  }
+
   double _haversineKm(double lat1, double lng1, double lat2, double lng2) {
     const earthRadius = 6371.0;
     final dLat = _degToRad(lat2 - lat1);
@@ -2016,6 +2071,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
           iOS: DarwinNotificationDetails(),
         ),
       );
+      if (mounted) {
+        setState(() => _alertPushBadge += 1);
+      }
       SystemSound.play(SystemSoundType.alert);
     }
   }
@@ -4086,6 +4144,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   }
 
   void _openAlertsPanel() {
+    if (_alertPushBadge > 0) {
+      setState(() => _alertPushBadge = 0);
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -4431,7 +4492,10 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         )
         .toList();
 
-    final poiMarkers = _pois.map((p) {
+    // Filtrar POIs: solo mostrar los que están abiertos
+    final poiMarkers = _pois
+        .where((p) => _isPoiOpen(p))
+        .map((p) {
       try {
         final lat = (p['lat'] as num).toDouble();
         final lng = (p['lng'] as num).toDouble();
@@ -4771,6 +4835,66 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       }
     }
 
+    // Marcadores globales de usuarios (solo admin, reemplaza GPS Vivo dentro de RED)
+    final adminUsersMarkers = <Marker>[];
+    if (_isAdmin && _layerVisible['usuarios'] == true) {
+      for (final entry in _allUsersLocations.entries) {
+        final loc = entry.value;
+        final lat = (loc['lat'] as num).toDouble();
+        final lng = (loc['lng'] as num).toDouble();
+        final nickname = (loc['nickname'] ?? 'Usuario').toString();
+        final online = (loc['online'] == true);
+
+        adminUsersMarkers.add(
+          Marker(
+            point: LatLng(lat, lng),
+            width: 92,
+            height: 56,
+            child: GestureDetector(
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: Text(nickname),
+                    content: Text('Lat: ${lat.toStringAsFixed(5)}\nLng: ${lng.toStringAsFixed(5)}\nEstado: ${online ? 'En linea' : 'Sin conexion'}'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('OK'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      nickname,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Icon(
+                    Icons.person_pin_circle,
+                    color: online ? Colors.green : Colors.grey,
+                    size: 26,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
     final markers = <Marker>[
       if (_layerVisible['carabineros'] == true) ...stationMarkersCarab,
       if (_layerVisible['pdi'] == true) ...stationMarkersPdi,
@@ -4785,6 +4909,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       ...traspasoMarkers, // <── Marcadores de traspasos GPS
       ...wazeControlMarkers, // <── Controles policiales Waze (GTA style)
       ...misionPuertoMarkers, // <── Miembros Misión Puerto con distancia a controles
+      ...adminUsersMarkers,
       if (myLatLng != null)
         Marker(
           point: myLatLng,
@@ -4822,7 +4947,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                 // ═══════════════════════════════════════════════════════════════
                 if (_layerVisible['pois'] == true && _pois.isNotEmpty) {
                   const double tapRadius = 0.0005; // ~50 metros en lat/lng
-                  for (final poi in _pois) {
+                  // Buscar solo en POIs abiertos (consistente con marcadores visibles)
+                  final openPois = _pois.where((p) => _isPoiOpen(p)).toList();
+                  for (final poi in openPois) {
                     try {
                       final poiLat = (poi['lat'] as num).toDouble();
                       final poiLng = (poi['lng'] as num).toDouble();
@@ -4956,6 +5083,41 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   onPressed: _openFiltersSheet,
                   icon: const Icon(Icons.filter_list),
                   label: const Text('Filtros'),
+                ),
+                const SizedBox(width: 8),
+                Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  elevation: 3,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: _openAlertsPanel,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.notifications_active_outlined, size: 18, color: Color(0xFFF9A825)),
+                          const SizedBox(width: 6),
+                          const Text('Alertas', style: TextStyle(fontWeight: FontWeight.w700)),
+                          if (_alertPushBadge > 0) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD32F2F),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '+$_alertPushBadge',
+                                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -5280,46 +5442,6 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                 width: 54,
                 height: 54,
                 child: Icon(Icons.add_alert, size: 30, color: ColorConstants.themeColor),
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          right: 14,
-          bottom: 18,
-          child: Material(
-            color: Colors.white,
-            elevation: 8,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: _openAlertsPanel,
-              onLongPress: _openCreateAlertSheet,
-              child: SizedBox(
-                width: 62,
-                height: 62,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, size: 36, color: Color(0xFFF9A825)),
-                    if (_activeAlerts.isNotEmpty)
-                      Positioned(
-                        top: 10,
-                        right: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFD32F2F),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${_activeAlerts.length}',
-                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
               ),
             ),
           ),

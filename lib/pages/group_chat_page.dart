@@ -18,6 +18,8 @@ import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:flutter_chat_demo/widgets/rainbow_text.dart';
 import 'package:flutter_chat_demo/widgets/location_map_bubble.dart';
 import 'package:flutter_chat_demo/widgets/sticker_picker.dart';
+import 'package:flutter_chat_demo/widgets/group_radio_widget.dart';
+import 'package:flutter_chat_demo/widgets/whatsapp_emoji_picker.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
@@ -54,6 +56,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   bool _isLoading = false;
   bool _showAttachPanel = false;
   bool _showStickerPanel = false;
+  bool _showEmojiPicker = false;
   String _imageUrl = '';
 
   // Reply to message
@@ -667,6 +670,27 @@ class _GroupChatPageState extends State<GroupChatPage> {
       setState(() => _isLoading = false);
       Fluttertoast.showToast(msg: e.toString());
     }
+  }
+
+  void _openRadioPanel() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: GroupRadioWidget(
+          groupChatId: widget.arguments.groupId,
+          groupName: widget.arguments.groupName,
+          currentUserId: _currentUserId,
+          currentUserName: _currentNickname,
+        ),
+      ),
+    );
   }
 
   void _onSendMessage(String content, int type) {
@@ -2293,6 +2317,12 @@ class _GroupChatPageState extends State<GroupChatPage> {
             onTap: () => _startGroupAgoraCall(isVideo: true),
           ),
           _buildTopAction(
+            icon: Icons.radio,
+            tooltip: 'Radio walkie-talkie',
+            iconColor: ColorConstants.primaryColor,
+            onTap: _openRadioPanel,
+          ),
+          _buildTopAction(
             icon: Icons.more_vert,
             tooltip: 'Más opciones',
             iconColor: Colors.black,
@@ -2839,6 +2869,24 @@ class _GroupChatPageState extends State<GroupChatPage> {
             ),
           // Quick alert panel
           if (_showAlertPanel) _buildQuickAlertPanel(),
+          if (_showEmojiPicker)
+            WhatsAppEmojiPicker(
+              onEmojiSelected: (emoji) {
+                final currentText = _chatInputController.text;
+                final selection = _chatInputController.selection;
+                final newText = currentText.replaceRange(
+                  selection.start,
+                  selection.end,
+                  emoji,
+                );
+                _chatInputController.value = TextEditingValue(
+                  text: newText,
+                  selection: TextSelection.collapsed(
+                    offset: selection.start + emoji.length,
+                  ),
+                );
+              },
+            ),
           if (_showStickerPanel)
             StickerPicker(
               onStickerSelected: (stickerUrl) {
@@ -2915,6 +2963,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                             onTap: () => setState(() {
                               _showAttachPanel = false;
                               _showStickerPanel = false;
+                              _showEmojiPicker = false;
                             }),
                             onChanged: _onTypingChanged,
                             textInputAction: TextInputAction.send,
@@ -2939,7 +2988,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
                             setState(() {
                               _showAlertPanel = false;
                               _showAttachPanel = false;
-                              _showStickerPanel = !_showStickerPanel;
+                              _showStickerPanel = false;
+                              _showEmojiPicker = !_showEmojiPicker;
                             });
                           },
                         ),
@@ -2949,6 +2999,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                             _focusNode.unfocus();
                             setState(() {
                               _showStickerPanel = false;
+                              _showEmojiPicker = false;
                               _showAttachPanel = !_showAttachPanel;
                             });
                           },

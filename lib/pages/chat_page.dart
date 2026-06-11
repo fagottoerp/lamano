@@ -19,6 +19,7 @@ import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:flutter_chat_demo/widgets/rainbow_text.dart';
 import 'package:flutter_chat_demo/widgets/location_map_bubble.dart';
 import 'package:flutter_chat_demo/widgets/sticker_picker.dart';
+import 'package:flutter_chat_demo/widgets/whatsapp_emoji_picker.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:fluttertoast/fluttertoast.dart';
@@ -60,6 +61,7 @@ class ChatPageState extends State<ChatPage> {
   bool _isLoading = false;
   bool _showAttachPanel = false;
   bool _showStickerPanel = false;
+  bool _showEmojiPicker = false;
   String _imageUrl = "";
 
   // Live location
@@ -2066,6 +2068,24 @@ class ChatPageState extends State<ChatPage> {
                 ],
               ),
             ),
+          if (_showEmojiPicker)
+            WhatsAppEmojiPicker(
+              onEmojiSelected: (emoji) {
+                final currentText = _chatInputController.text;
+                final selection = _chatInputController.selection;
+                final newText = currentText.replaceRange(
+                  selection.start,
+                  selection.end,
+                  emoji,
+                );
+                _chatInputController.value = TextEditingValue(
+                  text: newText,
+                  selection: TextSelection.collapsed(
+                    offset: selection.start + emoji.length,
+                  ),
+                );
+              },
+            ),
           if (_showStickerPanel)
             StickerPicker(
               onStickerSelected: (stickerUrl) {
@@ -2137,6 +2157,7 @@ class ChatPageState extends State<ChatPage> {
                             onTap: () => setState(() {
                               _showAttachPanel = false;
                               _showStickerPanel = false;
+                              _showEmojiPicker = false;
                             }),
                             onChanged: _onTypingChanged,
                             textInputAction: TextInputAction.send,
@@ -2160,7 +2181,8 @@ class ChatPageState extends State<ChatPage> {
                             _focusNode.unfocus();
                             setState(() {
                               _showAttachPanel = false;
-                              _showStickerPanel = !_showStickerPanel;
+                              _showStickerPanel = false;
+                              _showEmojiPicker = !_showEmojiPicker;
                             });
                           },
                         ),
@@ -2170,6 +2192,7 @@ class ChatPageState extends State<ChatPage> {
                             _focusNode.unfocus();
                             setState(() {
                               _showStickerPanel = false;
+                              _showEmojiPicker = false;
                               _showAttachPanel = !_showAttachPanel;
                             });
                           },

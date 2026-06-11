@@ -1,42 +1,21 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 import 'package:flutter_chat_demo/constants/constants.dart';
+import 'package:flutter_chat_demo/providers/auth_provider.dart' as app_auth;
+import 'package:flutter_chat_demo/providers/chat_provider.dart';
+import 'package:flutter_chat_demo/services/live_location_service.dart';
 import 'package:flutter_chat_demo/widgets/theme_widgets.dart';
-
-// Definición local de tipos de alerta
-class _AlertDef {
-  final int id;
-  final String emoji;
-  final String label;
-  final Color color;
-  const _AlertDef(this.id, this.emoji, this.label, this.color);
-}
-
-const _kAlertDefs = [
-  _AlertDef(1, '🚔', 'Control policial', Color(0xFF3B82F6)),
-  _AlertDef(2, '⚠️', 'Accidente',        Color(0xFFEAB308)),
-  _AlertDef(3, '🚨', 'Peligro en la vía',Color(0xFFEF4444)),
-  _AlertDef(4, '🚧', 'Tráfico / Taco',   Color(0xFFF97316)),
-  _AlertDef(5, '🎉', 'KLK MANE ACTIVO',  Color(0xFFEC4899)),
-];
-
-_AlertDef _defForKind(int kind) =>
-    _kAlertDefs.firstWhere((d) => d.id == kind, orElse: () => _kAlertDefs[2]);
-
-class _AlertMarkerData {
-  final String id;
-  final int kind;
-  final double lat;
-  final double lng;
-  final String senderName;
-  final String groupName;
-  final int ts;
-  const _AlertMarkerData({required this.id, required this.kind, required this.lat, required this.lng, required this.senderName, required this.groupName, required this.ts});
-}
 
 class GpsVivoPage extends StatefulWidget {
   const GpsVivoPage({super.key, this.focusLat, this.focusLng, this.focusLabel});
@@ -53,6 +32,29 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
   final MapController _mapController = MapController();
   String? _selectedUserId;
   late final Future<bool> _isAdminFuture = _checkIsAdmin();
+
+  // Walkie-talkie PTT (Push-To-Talk)
+  final _audioRecorder = AudioRecorder();
+  bool _isRecording = false;
+  String? _recordingPath;
+  int _recordSeconds = 0;
+  Timer? _recordTimer;
+  late final ChatProvider _chatProvider;
+  late final app_auth.AuthProvider _authProvider;
+
+  @override
+  void initState() {
+    super.initState();
+    _chatProvider = context.read<ChatProvider>();
+    _authProvider = context.read<app_auth.AuthProvider>();
+  }
+
+  @override
+  void dispose() {
+    _recordTimer?.cancel();
+    _audioRecorder.dispose();
+    super.dispose();
+  }
 
   Future<bool> _checkIsAdmin() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -156,33 +158,7 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
             zoom = 12.0;
           }
 
-          // Segundo StreamBuilder para alertas activas
-          return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('alerts')
-                .where('expireAt', isGreaterThan: DateTime.now().millisecondsSinceEpoch)
-                .snapshots(),
-            builder: (context, alertSnap) {
-              final alerts = <_AlertMarkerData>[];
-              if (alertSnap.hasData) {
-                for (final doc in alertSnap.data!.docs) {
-                  final d = doc.data() as Map<String, dynamic>;
-                  final aLat = (d['lat'] as num?)?.toDouble();
-                  final aLng = (d['lng'] as num?)?.toDouble();
-                  if (aLat == null || aLng == null) continue;
-                  alerts.add(_AlertMarkerData(
-                    id: doc.id,
-                    kind: (d['alertKind'] as num?)?.toInt() ?? 3,
-                    lat: aLat,
-                    lng: aLng,
-                    senderName: d['senderName'] as String? ?? '',
-                    groupName: d['groupName'] as String? ?? '',
-                    ts: (d['ts'] as num?)?.toInt() ?? 0,
-                  ));
-                }
-              }
-
-              return Column(
+          return Column(
             children: [
               // User chips bar
               if (users.isNotEmpty)
@@ -243,165 +219,116 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
                 ),
               // Map
               Expanded(
-                child: FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: center,
-                    initialZoom: zoom,
-                  ),
+                child: Stack(
                   children: [
-                    TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.dfa.flutterchatdemo',
-                    ),
-                    // Markers de usuarios
-                    MarkerLayer(
-                      markers: users.map((u) {
-                        final isSelected = _selectedUserId == u.uid;
-                        final ago = _agoText(u.updatedAt);
-                        return Marker(
-                          point: LatLng(u.lat, u.lng),
-                          width: isSelected ? 90 : 70,
-                          height: isSelected ? 80 : 60,
-                          child: GestureDetector(
-                            onTap: () => setState(() {
-                              _selectedUserId = isSelected ? null : u.uid;
-                            }),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? const Color(0xFF1565C0)
-                                        : Colors.white,
-                                    borderRadius: BorderRadius.circular(8),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black26,
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 2),
+                    FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: center,
+                        initialZoom: zoom,
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.dfa.flutterchatdemo',
+                        ),
+                        // Markers de usuarios
+                        MarkerLayer(
+                          markers: users.map((u) {
+                            final isSelected = _selectedUserId == u.uid;
+                            final ago = _agoText(u.updatedAt);
+                            return Marker(
+                              point: LatLng(u.lat, u.lng),
+                              width: isSelected ? 90 : 70,
+                              height: isSelected ? 80 : 60,
+                              child: GestureDetector(
+                                onTap: () => setState(() {
+                                  _selectedUserId = isSelected ? null : u.uid;
+                                }),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? const Color(0xFF1565C0)
+                                            : Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black26,
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
-                                  child: Text(
-                                    u.nickname,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: isSelected ? Colors.white : Colors.black87,
+                                      child: Text(
+                                        u.nickname,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: isSelected ? Colors.white : Colors.black87,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Icon(
-                                  Icons.location_on,
-                                  color: isSelected
-                                      ? const Color(0xFF1565C0)
-                                      : (u.online ? Colors.redAccent : Colors.grey),
-                                  size: isSelected ? 30 : 24,
-                                ),
-                                if (isSelected && ago.isNotEmpty)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(4),
+                                    const SizedBox(height: 2),
+                                    Icon(
+                                      Icons.location_on,
+                                      color: isSelected
+                                          ? const Color(0xFF1565C0)
+                                          : (u.online ? Colors.redAccent : Colors.grey),
+                                      size: isSelected ? 30 : 24,
                                     ),
-                                    child: Text(
-                                      ago,
-                                      style: const TextStyle(color: Colors.white, fontSize: 9),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                    // ── Markers de alertas activas ──────────────────────
-                    MarkerLayer(
-                      markers: alerts.map((a) {
-                        final def = _defForKind(a.kind);
-                        final minsAgo = ((DateTime.now().millisecondsSinceEpoch - a.ts) / 60000).round();
-                        return Marker(
-                          point: LatLng(a.lat, a.lng),
-                          width: 52,
-                          height: 52,
-                          child: GestureDetector(
-                            onTap: () {
-                              showDialog(
-                                context: context,
-                                builder: (_) => AlertDialog(
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                  title: Text('${def.emoji} ${def.label}'),
-                                  content: Text(
-                                    '${a.senderName.isNotEmpty ? 'Reportado por ${a.senderName}' : ''}'
-                                    '${a.groupName.isNotEmpty ? '\nGrupo: ${a.groupName}' : ''}'
-                                    '\nHace $minsAgo min',
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context),
-                                      child: const Text('Cerrar'),
-                                    ),
+                                    if (isSelected && ago.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black54,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          ago,
+                                          style: const TextStyle(color: Colors.white, fontSize: 9),
+                                        ),
+                                      ),
                                   ],
                                 ),
-                              );
-                            },
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: def.color, width: 2.5),
-                                    boxShadow: [BoxShadow(color: def.color.withValues(alpha: 0.35), blurRadius: 8, spreadRadius: 1)],
-                                  ),
-                                ),
-                                Text(def.emoji, style: const TextStyle(fontSize: 22)),
-                              ],
-                            ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                    // Botones flotantes
+                    Positioned(
+                      bottom: 16,
+                      right: 16,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Botón Ver Todos
+                          FloatingActionButton(
+                            mini: true,
+                            backgroundColor: ColorConstants.primaryColor,
+                            tooltip: 'Ver todos',
+                            heroTag: 'btn_view_all',
+                            onPressed: () => setState(() => _selectedUserId = null),
+                            child: const Icon(Icons.people, color: Colors.white),
                           ),
-                        );
-                      }).toList(),
+                          const SizedBox(height: 12),
+                          // Botón Walkie-Talkie PTT
+                          _buildPttButton(),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-              // Barra inferior con conteo de alertas
-              if (alerts.isNotEmpty)
-                AppSectionCard(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFFF97316)),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${alerts.length} alerta${alerts.length > 1 ? 's' : ''} activa${alerts.length > 1 ? 's' : ''}: '
-                        '${alerts.map((a) => _defForKind(a.kind).emoji).join(' ')}',
-                        style: const TextStyle(fontSize: 11, color: Color(0xFFF97316), fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
             ],
           );
         },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        mini: true,
-        backgroundColor: ColorConstants.primaryColor,
-        tooltip: 'Ver todos',
-        onPressed: () => setState(() => _selectedUserId = null),
-        child: const Icon(Icons.people, color: Colors.white),
       ),
           ),
         );
@@ -415,6 +342,153 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
     if (diff.inSeconds < 60) return 'hace ${diff.inSeconds}s';
     if (diff.inMinutes < 60) return 'hace ${diff.inMinutes}min';
     return 'hace ${diff.inHours}h';
+  }
+
+  Widget _buildPttButton() {
+    final activeGroupId = LiveLocationService.instance.activeGroupId;
+    if (activeGroupId == null) {
+      // No hay grupo activo, no mostrar botón
+      return const SizedBox.shrink();
+    }
+
+    return GestureDetector(
+      onLongPressStart: (_) => _startRecording(),
+      onLongPressEnd: (_) => _stopAndSendRecording(),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: _isRecording ? 80 : 64,
+        height: _isRecording ? 80 : 64,
+        decoration: BoxDecoration(
+          color: _isRecording ? Colors.red : ColorConstants.primaryColor,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: _isRecording ? Colors.red.withOpacity(0.5) : Colors.black26,
+              blurRadius: _isRecording ? 12 : 8,
+              spreadRadius: _isRecording ? 2 : 0,
+            ),
+          ],
+        ),
+        child: _isRecording
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.mic, color: Colors.white, size: 28),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_recordSeconds}s',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              )
+            : const Icon(Icons.radio, color: Colors.white, size: 32),
+      ),
+    );
+  }
+
+  Future<void> _startRecording() async {
+    final activeGroupId = LiveLocationService.instance.activeGroupId;
+    if (activeGroupId == null) {
+      Fluttertoast.showToast(msg: 'No hay grupo activo');
+      return;
+    }
+
+    if (!await _audioRecorder.hasPermission()) {
+      Fluttertoast.showToast(msg: 'Sin permiso de micrófono');
+      return;
+    }
+
+    final dir = await getTemporaryDirectory();
+    _recordingPath = '${dir.path}/walkie_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _audioRecorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 64000, sampleRate: 22050),
+      path: _recordingPath!,
+    );
+
+    _recordSeconds = 0;
+    _recordTimer?.cancel();
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _recordSeconds++);
+    });
+
+    setState(() => _isRecording = true);
+    Fluttertoast.showToast(msg: '🎙️ Grabando... (mantén presionado)', toastLength: Toast.LENGTH_SHORT);
+  }
+
+  Future<void> _stopAndSendRecording() async {
+    _recordTimer?.cancel();
+    final path = await _audioRecorder.stop();
+    if (!mounted) return;
+
+    setState(() => _isRecording = false);
+
+    if (path == null) {
+      Fluttertoast.showToast(msg: 'Error al detener grabación');
+      return;
+    }
+
+    final file = File(path);
+    if (!file.existsSync()) {
+      Fluttertoast.showToast(msg: 'Archivo no encontrado');
+      return;
+    }
+
+    if (_recordSeconds < 1) {
+      Fluttertoast.showToast(msg: 'Audio muy corto');
+      await file.delete();
+      return;
+    }
+
+    final activeGroupId = LiveLocationService.instance.activeGroupId;
+    if (activeGroupId == null) {
+      Fluttertoast.showToast(msg: 'No hay grupo activo');
+      await file.delete();
+      return;
+    }
+
+    // Subir y enviar
+    try {
+      Fluttertoast.showToast(msg: '📤 Enviando audio...');
+      final url = await _chatProvider.uploadFile(file, 'audio');
+      await _sendAudioMessage(activeGroupId, url);
+      Fluttertoast.showToast(msg: '✅ Audio enviado (${_recordSeconds}s)', backgroundColor: Colors.green);
+    } catch (e) {
+      Fluttertoast.showToast(msg: 'Error al enviar: $e');
+    } finally {
+      await file.delete();
+    }
+  }
+
+  Future<void> _sendAudioMessage(String groupId, String audioUrl) async {
+    final userId = _authProvider.userFirebaseId ?? '';
+    final nickname = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Usuario';
+    final rolId = _authProvider.prefs.getString(FirestoreConstants.rolId) ?? '';
+    final ts = DateTime.now().millisecondsSinceEpoch;
+
+    final docRef = FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(groupId)
+        .collection(groupId)
+        .doc(ts.toString());
+
+    final data = <String, dynamic>{
+      FirestoreConstants.idFrom: userId,
+      FirestoreConstants.idTo: '',
+      FirestoreConstants.timestamp: ts.toString(),
+      FirestoreConstants.content: audioUrl,
+      FirestoreConstants.type: TypeMessage.audio,
+      'senderName': nickname,
+      'senderRolId': rolId,
+      'readBy': {userId: ts},
+    };
+
+    await FirebaseFirestore.instance.runTransaction((tx) async {
+      tx.set(docRef, data);
+    });
   }
 }
 

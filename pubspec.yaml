@@ -2,7 +2,7 @@ name: flutter_chat_demo
 description: This is the demo for chat app by Flutter
 publish_to: 'none'
 
-version: 3.11.88+188
+version: 3.12.9+209
 
 dependencies:
   flutter:
@@ -46,6 +46,7 @@ dependencies:
   video_player: ^2.9.2
   flutter_colorpicker: ^1.1.0
   google_fonts: ^6.2.1
+  agora_rtc_engine: ^6.3.2
 
 dev_dependencies:
   flutter_test:
