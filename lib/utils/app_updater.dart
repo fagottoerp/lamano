@@ -51,21 +51,27 @@ class AppUpdater {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final latestVersion = data['version'] as String;
+      final latestBuild = data['build'] as int? ?? 0;
       final apkUrl = data['apk_url'] as String;
       final notes = (data['notes'] as String?) ?? '';
+      final forceUpdate = data['force_update'] as bool? ?? false;
 
       final info = await PackageInfo.fromPlatform();
-      if (!_isNewer(latestVersion, info.version)) {
+      final currentBuild = int.tryParse(info.buildNumber) ?? 0;
+      
+      // Comparar build number en vez de solo versión
+      if (latestBuild <= currentBuild) {
         if (showUpToDate && context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Ya tienes la última versión (${info.version}).')),
+            SnackBar(content: Text('Ya tienes la última versión (${info.version} build $currentBuild).')),
           );
         }
         return;
       }
 
-      // Don't show dialog again if user already dismissed this exact version
-      if (!force) {
+      // Si es actualización forzosa, NO verificar dismissed
+      // Si NO es forzosa, verificar si el usuario ya la rechazó
+      if (!force && !forceUpdate) {
         final prefs = await SharedPreferences.getInstance();
         final dismissed = prefs.getString(_prefsDismissedKey) ?? '';
         if (dismissed == latestVersion) return;
@@ -75,29 +81,55 @@ class AppUpdater {
 
       final confirm = await showDialog<bool>(
         context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          title: Text('Nueva versión v$latestVersion disponible'),
-          content: Text(notes.isNotEmpty
-              ? notes
-              : 'Hay una actualización disponible. ¿Deseas instalarla ahora?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Después'),
+        barrierDismissible: !forceUpdate, // No se puede cerrar si es forzosa
+        builder: (_) => PopScope(
+          canPop: !forceUpdate, // No se puede salir con back button si es forzosa
+          child: AlertDialog(
+            title: Row(
+              children: [
+                if (forceUpdate) ...[
+                  const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: Text(
+                    forceUpdate 
+                        ? '⚠️ Actualización Obligatoria'
+                        : 'Nueva versión v$latestVersion disponible',
+                  ),
+                ),
+              ],
             ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Actualizar'),
-            ),
-          ],
+            content: Text(notes.isNotEmpty
+                ? notes
+                : 'Hay una actualización disponible. ¿Deseas instalarla ahora?'),
+            actions: [
+              if (!forceUpdate) // Solo mostrar "Después" si NO es forzosa
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Después'),
+                ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: forceUpdate
+                    ? ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      )
+                    : null,
+                child: Text(forceUpdate ? 'Actualizar Ahora' : 'Actualizar'),
+              ),
+            ],
+          ),
         ),
       );
 
       if (confirm != true) {
-        // Remember that user dismissed this version
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_prefsDismissedKey, latestVersion);
+        // Si NO es forzosa, guardar que el usuario la rechazó
+        if (!forceUpdate) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_prefsDismissedKey, latestVersion);
+        }
         return;
       }
       if (!context.mounted) return;
