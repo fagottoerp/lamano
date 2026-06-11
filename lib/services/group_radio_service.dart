@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -177,6 +178,8 @@ class GroupRadioService {
       });
 
       debugPrint('[RADIO] ✅ Conexión completada');
+      // Mantener CPU/audio activo cuando pantalla se bloquea
+      _startRadioWakeLock(userName);
       return true;
     } catch (e, stackTrace) {
       debugPrint('[RADIO] ❌ ERROR: $e');
@@ -187,6 +190,7 @@ class GroupRadioService {
 
   /// Desconectar del canal
   Future<void> disconnect() async {
+    _stopRadioWakeLock();
     try {
       if (_engine != null && _isConnected) {
         await _engine!.leaveChannel();
@@ -330,6 +334,26 @@ class GroupRadioService {
     } catch (e) {
       debugPrint('[RADIO] Error alternando altavoz: $e');
     }
+  }
+
+  /// Inicia notificación de foreground para mantener audio activo al bloquear pantalla
+  void _startRadioWakeLock(String userName) {
+    try {
+      FlutterForegroundTask.updateService(
+        notificationTitle: '📻 Radio activo',
+        notificationText: 'Conectado - el audio continúa aunque bloquees la pantalla',
+      );
+    } catch (_) {}
+  }
+
+  /// Detiene el wake lock del radio
+  void _stopRadioWakeLock() {
+    try {
+      FlutterForegroundTask.updateService(
+        notificationTitle: 'Servicio en segundo plano',
+        notificationText: 'Actualizando estado de la app',
+      );
+    } catch (_) {}
   }
 
   /// Obtener token de Agora desde servidor
