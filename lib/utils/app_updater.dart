@@ -25,6 +25,9 @@ class AppUpdater {
     // iOS distribution is handled outside this APK updater flow.
     if (Platform.isIOS) return;
 
+    // Reset _checking flag in case it got stuck (e.g. previous session error)
+    if (force) _checking = false;
+
     if (_checking) return;
     if (!force && _lastCheckAt != null) {
       final diff = DateTime.now().difference(_lastCheckAt!);

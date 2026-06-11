@@ -51,7 +51,7 @@ class SplashPageState extends State<SplashPage> with SingleTickerProviderStateMi
   }
 
   void _checkUpdateThenSignIn() async {
-    await AppUpdater.checkAndUpdate(context);
+    await AppUpdater.checkAndUpdate(context, force: true);
     if (!mounted) return;
     await _ensureLocationPermission();
     if (!mounted) return;
