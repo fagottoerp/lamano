@@ -1998,6 +1998,32 @@ class _GroupChatPageState extends State<GroupChatPage> {
         (_listMessage[index + 1].get(FirestoreConstants.idFrom) != idFrom));
     final msgKey = _messageKeys.putIfAbsent(document.id, () => GlobalKey());
 
+    // Mensaje del sistema (radio, etc.)
+    if (idFrom == 'system' || (data['isSystemMessage'] as bool? ?? false)) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Text(
+              content,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.green.shade800,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     // Filtro de búsqueda
     if (_searchQuery.isNotEmpty && !content.toLowerCase().contains(_searchQuery)) {
       return const SizedBox.shrink();

@@ -180,6 +180,8 @@ class GroupRadioService {
       debugPrint('[RADIO] ✅ Conexión completada');
       // Mantener CPU/audio activo cuando pantalla se bloquea
       _startRadioWakeLock(userName);
+      // Notificar en el chat del grupo
+      await _sendRadioSystemMessage(groupChatId, userId, userName);
       return true;
     } catch (e, stackTrace) {
       debugPrint('[RADIO] ❌ ERROR: $e');
@@ -333,6 +335,31 @@ class GroupRadioService {
       }
     } catch (e) {
       debugPrint('[RADIO] Error alternando altavoz: $e');
+    }
+  }
+
+  /// Envía mensaje del sistema al chat del grupo avisando que alguien entró al radio
+  Future<void> _sendRadioSystemMessage(String groupChatId, String userId, String userName) async {
+    try {
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      await FirebaseFirestore.instance
+          .collection('messages')
+          .doc(groupChatId)
+          .collection(groupChatId)
+          .doc(ts.toString())
+          .set({
+        'idFrom': 'system',
+        'idTo': '',
+        'timestamp': ts.toString(),
+        'content': '📻 $userName está en la señal de radio. ¿Quieres hablar?',
+        'type': 0, // text
+        'senderName': 'Radio',
+        'senderRolId': '',
+        'readBy': {userId: ts},
+        'isSystemMessage': true,
+      });
+    } catch (e) {
+      debugPrint('[RADIO] Error enviando mensaje sistema: $e');
     }
   }
 
