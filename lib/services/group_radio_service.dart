@@ -70,18 +70,18 @@ class GroupRadioService {
         scenario: AudioScenarioType.audioScenarioChatroom,
       );
       
-      // Configurar altavoz según estado inicial (por defecto activado)
-      await _engine!.setEnableSpeakerphone(_isSpeakerEnabled);
-      
       // Empezar muteado (PTT)
       await _engine!.muteLocalAudioStream(true);
 
       // Registrar event handlers
       _engine!.registerEventHandler(RtcEngineEventHandler(
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
-          debugPrint('[RADIO] Conectado al canal: ${connection.channelId}');
+          debugPrint('[RADIO] ✅ Conectado al canal: ${connection.channelId}');
           _isConnected = true;
           _connectionController.add(true);
+          // Aplicar altavoz DESPUÉS de que el canal esté conectado (momento correcto)
+          _engine?.setEnableSpeakerphone(_isSpeakerEnabled);
+          debugPrint('[RADIO] Audio: ${_isSpeakerEnabled ? "ALTAVOZ 🔊" : "AURICULAR 📞"}');
         },
         onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
           debugPrint('[RADIO] Usuario unido: $remoteUid');
@@ -101,13 +101,6 @@ class GroupRadioService {
           debugPrint('[RADIO] Desconectado del canal');
           _isConnected = false;
           _connectionController.add(false);
-        },
-        onAudioRoutingChanged: (int routing) {
-          // Forzar configuración de altavoz si el sistema cambia la ruta
-          debugPrint('[RADIO] Ruta de audio cambiada a: $routing');
-          if (_isConnected && _engine != null) {
-            _engine!.setEnableSpeakerphone(_isSpeakerEnabled);
-          }
         },
       ));
 
@@ -169,12 +162,6 @@ class GroupRadioService {
         uid: int.tryParse(userId.hashCode.toString()) ?? 0,
         options: options,
       );
-
-      // CRÍTICO: Forzar configuración de altavoz después de unirse
-      // Esto asegura que se escuche correctamente según la preferencia del usuario
-      await Future.delayed(const Duration(milliseconds: 500));
-      await _engine!.setEnableSpeakerphone(_isSpeakerEnabled);
-      debugPrint('[RADIO] Audio configurado: ${_isSpeakerEnabled ? "ALTAVOZ" : "AURICULAR"}');
 
       // Registrar en Firestore
       await FirebaseFirestore.instance
