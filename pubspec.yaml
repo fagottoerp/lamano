@@ -46,7 +46,7 @@ dependencies:
   video_player: ^2.9.2
   flutter_colorpicker: ^1.1.0
   google_fonts: ^6.2.1
-  agora_rtc_engine: ^6.3.2
+  agora_rtc_engine: 6.3.2
 
 dev_dependencies:
   flutter_test:
