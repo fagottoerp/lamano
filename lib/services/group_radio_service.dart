@@ -22,6 +22,7 @@ class GroupRadioService {
   bool _isConnected = false;
   bool _isMuted = true; // PTT: empezar muteado
   bool _alwaysLiveMode = false; // false = PTT, true = siempre en vivo
+  bool _isSpeakerEnabled = true; // Altavoz por defecto activado
   
   final _speakersController = StreamController<List<String>>.broadcast();
   Stream<List<String>> get speakersStream => _speakersController.stream;
@@ -32,8 +33,12 @@ class GroupRadioService {
   final _modeController = StreamController<bool>.broadcast();
   Stream<bool> get modeStream => _modeController.stream;
   
+  final _speakerModeController = StreamController<bool>.broadcast();
+  Stream<bool> get speakerModeStream => _speakerModeController.stream;
+  
   bool get isAlwaysLiveMode => _alwaysLiveMode;
   bool get isConnected => _isConnected;
+  bool get isSpeakerEnabled => _isSpeakerEnabled;
 
   /// Obtener frecuencia única basada en groupChatId
   static String getFrequency(String groupChatId) {
@@ -63,6 +68,9 @@ class GroupRadioService {
         scenario: AudioScenarioType.audioScenarioChatroom,
       );
       
+      // Configurar altavoz según estado inicial (por defecto activado)
+      await _engine!.setEnableSpeakerphone(_isSpeakerEnabled);
+      
       // Empezar muteado (PTT)
       await _engine!.muteLocalAudioStream(true);
 
@@ -91,6 +99,13 @@ class GroupRadioService {
           debugPrint('[RADIO] Desconectado del canal');
           _isConnected = false;
           _connectionController.add(false);
+        },
+        onAudioRoutingChanged: (int routing) {
+          // Forzar configuración de altavoz si el sistema cambia la ruta
+          debugPrint('[RADIO] Ruta de audio cambiada a: $routing');
+          if (_isConnected && _engine != null) {
+            _engine!.setEnableSpeakerphone(_isSpeakerEnabled);
+          }
         },
       ));
 
@@ -147,6 +162,12 @@ class GroupRadioService {
         uid: int.tryParse(userId.hashCode.toString()) ?? 0,
         options: options,
       );
+
+      // CRÍTICO: Forzar configuración de altavoz después de unirse
+      // Esto asegura que se escuche correctamente según la preferencia del usuario
+      await Future.delayed(const Duration(milliseconds: 500));
+      await _engine!.setEnableSpeakerphone(_isSpeakerEnabled);
+      debugPrint('[RADIO] Audio configurado: ${_isSpeakerEnabled ? "ALTAVOZ" : "AURICULAR"}');
 
       // Registrar en Firestore
       await FirebaseFirestore.instance
@@ -296,6 +317,25 @@ class GroupRadioService {
     }
   }
 
+  /// Alternar entre altavoz y auricular
+  Future<void> toggleSpeaker() async {
+    try {
+      // Cambiar estado (persiste incluso si no está conectado)
+      _isSpeakerEnabled = !_isSpeakerEnabled;
+      _speakerModeController.add(_isSpeakerEnabled);
+      
+      // Aplicar cambio si está conectado
+      if (_engine != null && _isConnected) {
+        await _engine!.setEnableSpeakerphone(_isSpeakerEnabled);
+        debugPrint('[RADIO] Altavoz ${_isSpeakerEnabled ? "ACTIVADO" : "DESACTIVADO"} - Audio por ${_isSpeakerEnabled ? "altavoz" : "auricular"}');
+      } else {
+        debugPrint('[RADIO] Preferencia guardada: ${_isSpeakerEnabled ? "altavoz" : "auricular"} (se aplicará al conectar)');
+      }
+    } catch (e) {
+      debugPrint('[RADIO] Error alternando altavoz: $e');
+    }
+  }
+
   /// Obtener token de Agora desde servidor
   Future<String> _fetchAgoraToken(String channelName, String userId) async {
     try {
@@ -324,6 +364,8 @@ class GroupRadioService {
     await disconnect();
     await _speakersController.close();
     await _connectionController.close();
+    await _modeController.close();
+    await _speakerModeController.close();
     if (_engine != null) {
       await _engine!.release();
       _engine = null;

@@ -29,10 +29,12 @@ class _GroupRadioWidgetState extends State<GroupRadioWidget> {
   bool _isConnected = false;
   bool _isPTT = false;
   bool _isAlwaysLive = false;
+  bool _isSpeakerOn = true; // Altavoz activado por defecto
   List<String> _connectedUsers = [];
   String? _currentSpeaker;
   StreamSubscription? _connectionSub;
   StreamSubscription? _modeSub;
+  StreamSubscription? _speakerSub;
   StreamSubscription? _usersSub;
   Timer? _pttAutoStopTimer;
 
@@ -51,9 +53,15 @@ class _GroupRadioWidgetState extends State<GroupRadioWidget> {
         setState(() => _isAlwaysLive = alwaysLive);
       }
     });
+    _speakerSub = _radioService.speakerModeStream.listen((speakerOn) {
+      if (mounted) {
+        setState(() => _isSpeakerOn = speakerOn);
+      }
+    });
     // Sincronizar estado actual
     _isConnected = _radioService.isConnected;
     _isAlwaysLive = _radioService.isAlwaysLiveMode;
+    _isSpeakerOn = _radioService.isSpeakerEnabled;
     _listenForConnectedUsers();
   }
 
@@ -62,6 +70,7 @@ class _GroupRadioWidgetState extends State<GroupRadioWidget> {
     _pttAutoStopTimer?.cancel();
     _connectionSub?.cancel();
     _modeSub?.cancel();
+    _speakerSub?.cancel();
     _usersSub?.cancel();
     // NO llamar a _radioService.dispose() - mantener conexión activa
     super.dispose();
@@ -256,6 +265,56 @@ class _GroupRadioWidgetState extends State<GroupRadioWidget> {
                         ),
                       ],
                     ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Botón de altavoz/auricular
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'Audio:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _radioService.toggleSpeaker(),
+                      icon: Icon(
+                        _isSpeakerOn ? Icons.volume_up : Icons.phone_in_talk,
+                        size: 22,
+                      ),
+                      label: Text(
+                        _isSpeakerOn ? 'Altavoz' : 'Auricular',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isSpeakerOn ? Colors.blue.shade600 : Colors.grey.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        elevation: 2,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
