@@ -37,6 +37,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       'http://38.247.147.220/lamano/api_waze_alerts_proxy.php';
       static const String _poisApiUrl =
         'http://38.247.147.220/lamano/api_pois.php';
+      static const String _bancoestadoApiUrl =
+        'http://38.247.147.220/lamano/api_bancoestado.php';
     static const String _safePlacesCollection = 'safe_places';
 
   static final List<_AlertCategory> _categories = [
@@ -315,20 +317,34 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       await _initLocalNotifications();
       await _loadUserContext();
 
+      // Fase 1: cargar datos básicos y ubicación
       final stationsFuture = _loadStations();
       final locationFuture = _resolveLocation();
       final templatesFuture = _loadPriorityCategories();
       final poisFuture = _loadPoisFromApi();
       final traspasosFuture = _loadTraspasos();
-      final results = await Future.wait([stationsFuture, locationFuture, templatesFuture, poisFuture, traspasosFuture]);
+      
+      final basicResults = await Future.wait([
+        stationsFuture, 
+        locationFuture, 
+        templatesFuture, 
+        poisFuture, 
+        traspasosFuture
+      ]);
+
+      _allStations = basicResults[0] as List<_Comisaria>;
+      _myPosition = basicResults[1] as Position?;
+      _priorityCategories = basicResults[2] as List<_AlertCategory>;
+      final regularPois = basicResults[3] as List<Map<String, dynamic>>;
+      _traspasos = basicResults[4] as List<Map<String, dynamic>>;
+      
+      // Fase 2: cargar sucursales BancoEstado con la ubicación del usuario
+      final bancoPois = await _loadBancoestadoFromApi();
 
       if (!mounted) return;
       setState(() {
-        _allStations = results[0] as List<_Comisaria>;
-        _myPosition = results[1] as Position?;
-        _priorityCategories = results[2] as List<_AlertCategory>;
-        _pois = (results[3] as List<Map<String, dynamic>>);
-        _traspasos = results[4] as List<Map<String, dynamic>>;
+        // Combinar POIs regulares con sucursales BancoEstado
+        _pois = [...regularPois, ...bancoPois];
         if (_myPosition != null) {
           _mapCenter = LatLng(_myPosition!.latitude, _myPosition!.longitude);
           _mapZoom = 12.5;
@@ -483,6 +499,31 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       final resp = await http.get(uri).timeout(const Duration(seconds: 8));
       if (resp.statusCode != 200) return const [];
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final rows = (data['pois'] as List<dynamic>? ?? const []);
+      return rows
+          .map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadBancoestadoFromApi() async {
+    try {
+      // Construir URL con filtro de proximidad si hay ubicación
+      var url = _bancoestadoApiUrl;
+      if (_myPosition != null) {
+        url += '?lat=${_myPosition!.latitude}&lng=${_myPosition!.longitude}&radius=20&limit=100';
+      } else {
+        // Sin ubicación, limitar a 50 sucursales más cercanas al centro de Santiago
+        url += '?lat=-33.4489&lng=-70.6693&radius=30&limit=50';
+      }
+      
+      final uri = Uri.parse(url);
+      final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200) return const [];
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (data['success'] != true) return const [];
       final rows = (data['pois'] as List<dynamic>? ?? const []);
       return rows
           .map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>))
