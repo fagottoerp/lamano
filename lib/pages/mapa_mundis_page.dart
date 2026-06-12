@@ -4537,9 +4537,16 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         )
         .toList();
 
-    // Filtrar POIs: solo mostrar los que están abiertos
+    // Filtrar POIs: mostrar siempre BancoEstado y CajaVecina
+    // Solo aplicar filtro de horario a POIs regulares (vulcaniz, parking, centros comerciales)
     final poiMarkers = _pois
-        .where((p) => _isPoiOpen(p))
+        .where((p) {
+          final cat = (p['category'] ?? 'otro') as String;
+          // Siempre mostrar bancos y cajas vecinas
+          if (cat == 'banco' || cat == 'cajavecina') return true;
+          // Para otros POIs, solo mostrar si están abiertos
+          return _isPoiOpen(p);
+        })
         .map((p) {
       try {
         final lat = (p['lat'] as num).toDouble();
