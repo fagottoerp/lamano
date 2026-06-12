@@ -158,6 +158,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     'pdi': true,
     'bencineras': true,
     'pois': true,
+    'bancoestado': true,
+    'cajavecina': true,
     'criticos': true,
     'peajes': true,
     'citizen': true,
@@ -4557,17 +4559,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         )
         .toList();
 
-    // Combinar POIs regulares (con filtro de horario) + BancoEstado (sin filtro)
-    final allPois = [..._pois, ..._bancoPois];
-    
-    final poiMarkers = allPois
-        .where((p) {
-          final cat = (p['category'] ?? 'otro') as String;
-          // Siempre mostrar bancos y cajas vecinas
-          if (cat == 'banco' || cat == 'cajavecina') return true;
-          // Para otros POIs, solo mostrar si están abiertos
-          return _isPoiOpen(p);
-        })
+    // Separar marcadores por tipo para aplicar filtros de capa
+    final regularPoisMarkers = _pois
+        .where((p) => _isPoiOpen(p))
         .map((p) {
       try {
         final lat = (p['lat'] as num).toDouble();
@@ -4576,16 +4570,6 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         IconData iconData = Icons.place;
         Color iconColor = Colors.blueGrey;
         switch (cat) {
-          case 'banco':
-            // BancoEstado Sucursales
-            iconData = Icons.account_balance;
-            iconColor = Colors.blue;
-            break;
-          case 'cajavecina':
-            // CajaVecina
-            iconData = Icons.atm;
-            iconColor = Colors.green;
-            break;
           case 'centro_comercial':
             iconData = Icons.storefront;
             iconColor = Colors.deepPurple;
@@ -4608,6 +4592,44 @@ class _MapaMundisPageState extends State<MapaMundisPage>
           width: 40,
           height: 40,
           child: Icon(iconData, size: 32, color: iconColor),
+        );
+      } catch (_) {
+        return Marker(point: _mapCenter, width: 1, height: 1, child: const SizedBox.shrink());
+      }
+    }).toList();
+
+    // Marcadores BancoEstado (filtrados por capa)
+    final bancoMarkers = _bancoPois
+        .where((p) => (p['category'] ?? '') == 'banco')
+        .map((p) {
+      try {
+        final lat = (p['lat'] as num).toDouble();
+        final lng = (p['lng'] as num).toDouble();
+        
+        return Marker(
+          point: LatLng(lat, lng),
+          width: 36,
+          height: 36,
+          child: const Icon(Icons.account_balance_outlined, size: 28, color: Color(0xFF2563EB)),
+        );
+      } catch (_) {
+        return Marker(point: _mapCenter, width: 1, height: 1, child: const SizedBox.shrink());
+      }
+    }).toList();
+
+    // Marcadores CajaVecina (filtrados por capa)
+    final cajaMarkers = _bancoPois
+        .where((p) => (p['category'] ?? '') == 'cajavecina')
+        .map((p) {
+      try {
+        final lat = (p['lat'] as num).toDouble();
+        final lng = (p['lng'] as num).toDouble();
+        
+        return Marker(
+          point: LatLng(lat, lng),
+          width: 34,
+          height: 34,
+          child: const Icon(Icons.local_atm_outlined, size: 26, color: Color(0xFF16A34A)),
         );
       } catch (_) {
         return Marker(point: _mapCenter, width: 1, height: 1, child: const SizedBox.shrink());
@@ -4986,7 +5008,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       if (_layerVisible['criticos'] == true) ...stationMarkersCrit,
       if ((_layerVisible['citizen'] == true) || (_layerVisible['rapidas'] == true)) ...alertMarkers,
       ...helperMarkers,
-      if (_layerVisible['pois'] == true) ...poiMarkers,
+      if (_layerVisible['pois'] == true) ...regularPoisMarkers,
+      if (_layerVisible['bancoestado'] == true) ...bancoMarkers,
+      if (_layerVisible['cajavecina'] == true) ...cajaMarkers,
       if (_layerVisible['zones'] == true) ...zoneNameMarkers,
       ...draftZoneMarkers,
       ...traspasoMarkers, // <── Marcadores de traspasos GPS
