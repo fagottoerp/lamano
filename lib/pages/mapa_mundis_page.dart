@@ -511,16 +511,20 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   Future<List<Map<String, dynamic>>> _loadBancoestadoFromApi() async {
     try {
       // Construir URL con filtro de proximidad si hay ubicación
+      // Cargar AMBOS: sucursales + cajas vecinas con tipo=todos
       var url = _bancoestadoApiUrl;
       if (_myPosition != null) {
-        url += '?lat=${_myPosition!.latitude}&lng=${_myPosition!.longitude}&radius=20&limit=100';
+        // Con ubicación: cargar todos los tipos cerca del usuario
+        // Sucursales: radio 30km, limit 50
+        // CajaVecina: radio 10km, limit 100 (más cercanas porque hay muchas)
+        url += '?tipo=todos&lat=${_myPosition!.latitude}&lng=${_myPosition!.longitude}&radius=15&limit=150';
       } else {
-        // Sin ubicación, limitar a 50 sucursales más cercanas al centro de Santiago
-        url += '?lat=-33.4489&lng=-70.6693&radius=30&limit=50';
+        // Sin ubicación, limitar a área de Santiago
+        url += '?tipo=todos&lat=-33.4489&lng=-70.6693&radius=20&limit=100';
       }
       
       final uri = Uri.parse(url);
-      final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+      final resp = await http.get(uri).timeout(const Duration(seconds: 15));
       if (resp.statusCode != 200) return const [];
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
       if (data['success'] != true) return const [];
@@ -4544,6 +4548,16 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         IconData iconData = Icons.place;
         Color iconColor = Colors.blueGrey;
         switch (cat) {
+          case 'banco':
+            // BancoEstado Sucursales
+            iconData = Icons.account_balance;
+            iconColor = Colors.blue;
+            break;
+          case 'cajavecina':
+            // CajaVecina
+            iconData = Icons.atm;
+            iconColor = Colors.green;
+            break;
           case 'centro_comercial':
             iconData = Icons.storefront;
             iconColor = Colors.deepPurple;
