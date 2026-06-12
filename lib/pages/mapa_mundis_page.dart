@@ -76,6 +76,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   Timer? _dispatchRotateTimer;
   Timer? _alertVisibilityTimer;
   Timer? _proximityBannerTimer;
+  Timer? _bancoReloadTimer;
   late final AnimationController _scannerCtrl;
 
   List<_Comisaria> _allStations = const [];
@@ -85,6 +86,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   List<_GeoZone> _geoZones = const [];
   List<_SafePlace> _safePlaces = const [];
   List<Map<String, dynamic>> _pois = const [];
+  List<Map<String, dynamic>> _bancoPois = const [];
   
   // Traspasos GPS tracking
   List<Map<String, dynamic>> _traspasos = const [];
@@ -284,6 +286,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     _dispatchRotateTimer?.cancel();
     _alertVisibilityTimer?.cancel();
     _proximityBannerTimer?.cancel();
+    _bancoReloadTimer?.cancel();
     _scannerCtrl.dispose();
     super.dispose();
   }
@@ -343,8 +346,9 @@ class _MapaMundisPageState extends State<MapaMundisPage>
 
       if (!mounted) return;
       setState(() {
-        // Combinar POIs regulares con sucursales BancoEstado
-        _pois = [...regularPois, ...bancoPois];
+        // Separar POIs regulares de BancoEstado para recarga dinámica
+        _pois = regularPois;
+        _bancoPois = bancoPois;
         if (_myPosition != null) {
           _mapCenter = LatLng(_myPosition!.latitude, _myPosition!.longitude);
           _mapZoom = 12.5;
@@ -508,20 +512,16 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     }
   }
 
-  Future<List<Map<String, dynamic>>> _loadBancoestadoFromApi() async {
+  Future<List<Map<String, dynamic>>> _loadBancoestadoFromApi({LatLng? center}) async {
     try {
-      // Construir URL con filtro de proximidad si hay ubicación
+      // Usar centro del mapa si se proporciona, sino usar posición del usuario, sino Santiago
+      final lat = center?.latitude ?? _myPosition?.latitude ?? -33.4489;
+      final lng = center?.longitude ?? _myPosition?.longitude ?? -70.6693;
+      
+      // Construir URL con filtro de proximidad
       // Cargar AMBOS: sucursales + cajas vecinas con tipo=todos
-      var url = _bancoestadoApiUrl;
-      if (_myPosition != null) {
-        // Con ubicación: cargar todos los tipos cerca del usuario
-        // Sucursales: radio 30km, limit 50
-        // CajaVecina: radio 10km, limit 100 (más cercanas porque hay muchas)
-        url += '?tipo=todos&lat=${_myPosition!.latitude}&lng=${_myPosition!.longitude}&radius=15&limit=150';
-      } else {
-        // Sin ubicación, limitar a área de Santiago
-        url += '?tipo=todos&lat=-33.4489&lng=-70.6693&radius=20&limit=100';
-      }
+      // Radio 20km para capturar suficientes puntos al navegar
+      final url = '$_bancoestadoApiUrl?tipo=todos&lat=$lat&lng=$lng&radius=20&limit=200';
       
       final uri = Uri.parse(url);
       final resp = await http.get(uri).timeout(const Duration(seconds: 15));
@@ -4537,9 +4537,10 @@ class _MapaMundisPageState extends State<MapaMundisPage>
         )
         .toList();
 
-    // Filtrar POIs: mostrar siempre BancoEstado y CajaVecina
-    // Solo aplicar filtro de horario a POIs regulares (vulcaniz, parking, centros comerciales)
-    final poiMarkers = _pois
+    // Combinar POIs regulares (con filtro de horario) + BancoEstado (sin filtro)
+    final allPois = [..._pois, ..._bancoPois];
+    
+    final poiMarkers = allPois
         .where((p) {
           final cat = (p['category'] ?? 'otro') as String;
           // Siempre mostrar bancos y cajas vecinas
@@ -5002,16 +5003,33 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   _mapCenter = center;
                   _mapZoom = zoom;
                 });
+                
+                // Recargar BancoEstado cuando el mapa se mueve (con debounce)
+                if (hasGesture) {
+                  _bancoReloadTimer?.cancel();
+                  _bancoReloadTimer = Timer(const Duration(seconds: 2), () async {
+                    if (!mounted) return;
+                    final newBanco = await _loadBancoestadoFromApi(center: center);
+                    if (!mounted) return;
+                    setState(() {
+                      _bancoPois = newBanco;
+                    });
+                  });
+                }
               },
               onTap: (tapPosition, point) async {
                 // ═══════════════════════════════════════════════════════════════
                 // POI TAP DETECTION - Detectar si el tap está cerca de un POI
                 // ═══════════════════════════════════════════════════════════════
-                if (_layerVisible['pois'] == true && _pois.isNotEmpty) {
+                if (_layerVisible['pois'] == true) {
                   const double tapRadius = 0.0005; // ~50 metros en lat/lng
-                  // Buscar solo en POIs abiertos (consistente con marcadores visibles)
-                  final openPois = _pois.where((p) => _isPoiOpen(p)).toList();
-                  for (final poi in openPois) {
+                  // Combinar POIs regulares (solo abiertos) + BancoEstado (siempre)
+                  final allSearchPois = [
+                    ..._pois.where((p) => _isPoiOpen(p)),
+                    ..._bancoPois, // Siempre incluir BancoEstado
+                  ];
+                  
+                  for (final poi in allSearchPois) {
                     try {
                       final poiLat = (poi['lat'] as num).toDouble();
                       final poiLng = (poi['lng'] as num).toDouble();
