@@ -2030,7 +2030,27 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   }
 
   bool _isAlertVisibleNow(_CitizenAlert alert, int nowMs) {
-    if (alert.startAtMs > nowMs || alert.expiresAtMs <= nowMs) return false;
+    // Alertas permanentes SIEMPRE visibles (ignorar expiresAtMs)
+    if (alert.isPermanent) {
+      // Solo verificar que haya comenzado
+      if (alert.startAtMs > nowMs) return false;
+      // Si es recurrente diario, verificar horario
+      if (alert.recurringDaily) {
+        final minuteNow = (DateTime.now().hour * 60) + DateTime.now().minute;
+        final startMinute = alert.scheduleStartMinute;
+        final endMinute = alert.scheduleEndMinute;
+        if (startMinute == null || endMinute == null) return true;
+        if (startMinute == endMinute) return true;
+        if (startMinute < endMinute) {
+          return minuteNow >= startMinute && minuteNow < endMinute;
+        }
+        return minuteNow >= startMinute || minuteNow < endMinute;
+      }
+      return true; // Permanente y no recurrente = siempre visible
+    }
+    
+    // Alertas temporales: verificar expiración (usar < no <=)
+    if (alert.startAtMs > nowMs || alert.expiresAtMs < nowMs) return false;
     if (!alert.recurringDaily) return true;
 
     final minuteNow = (DateTime.now().hour * 60) + DateTime.now().minute;
