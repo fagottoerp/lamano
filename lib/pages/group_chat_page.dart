@@ -2242,23 +2242,35 @@ class _GroupChatPageState extends State<GroupChatPage> {
         foregroundColor: ColorConstants.textPrimary,
         iconTheme: const IconThemeData(color: ColorConstants.textPrimary),
         titleSpacing: 0,
-        title: Row(
-          children: [
-            StreamBuilder<DocumentSnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('groups')
-                  .doc(widget.arguments.groupId)
-                  .snapshots(),
-              builder: (_, snap) {
-                final data = snap.data?.data() as Map<String, dynamic>?;
-                final img = (data?['groupImage'] as String?) ?? widget.arguments.groupImage;
-                final createdBy = (data?['createdBy'] as String?) ?? '';
-                final _nick = _currentNickname.toLowerCase().trim();
-                final isCreator = createdBy == _currentUserId
-                    || _currentRolId == '1'
-                    || _nick == 'jimmy'
-                    || _nick == 'admin';
-                return GestureDetector(
+        title: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('groups')
+              .doc(widget.arguments.groupId)
+              .snapshots(),
+          builder: (_, snap) {
+            final data = snap.data?.data() as Map<String, dynamic>?;
+            final img = (data?['groupImage'] as String?) ?? widget.arguments.groupImage;
+            final createdBy = (data?['createdBy'] as String?) ?? '';
+            final _nick = _currentNickname.toLowerCase().trim();
+            final isCreator = createdBy == _currentUserId
+                || _currentRolId == '1'
+                || _nick == 'jimmy'
+                || _nick == 'admin';
+            // radio status (set by GroupRadioService)
+            final radio = data?['radio_status'] as Map<String, dynamic>?;
+            final now = DateTime.now().millisecondsSinceEpoch;
+            String? radioBanner;
+            if (radio != null) {
+              final lastSeen = (radio['lastSeen'] as int?) ?? 0;
+              final lastName = (radio['lastUserName'] as String?) ?? '';
+              // show banner if seen in last 2 minutes
+              if (now - lastSeen < 120 * 1000) {
+                radioBanner = '📻 $lastName está en la señal';
+              }
+            }
+            return Row(
+              children: [
+                GestureDetector(
                   onTap: isCreator ? _changeGroupImage : null,
                   child: Stack(
                     children: [
@@ -2289,46 +2301,43 @@ class _GroupChatPageState extends State<GroupChatPage> {
                         ),
                     ],
                   ),
-                );
-              },
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: GestureDetector(
-                onTap: _showMembersSheet,
-                child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_searchMode)
-                    TextField(
-                      controller: _searchController,
-                      autofocus: true,
-                      style: const TextStyle(color: ColorConstants.textPrimary),
-                      decoration: const InputDecoration(
-                        hintText: 'Buscar en el chat...',
-                        hintStyle: TextStyle(color: ColorConstants.textSecondary),
-                        border: InputBorder.none,
-                      ),
-                      onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
-                    )
-                  else ...[
-                  Text(widget.arguments.groupName,
-                      style: const TextStyle(color: ColorConstants.textPrimary, fontWeight: FontWeight.w700),
-                      overflow: TextOverflow.ellipsis),
-                  if (_typingUsers.isNotEmpty)
-                    const Text('escribiendo...', style: TextStyle(fontSize: 10, color: ColorConstants.textSecondary, fontStyle: FontStyle.italic))
-                  else if (widget.arguments.groupDescription.isNotEmpty)
-                    Text(widget.arguments.groupDescription,
-                        style: const TextStyle(color: ColorConstants.textSecondary, fontSize: 11),
-                        overflow: TextOverflow.ellipsis),
-                  if (_isMuted)
-                    const Text('silenciado', style: TextStyle(fontSize: 10, color: ColorConstants.textSecondary)),
-                  ],
-                ],
                 ),
-              ),
-            ),
-          ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: _showMembersSheet,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.arguments.groupName,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${_listMessage.length} mensajes',
+                          style: const TextStyle(fontSize: 12, color: ColorConstants.textSecondary),
+                        ),
+                        // Radio status banner below title
+                        if (radioBanner != null) ...[
+                          const SizedBox(height: 2),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(radioBanner, style: TextStyle(color: Colors.green.shade800, fontSize: 10)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
         centerTitle: false,
         actions: [

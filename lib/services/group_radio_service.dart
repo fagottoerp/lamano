@@ -339,27 +339,37 @@ class GroupRadioService {
   }
 
   /// Envía mensaje del sistema al chat del grupo avisando que alguien entró al radio
+  /// Actualiza el estado de radio en el documento del grupo en lugar de
+  /// insertar mensajes repetidos en la colección `messages`.
+  /// Esto evita spam de escrituras/lecturas cuando hay reconexiones.
   Future<void> _sendRadioSystemMessage(String groupChatId, String userId, String userName) async {
     try {
-      final ts = DateTime.now().millisecondsSinceEpoch;
-      await FirebaseFirestore.instance
-          .collection('messages')
-          .doc(groupChatId)
-          .collection(groupChatId)
-          .doc(ts.toString())
-          .set({
-        'idFrom': 'system',
-        'idTo': '',
-        'timestamp': ts.toString(),
-        'content': '📻 $userName está en la señal de radio. ¿Quieres hablar?',
-        'type': 0, // text
-        'senderName': 'Radio',
-        'senderRolId': '',
-        'readBy': {userId: ts},
-        'isSystemMessage': true,
-      });
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final groupRef = FirebaseFirestore.instance.collection('groups').doc(groupChatId);
+
+      // Leer estado actual y evitar escrituras frecuentes (debounce 60s)
+      final snap = await groupRef.get();
+      final data = snap.data() as Map<String, dynamic>?;
+      final radio = data?['radio_status'] as Map<String, dynamic>?;
+      final lastSeen = radio != null ? (radio['lastSeen'] as int? ?? 0) : 0;
+      const debounceMs = 60 * 1000; // 60 segundos
+      if (now - lastSeen < debounceMs) {
+        debugPrint('[RADIO] Saltando actualización radio_status (debounce)');
+        return;
+      }
+
+      await groupRef.set({
+        'radio_status': {
+          'lastUserId': userId,
+          'lastUserName': userName,
+          'lastSeen': now,
+          'active': true
+        }
+      }, SetOptions(merge: true));
+
+      debugPrint('[RADIO] radio_status actualizado para $userName');
     } catch (e) {
-      debugPrint('[RADIO] Error enviando mensaje sistema: $e');
+      debugPrint('[RADIO] Error actualizando radio_status: $e');
     }
   }
 
