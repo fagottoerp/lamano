@@ -110,6 +110,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
   final _listScrollController = ScrollController();
   final Map<String, GlobalKey> _messageKeys = {};
   final _focusNode = FocusNode();
+  final Set<String> _selectedMessageIds = {};
+  bool _selectionMode = false;
 
   // @menciones
   List<Map<String, String>> _groupMembers = []; // [{uid, name, avatar}]
@@ -718,7 +720,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  void _sendGroupMessage(String content, int type, {Map<String, dynamic>? extras}) {
+  Future<void> _sendGroupMessage(String content, int type,
+      {Map<String, dynamic>? extras}) async {
     final groupId = widget.arguments.groupId;
     final ts = DateTime.now().millisecondsSinceEpoch;
     final docRef = FirebaseFirestore.instance
@@ -743,9 +746,24 @@ class _GroupChatPageState extends State<GroupChatPage> {
     data['readBy'] = {_currentUserId: ts};
     if (extras != null) data.addAll(extras);
 
-    FirebaseFirestore.instance.runTransaction((tx) async {
-      tx.set(docRef, data);
-    });
+    try {
+      await docRef.set(data);
+      _sendGroupPushNotification(content, type);
+    } on FirebaseException catch (e) {
+      Fluttertoast.showToast(
+        msg: 'No se pudo enviar al grupo (${e.code}).',
+        backgroundColor: Colors.red,
+      );
+      debugPrint('Group send failed: code=${e.code} message=${e.message}');
+      return;
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: 'No se pudo enviar al grupo. Revisa conexion/permisos.',
+        backgroundColor: Colors.red,
+      );
+      debugPrint('Group send failed (generic): $e');
+      return;
+    }
 
     // Metadata para lista de grupos: último mensaje + contadores de no-leídos.
     final preview = type == TypeMessage.text
@@ -772,29 +790,68 @@ class _GroupChatPageState extends State<GroupChatPage> {
                                       }()
                             : '💬 Mensaje';
 
-    () async {
-      try {
-        final groupRef = FirebaseFirestore.instance.collection('groups').doc(groupId);
-        final snap = await groupRef.get();
-        final members = ((snap.data()?['members'] as List?) ?? [])
-            .map((e) => e.toString())
-            .toList();
-        final updates = <String, dynamic>{
-          'lastMessage': '$_currentNickname: $preview',
-          'lastTimestamp': ts,
-          'lastSenderId': _currentUserId,
-        };
-        // Incrementar unread por cada miembro distinto al sender.
-        // IMPORTANTE: usar update() (no set+merge) para que la notación
-        // 'unreadCounts.$uid' se interprete como ruta anidada y NO como
-        // un campo literal a nivel raíz.
-        for (final uid in members) {
-          if (uid == _currentUserId) continue;
-          updates['unreadCounts.$uid'] = FieldValue.increment(1);
+    _updateGroupLastMessageMetadata(groupId: groupId, preview: preview, ts: ts);
+  }
+
+  Future<void> _updateGroupLastMessageMetadata({
+    required String groupId,
+    required String preview,
+    required int ts,
+  }) async {
+    try {
+      final groupRef = FirebaseFirestore.instance.collection('groups').doc(groupId);
+      final snap = await groupRef.get();
+      final rawMembers = snap.data()?['members'];
+      final members = <String>{};
+      if (rawMembers is List) {
+        for (final m in rawMembers) {
+          if (m is String && m.isNotEmpty) {
+            members.add(m);
+            continue;
+          }
+          if (m is Map) {
+            final uid = (m['uid'] ?? m['id'] ?? m['userId'] ?? '').toString();
+            if (uid.isNotEmpty) members.add(uid);
+          }
         }
-        await groupRef.update(updates);
-      } catch (_) {}
-    }();
+      }
+
+      final updates = <String, dynamic>{
+        'lastMessage': preview,
+        'lastSenderName': _currentNickname,
+        'lastSenderId': _currentUserId,
+        'lastTimestamp': ts,
+      };
+
+      for (final uid in members) {
+        if (uid == _currentUserId) continue;
+        updates['unreadCounts.$uid'] = FieldValue.increment(1);
+      }
+
+      await groupRef.set(updates, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Group metadata update failed for $groupId: $e');
+    }
+  }
+
+  void _sendGroupPushNotification(String content, int type) {
+    http
+        .post(
+          Uri.parse('http://38.247.147.220/lamano/api_send_message_push.php'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'groupChatId': widget.arguments.groupId,
+            'idFrom': _currentUserId,
+            'idTo': '',
+            'type': type,
+            'content': content,
+            'senderName': _currentNickname,
+          }),
+        )
+        .timeout(const Duration(seconds: 5))
+        .catchError((e) {
+      debugPrint('Group push dispatch failed: $e');
+    });
   }
 
   Future<void> _startRecording() async {
@@ -1265,7 +1322,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
   }
 
-  Widget _buildRichText(String text, Color textColor) {
+  Widget _buildRichText(String text, Color textColor, {bool selectable = true}) {
     final urlRegex = RegExp(r'https?://[^\s]+');
     final spans = <TextSpan>[];
     int last = 0;
@@ -1290,8 +1347,73 @@ class _GroupChatPageState extends State<GroupChatPage> {
     if (last < text.length) {
       spans.add(TextSpan(text: text.substring(last), style: TextStyle(color: textColor)));
     }
-    if (spans.isEmpty) return Text(text, style: TextStyle(color: textColor));
-    return RichText(text: TextSpan(children: spans));
+    if (spans.isEmpty) {
+      return selectable ? SelectableText(text, style: TextStyle(color: textColor)) : Text(text, style: TextStyle(color: textColor));
+    }
+    return selectable
+        ? SelectableText.rich(
+            TextSpan(children: spans),
+            style: TextStyle(color: textColor),
+          )
+        : RichText(text: TextSpan(children: spans));
+  }
+
+  void _toggleSelectionMode([String? messageId]) {
+    setState(() {
+      _selectionMode = true;
+      if (messageId != null) {
+        if (_selectedMessageIds.contains(messageId)) {
+          _selectedMessageIds.remove(messageId);
+        } else {
+          _selectedMessageIds.add(messageId);
+        }
+      }
+      if (_selectedMessageIds.isEmpty && messageId == null) {
+        _selectionMode = false;
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectionMode = false;
+      _selectedMessageIds.clear();
+    });
+  }
+
+  Future<void> _deleteSelectedMessages() async {
+    if (_selectedMessageIds.isEmpty) return;
+    final ids = List<String>.from(_selectedMessageIds);
+    var deleted = 0;
+    var failed = 0;
+    for (final messageId in ids) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection(FirestoreConstants.pathMessageCollection)
+            .doc(widget.arguments.groupId)
+            .collection(widget.arguments.groupId)
+            .doc(messageId)
+            .get();
+        final data = doc.data() as Map<String, dynamic>? ?? {};
+        final senderId = data[FirestoreConstants.idFrom] as String? ?? '';
+        if (senderId == _currentUserId) {
+          await _deleteMessage(messageId, widget.arguments.groupId);
+        } else {
+          await _permanentDeleteMessage(messageId, widget.arguments.groupId);
+        }
+        deleted++;
+      } catch (e) {
+        failed++;
+        debugPrint('Batch group delete failed for $messageId: $e');
+      }
+    }
+    _clearSelection();
+    Fluttertoast.showToast(
+      msg: failed == 0
+          ? 'Se eliminaron $deleted mensajes'
+          : 'Se eliminaron $deleted mensajes, $failed fallaron',
+      backgroundColor: deleted > 0 ? Colors.green : Colors.red,
+    );
   }
 
   bool get _isMuted => _mutedUntil > DateTime.now().millisecondsSinceEpoch;
@@ -1994,6 +2116,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     final readBy = Map<String, dynamic>.from(data['readBy'] as Map? ?? {});
 
     final isMe = idFrom == _currentUserId;
+    final isSelected = _selectedMessageIds.contains(document.id);
     final showSender = !isMe && (index == _listMessage.length - 1 ||
         (_listMessage[index + 1].get(FirestoreConstants.idFrom) != idFrom));
     final msgKey = _messageKeys.putIfAbsent(document.id, () => GlobalKey());
@@ -2048,7 +2171,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (replyTo != null) _buildReplyBubble(replyTo, onTap: () => _scrollToMessage(replyTo['msgId'] ?? '')),
-              _buildRichText(content, isMe ? ColorConstants.textPrimary : ColorConstants.textPrimary),
+              _buildRichText(content, isMe ? ColorConstants.textPrimary : ColorConstants.textPrimary, selectable: !_selectionMode),
               if (isEdited)
                 const Padding(
                   padding: EdgeInsets.only(top: 2),
@@ -2093,7 +2216,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
 
     Widget bubble = GestureDetector(
-      onLongPress: () => _showReactionPicker(document.id, widget.arguments.groupId),
+      onTap: _selectionMode ? () => _toggleSelectionMode(document.id) : null,
+      onLongPress: _selectionMode ? () => _toggleSelectionMode(document.id) : () => _showReactionPicker(document.id, widget.arguments.groupId),
       onHorizontalDragEnd: (details) {
         if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
           setState(() => _replyTo = {
@@ -2116,6 +2240,23 @@ class _GroupChatPageState extends State<GroupChatPage> {
             ),
         ],
       ),
+    );
+
+    bubble = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        bubble,
+        if (isSelected)
+          Positioned(
+            top: -6,
+            right: -6,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: const BoxDecoration(color: ColorConstants.primaryColor, shape: BoxShape.circle),
+              child: const Icon(Icons.check, size: 14, color: Colors.white),
+            ),
+          ),
+      ],
     );
 
     if (isMe) {
@@ -2340,80 +2481,98 @@ class _GroupChatPageState extends State<GroupChatPage> {
           },
         ),
         centerTitle: false,
-        actions: [
-          _buildTopAction(
-            icon: Icons.call,
-            tooltip: 'Llamada de voz',
-            onTap: () => _startGroupAgoraCall(isVideo: false),
-          ),
-          _buildTopAction(
-            icon: Icons.videocam,
-            tooltip: 'Videollamada',
-            onTap: () => _startGroupAgoraCall(isVideo: true),
-          ),
-          _buildTopAction(
-            icon: Icons.radio,
-            tooltip: 'Radio walkie-talkie',
-            iconColor: ColorConstants.primaryColor,
-            onTap: _openRadioPanel,
-          ),
-          _buildTopAction(
-            icon: Icons.more_vert,
-            tooltip: 'Más opciones',
-            iconColor: Colors.black,
-            onTap: () {
-              showMenu<String>(
-                context: context,
-                position: const RelativeRect.fromLTRB(1000, 80, 12, 0),
-                items: [
-                  const PopupMenuItem(
-                    value: 'members',
-                    child: Row(children: [
-                      Icon(Icons.group, size: 18, color: Colors.grey),
-                      SizedBox(width: 8),
-                      Text('Ver miembros'),
-                    ]),
-                  ),
-                  PopupMenuItem(
-                    value: 'search',
-                    child: Row(children: [
-                      const Icon(Icons.search, size: 18, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      Text(_searchMode ? 'Cerrar búsqueda' : 'Buscar en el chat'),
-                    ]),
-                  ),
-                  PopupMenuItem(
-                    value: 'mute',
-                    child: Row(children: [
-                      Icon(_isMuted ? Icons.notifications_active : Icons.notifications_off, size: 18, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      Text(_isMuted ? 'Activar notificaciones' : 'Silenciar'),
-                    ]),
-                  ),
-                  PopupMenuItem(
-                    value: 'disappearing',
-                    child: Row(children: [
-                      Icon(_disappearingSeconds > 0 ? Icons.timer : Icons.timer_off_outlined,
-                          size: 18, color: _disappearingSeconds > 0 ? ColorConstants.themeColor : Colors.grey),
-                      const SizedBox(width: 8),
-                      Text(_disappearingSeconds > 0 ? 'Mensajes temporales ✓' : 'Mensajes temporales'),
-                    ]),
-                  ),
-                ],
-              ).then((value) {
-                if (value == null) return;
-                if (value == 'search') {
-                  setState(() {
-                    _searchMode = !_searchMode;
-                    if (!_searchMode) _searchQuery = '';
-                  });
-                  return;
-                }
-                _handleAppBarMenu(value);
-              });
-            },
-          ),
-        ],
+        actions: _selectionMode
+            ? [
+                IconButton(
+                  tooltip: 'Cancelar selección',
+                  icon: const Icon(Icons.close, color: Colors.black),
+                  onPressed: _clearSelection,
+                ),
+                IconButton(
+                  tooltip: 'Eliminar seleccionados',
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  onPressed: _deleteSelectedMessages,
+                ),
+              ]
+            : [
+                _buildTopAction(
+                  icon: Icons.call,
+                  tooltip: 'Llamada de voz',
+                  onTap: () => _startGroupAgoraCall(isVideo: false),
+                ),
+                _buildTopAction(
+                  icon: Icons.videocam,
+                  tooltip: 'Videollamada',
+                  onTap: () => _startGroupAgoraCall(isVideo: true),
+                ),
+                _buildTopAction(
+                  icon: Icons.radio,
+                  tooltip: 'Radio walkie-talkie',
+                  iconColor: ColorConstants.primaryColor,
+                  onTap: _openRadioPanel,
+                ),
+                _buildTopAction(
+                  icon: Icons.checklist,
+                  tooltip: 'Seleccionar mensajes',
+                  onTap: () => _toggleSelectionMode(),
+                ),
+                _buildTopAction(
+                  icon: Icons.more_vert,
+                  tooltip: 'Más opciones',
+                  iconColor: Colors.black,
+                  onTap: () {
+                    showMenu<String>(
+                      context: context,
+                      position: const RelativeRect.fromLTRB(1000, 80, 12, 0),
+                      items: [
+                        const PopupMenuItem(
+                          value: 'members',
+                          child: Row(children: [
+                            Icon(Icons.group, size: 18, color: Colors.grey),
+                            SizedBox(width: 8),
+                            Text('Ver miembros'),
+                          ]),
+                        ),
+                        PopupMenuItem(
+                          value: 'search',
+                          child: Row(children: [
+                            const Icon(Icons.search, size: 18, color: Colors.grey),
+                            const SizedBox(width: 8),
+                            Text(_searchMode ? 'Cerrar búsqueda' : 'Buscar en el chat'),
+                          ]),
+                        ),
+                        PopupMenuItem(
+                          value: 'mute',
+                          child: Row(children: [
+                            Icon(_isMuted ? Icons.notifications_active : Icons.notifications_off, size: 18, color: Colors.grey),
+                            const SizedBox(width: 8),
+                            Text(_isMuted ? 'Activar notificaciones' : 'Silenciar'),
+                          ]),
+                        ),
+                        PopupMenuItem(
+                          value: 'disappearing',
+                          child: Row(children: [
+                            Icon(_disappearingSeconds > 0 ? Icons.timer : Icons.timer_off_outlined,
+                                size: 18, color: _disappearingSeconds > 0 ? ColorConstants.themeColor : Colors.grey),
+                            const SizedBox(width: 8),
+                            Text(_disappearingSeconds > 0 ? 'Mensajes temporales ✓' : 'Mensajes temporales'),
+                          ]),
+                        ),
+                      ],
+                    ).then((value) {
+                      if (value == null) return;
+                      if (value == 'search') {
+                        setState(() {
+                          _searchMode = !_searchMode;
+                          if (!_searchMode) _searchQuery = '';
+                        });
+                        return;
+                      }
+                      _handleAppBarMenu(value);
+                    });
+                  },
+                ),
+              ],
       ),
       body: SafeArea(
         child: PopScope(
@@ -3001,7 +3160,10 @@ class _GroupChatPageState extends State<GroupChatPage> {
                               _showEmojiPicker = false;
                             }),
                             onChanged: _onTypingChanged,
-                            textInputAction: TextInputAction.send,
+                            keyboardType: TextInputType.multiline,
+                            textInputAction: TextInputAction.newline,
+                            minLines: 1,
+                            maxLines: 6,
                             onSubmitted: (_) {
                               _onSendMessage(_chatInputController.text, TypeMessage.text);
                               _focusNode.requestFocus();

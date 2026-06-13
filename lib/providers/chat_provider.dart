@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/models/models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -57,11 +58,13 @@ class ChatProvider {
         .doc(userId)
         .collection('chats')
         .orderBy('lastTimestamp', descending: true)
-        .limit(50)
+      .limit(200)
         .snapshots();
   }
 
-  void sendMessage(String content, int type, String groupChatId, String currentUserId, String peerId, {Map<String, dynamic>? extras}) {
+  Future<void> sendMessage(String content, int type, String groupChatId,
+      String currentUserId, String peerId,
+      {Map<String, dynamic>? extras}) async {
     final documentReference = firebaseFirestore
         .collection(FirestoreConstants.pathMessageCollection)
         .doc(groupChatId)
@@ -80,9 +83,12 @@ class ChatProvider {
     data['status'] = 'sent';
     if (extras != null) data.addAll(extras);
 
-    firebaseFirestore.runTransaction((transaction) async {
-      transaction.set(documentReference, data);
-    });
+    try {
+      await documentReference.set(data);
+    } catch (e) {
+      debugPrint('sendMessage write failed for $groupChatId: $e');
+      rethrow;
+    }
 
     // Enviar push notification desde servidor PHP
     final senderName = prefs.getString(FirestoreConstants.nickname) ?? 'Yo';
@@ -94,11 +100,12 @@ class ChatProvider {
         : type == 1 ? '📷 Foto' : type == 3 ? '📍 Ubicación' : type == 4 ? '📍 Ubicación en vivo' : type == 5 ? '🎤 Audio' : '💬 Mensaje';
     final ts = DateTime.now().millisecondsSinceEpoch;
     // Write for both participants so both can see the conversation
+    final writes = <Future<void>>[];
     for (final uid in [currentUserId, peerId]) {
       final otherId = uid == currentUserId ? peerId : currentUserId;
       final label = uid == currentUserId ? 'Tú: $preview' : '$senderName: $preview';
       final isReceiver = uid == peerId;
-      firebaseFirestore
+      writes.add(firebaseFirestore
           .collection('user_conversations')
           .doc(uid)
           .collection('chats')
@@ -109,7 +116,12 @@ class ChatProvider {
         'lastMessage': label,
         'lastTimestamp': ts,
         if (isReceiver) 'unreadCount': FieldValue.increment(1),
-      }, SetOptions(merge: true));
+      }, SetOptions(merge: true)));
+    }
+    try {
+      await Future.wait(writes);
+    } catch (e) {
+      debugPrint('sendMessage metadata update failed for $groupChatId: $e');
     }
   }
 

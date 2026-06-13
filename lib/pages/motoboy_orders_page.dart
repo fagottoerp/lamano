@@ -29,6 +29,7 @@ class _MotoboOrdersPageState extends State<MotoboOrdersPage> with SingleTickerPr
   late TabController _tabController;
   final _tabs = const ['Pendientes', 'Entregadas', 'Completadas'];
   final _tabKeys = const ['pendientes', 'entregadas', 'completadas'];
+  late String _activeTabKey;
   int _refreshToken = 0;
   StreamSubscription<bool>? _connSub;
   bool _online = true;
@@ -40,10 +41,14 @@ class _MotoboOrdersPageState extends State<MotoboOrdersPage> with SingleTickerPr
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
+    _activeTabKey = _tabKeys[_tabController.index];
     // Refresh automático al cambiar de tab (evita ver datos viejos al volver).
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging && mounted) {
-        setState(() => _refreshToken++);
+        setState(() {
+          _activeTabKey = _tabKeys[_tabController.index];
+          _refreshToken++;
+        });
       }
     });
     _online = ConnectivityService.instance.online;
@@ -127,6 +132,7 @@ class _MotoboOrdersPageState extends State<MotoboOrdersPage> with SingleTickerPr
                   children: _tabKeys.map((key) => _OrdersList(
                     userId: _lamanoUserId,
                     tab: key,
+                    isActive: key == _activeTabKey,
                     motoboyPhone: _motoboyPhone,
                     refreshToken: _refreshToken,
                   )).toList(),
@@ -140,11 +146,13 @@ class _MotoboOrdersPageState extends State<MotoboOrdersPage> with SingleTickerPr
 class _OrdersList extends StatefulWidget {
   final String userId;
   final String tab;
+  final bool isActive;
   final String motoboyPhone;
   final int refreshToken;
   const _OrdersList({
     required this.userId,
     required this.tab,
+    required this.isActive,
     required this.motoboyPhone,
     required this.refreshToken,
   });
@@ -161,6 +169,9 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
   bool _loading = true;
   String? _error;
   Timer? _autoRefreshTimer;
+  bool _fetchInProgress = false;
+  DateTime? _lastFetchAt;
+  bool _hasFetchedAtLeastOnce = false;
   // Last known motoboy position — updated on each fetch attempt
   Position? _lastPosition;
 
@@ -170,10 +181,14 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
   @override
   void initState() {
     super.initState();
-    _fetch();
+    if (widget.isActive) {
+      _fetch(force: true);
+    }
     if (widget.tab == 'pendientes') {
       _autoRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
-        if (mounted) _fetch();
+        if (mounted && widget.isActive) {
+          _fetch();
+        }
       });
     }
   }
@@ -181,8 +196,12 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
   @override
   void didUpdateWidget(covariant _OrdersList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.refreshToken != widget.refreshToken) {
-      _fetch();
+    if (widget.isActive && !oldWidget.isActive && !_hasFetchedAtLeastOnce) {
+      _fetch(force: true);
+      return;
+    }
+    if (widget.isActive && oldWidget.refreshToken != widget.refreshToken) {
+      _fetch(force: true);
     }
   }
 
@@ -192,7 +211,17 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
     super.dispose();
   }
 
-  Future<void> _fetch() async {
+  Future<void> _fetch({bool force = false}) async {
+    if (_fetchInProgress) return;
+
+    final now = DateTime.now();
+    if (!force && _lastFetchAt != null && now.difference(_lastFetchAt!).inSeconds < 8) {
+      return;
+    }
+
+    _fetchInProgress = true;
+    _lastFetchAt = now;
+
     if (!ConnectivityService.instance.online) {
       if (mounted) {
         setState(() {
@@ -200,9 +229,15 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
           _error = _orders.isEmpty ? 'Sin conexión a internet' : null;
         });
       }
+      _fetchInProgress = false;
       return;
     }
-    setState(() { _loading = true; _error = null; });
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       // Try to get current GPS position for proximity sort (best-effort, no UI block)
       if (widget.tab == 'pendientes') {
@@ -251,6 +286,7 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
           _orders = fetchedOrders;
           _loading = false;
         });
+        _hasFetchedAtLeastOnce = true;
       } else {
         if (!mounted) return;
         setState(() {
@@ -267,6 +303,8 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
     } catch (e) {
       if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
+    } finally {
+      _fetchInProgress = false;
     }
   }
 
@@ -606,6 +644,13 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
         final data = SafeJson.asMap(resp.body);
         final peerUid = SafeJson.stringValue(data['uid']);
         if (peerUid.isNotEmpty && orderId > 0 && context.mounted) {
+          final participants = <String>{};
+          if (myFirebaseUid.isNotEmpty) participants.add(myFirebaseUid);
+          participants.add(peerUid);
+          final sorted = participants.toList()..sort((a, b) => b.compareTo(a));
+          final roomId = sorted.isNotEmpty
+              ? 'order-$orderId-${sorted.join('-')}'
+              : 'order-$orderId';
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -614,7 +659,7 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
                   peerId: peerUid,
                   peerAvatar: '',
                   peerNickname: '$displayName · Orden #$orderId',
-                  customGroupChatId: 'order-$orderId',
+                  customGroupChatId: roomId,
                   peerLamanoId: assignedById.toString(),
                 ),
               ),

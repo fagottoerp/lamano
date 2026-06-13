@@ -2,36 +2,63 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Users collection ─────────────────────────────────────────
     match /users/{userId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // ── Messages collection ───────────────────────────────────────
-    // Only members of the group (groupChatId contains the UIDs) can read/write
     match /messages/{groupChatId}/{subCollection}/{messageId} {
       allow read, write: if request.auth != null
                          && (groupChatId.matches('.*' + request.auth.uid + '.*')
-                             || request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1');
+                             || request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1'
+                             || (exists(/databases/$(database)/documents/groups/$(groupChatId))
+                                 && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupChatId)).data.members));
     }
 
-    // ── Announcements (noticias) ──────────────────────────────────
-    // Anyone authenticated can read; only admin can write
     match /announcements/{docId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null
                    && request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1';
     }
 
-    // ── Groups ────────────────────────────────────────────────────
-    // Members can read their groups; only admin can create/delete
     match /groups/{groupId} {
-      allow read: if request.auth != null
-                  && (request.auth.uid in resource.data.members
-                      || request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1');
-      allow write: if request.auth != null
-                   && request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1';
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.createdBy == request.auth.uid;
+      allow update: if request.auth != null
+                    && (request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1'
+                        || (resource != null && request.auth.uid in resource.data.members));
+      allow delete: if request.auth != null
+                    && (request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1'
+                        || (resource != null && resource.data.createdBy == request.auth.uid));
+
+      match /radio_connected/{userId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    match /live_locations/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.fromId == request.auth.uid;
+      allow update, delete: if request.auth != null
+                    && (resource.data.fromId == request.auth.uid
+                        || request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1');
+    }
+
+    match /group_locations/{groupId}/members/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /typing/{chatId}/users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /user_conversations/{userId}/chats/{peerId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }

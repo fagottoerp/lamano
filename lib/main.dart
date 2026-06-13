@@ -281,6 +281,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   bool _locked = false;
   PinMode _pinMode = PinMode.verify;
+  bool _mustRelockOnResume = false;
 
   void _setOnline(bool online) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -316,23 +317,42 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      _setOnline(false);
-    }
-    if (state == AppLifecycleState.resumed) {
-      _setOnline(true);
-      _checkResumePin();
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _setOnline(true);
+        if (_mustRelockOnResume) {
+          _mustRelockOnResume = false;
+          _checkResumePin();
+        }
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        _setOnline(false);
+        _mustRelockOnResume = true;
+        if (mounted) {
+          setState(() => _locked = true);
+        }
+        break;
     }
   }
 
   Future<void> _checkResumePin() async {
     final has = await hasPinSet();
-    if (has && mounted) {
+    if (!mounted) return;
+    if (has) {
       setState(() {
         _pinMode = PinMode.verify;
         _locked = true;
       });
+      return;
     }
+    // If no PIN exists yet, force setup gate instead of leaving app unlocked.
+    setState(() {
+      _pinMode = PinMode.setup;
+      _locked = true;
+    });
   }
 
   @override

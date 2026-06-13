@@ -97,7 +97,7 @@ class _TraspasosActivosPageState extends State<TraspasosActivosPage> {
       }
 
       try {
-        final createUrl = Uri.parse('http://38.247.147.220/lamano/api_traspaso_create_group.php');
+        final createUrl = Uri.parse('http://38.247.147.220/lamano/api_traspaso_create_group_v2.php');
         final createResp = await http.post(
           createUrl,
           headers: {'Content-Type': 'application/json'},

@@ -86,7 +86,7 @@ class _TempChatsPageState extends State<TempChatsPage> with AutomaticKeepAliveCl
     }
   }
 
-  void _openChat(Map<String, dynamic> order) {
+  Future<void> _openChat(Map<String, dynamic> order) async {
     final motoboyFirebaseUid = (order['motoboy_firebase_uid'] ?? '') as String;
     final motoboyName        = (order['motoboy_name']         ?? 'Motoboy') as String;
     final orderId            = order['order_id'] as int;
@@ -104,8 +104,18 @@ class _TempChatsPageState extends State<TempChatsPage> with AutomaticKeepAliveCl
       return;
     }
 
-    // Room shared between web and app: 'order-{id}'
-    final customGroupChatId = 'order-$orderId';
+    final prefs = await SharedPreferences.getInstance();
+    final myFirebaseUid = prefs.getString(FirestoreConstants.id) ?? '';
+
+    // Room ID includes all known participants to pass Firestore rules.
+    final participants = <String>{};
+    if (myFirebaseUid.isNotEmpty) participants.add(myFirebaseUid);
+    if (motoboyFirebaseUid.isNotEmpty) participants.add(motoboyFirebaseUid);
+    if (motoboy2Uid.isNotEmpty) participants.add(motoboy2Uid);
+    final sorted = participants.toList()..sort((a, b) => b.compareTo(a));
+    final customGroupChatId = sorted.isNotEmpty
+      ? 'order-$orderId-${sorted.join('-')}'
+      : 'order-$orderId';
 
     // For group orders, use motoboy2 uid as peerId so both receive messages
     // The room is shared so both will see all messages

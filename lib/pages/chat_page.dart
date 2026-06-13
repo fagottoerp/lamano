@@ -119,6 +119,8 @@ class ChatPageState extends State<ChatPage> {
   final _chatInputController = TextEditingController();
   final _listScrollController = ScrollController();
   final _focusNode = FocusNode();
+  final Set<String> _selectedMessageIds = {};
+  bool _selectionMode = false;
 
   late final _chatProvider = context.read<ChatProvider>();
   late final _authProvider = context.read<AuthProvider>();
@@ -1101,7 +1103,7 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _onSendMessage(String content, int type) {
+  Future<void> _onSendMessage(String content, int type) async {
     if (content.trim().isNotEmpty) {
       _chatInputController.clear();
       final extras = <String, dynamic>{};
@@ -1113,8 +1115,22 @@ class ChatPageState extends State<ChatPage> {
       }
       _chatProvider.setTyping(_groupChatId, _currentUserId, false);
       _typingTimer?.cancel();
-      _chatProvider.sendMessage(content, type, _groupChatId, _currentUserId, widget.arguments.peerId,
-          extras: extras.isNotEmpty ? extras : null);
+      try {
+        await _chatProvider.sendMessage(
+          content,
+          type,
+          _groupChatId,
+          _currentUserId,
+          widget.arguments.peerId,
+          extras: extras.isNotEmpty ? extras : null,
+        );
+      } catch (_) {
+        Fluttertoast.showToast(
+          msg: 'No se pudo enviar el mensaje. Revisa conexión/permisos.',
+          backgroundColor: Colors.red,
+        );
+        return;
+      }
       if (_listScrollController.hasClients) {
         _listScrollController.animateTo(0, duration: Duration(milliseconds: 300), curve: Curves.easeOut);
       }
@@ -1123,7 +1139,7 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  Widget _buildRichText(String text, Color textColor) {
+  Widget _buildRichText(String text, Color textColor, {bool selectable = true}) {
     final urlRegex = RegExp(r'https?://[^\s]+');
     final spans = <TextSpan>[];
     int last = 0;
@@ -1149,9 +1165,74 @@ class ChatPageState extends State<ChatPage> {
       spans.add(TextSpan(text: text.substring(last), style: TextStyle(color: textColor)));
     }
     if (spans.isEmpty) {
-      return Text(text, style: TextStyle(color: textColor));
+      return selectable
+          ? SelectableText(text, style: TextStyle(color: textColor))
+          : Text(text, style: TextStyle(color: textColor));
     }
-    return RichText(text: TextSpan(children: spans));
+    return selectable
+        ? SelectableText.rich(
+            TextSpan(children: spans),
+            style: TextStyle(color: textColor),
+          )
+        : RichText(text: TextSpan(children: spans));
+  }
+
+  void _toggleSelectionMode([String? messageId]) {
+    setState(() {
+      _selectionMode = true;
+      if (messageId != null) {
+        if (_selectedMessageIds.contains(messageId)) {
+          _selectedMessageIds.remove(messageId);
+        } else {
+          _selectedMessageIds.add(messageId);
+        }
+      }
+      if (_selectedMessageIds.isEmpty && messageId == null) {
+        _selectionMode = false;
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectionMode = false;
+      _selectedMessageIds.clear();
+    });
+  }
+
+  Future<void> _deleteSelectedMessages() async {
+    if (_selectedMessageIds.isEmpty) return;
+    final ids = List<String>.from(_selectedMessageIds);
+    var deleted = 0;
+    var failed = 0;
+    for (final messageId in ids) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection(FirestoreConstants.pathMessageCollection)
+            .doc(_groupChatId)
+            .collection(_groupChatId)
+            .doc(messageId)
+            .get();
+        final data = doc.data() as Map<String, dynamic>? ?? {};
+        final senderId = data[FirestoreConstants.idFrom] as String? ?? '';
+        if (senderId == _currentUserId) {
+          await _softDeleteMessage(messageId);
+        } else {
+          await _hardDeleteMessage(messageId);
+        }
+        deleted++;
+      } catch (e) {
+        failed++;
+        debugPrint('Batch delete failed for $messageId: $e');
+      }
+    }
+    _clearSelection();
+    Fluttertoast.showToast(
+      msg: failed == 0
+          ? 'Se eliminaron $deleted mensajes'
+          : 'Se eliminaron $deleted mensajes, $failed fallaron',
+      backgroundColor: deleted > 0 ? Colors.green : Colors.red,
+    );
   }
 
   Widget _buildItemMessage(int index, DocumentSnapshot? document) {
@@ -1172,6 +1253,7 @@ class ChatPageState extends State<ChatPage> {
     }
     final senderName = _authProvider.prefs.getString(FirestoreConstants.nickname) ?? 'Yo';
     final msgKey = _messageKeys.putIfAbsent(document.id, () => GlobalKey());
+    final isSelected = _selectedMessageIds.contains(document.id);
 
     Widget _bubbleContent() {
       if (isDeleted) {
@@ -1206,7 +1288,7 @@ class ChatPageState extends State<ChatPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (replyTo != null) _buildReplyBubble(replyTo, onTap: () => _scrollToMessage(replyTo['msgId'] ?? '')),
-              _buildRichText(messageChat.content, ColorConstants.textPrimary),
+              _buildRichText(messageChat.content, ColorConstants.textPrimary, selectable: !_selectionMode),
             ],
           ),
         );
@@ -1259,7 +1341,8 @@ class ChatPageState extends State<ChatPage> {
     }
 
     Widget bubble = GestureDetector(
-      onLongPress: () => _showReactionPicker(document.id),
+      onTap: _selectionMode ? () => _toggleSelectionMode(document.id) : null,
+      onLongPress: _selectionMode ? () => _toggleSelectionMode(document.id) : () => _showReactionPicker(document.id),
       onHorizontalDragEnd: (details) {
         if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
           setState(() => _replyTo = {
@@ -1282,6 +1365,23 @@ class ChatPageState extends State<ChatPage> {
             ),
         ],
       ),
+    );
+
+    bubble = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        bubble,
+        if (isSelected)
+          Positioned(
+            top: -6,
+            right: -6,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: const BoxDecoration(color: ColorConstants.primaryColor, shape: BoxShape.circle),
+              child: const Icon(Icons.check, size: 14, color: Colors.white),
+            ),
+          ),
+      ],
     );
 
     if (isMe) {
@@ -1750,50 +1850,68 @@ class ChatPageState extends State<ChatPage> {
           },
         ),
         centerTitle: false,
-        actions: [
-          _buildTopAction(
-            icon: Icons.call,
-            tooltip: 'Llamada de voz',
-            onTap: () => _makeAgoraCall(isVideo: false),
-          ),
-          _buildTopAction(
-            icon: Icons.videocam,
-            tooltip: 'Videollamada',
-            onTap: () => _makeAgoraCall(isVideo: true),
-          ),
-          _buildTopAction(
-            icon: Icons.more_vert,
-            tooltip: 'Más opciones',
-            iconColor: Colors.black,
-            onTap: () {
-              showMenu<String>(
-                context: context,
-                position: const RelativeRect.fromLTRB(1000, 80, 12, 0),
-                items: [
-                  PopupMenuItem(
-                    value: 'mute',
-                    child: Row(children: [
-                      Icon(_isMuted ? Icons.notifications_active : Icons.notifications_off, size: 18, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      Text(_isMuted ? 'Activar notificaciones' : 'Silenciar'),
-                    ]),
-                  ),
-                  PopupMenuItem(
-                    value: 'block',
-                    child: Row(children: [
-                      Icon(_isBlocked ? Icons.lock_open : Icons.block, size: 18, color: _isBlocked ? Colors.green : Colors.red),
-                      const SizedBox(width: 8),
-                      Text(_isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'),
-                    ]),
-                  ),
-                ],
-              ).then((val) {
-                if (val == null) return;
-                _handleAppBarMenu(val);
-              });
-            },
-          ),
-        ],
+        actions: _selectionMode
+            ? [
+                IconButton(
+                  tooltip: 'Cancelar selección',
+                  icon: const Icon(Icons.close, color: Colors.black),
+                  onPressed: _clearSelection,
+                ),
+                IconButton(
+                  tooltip: 'Eliminar seleccionados',
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  onPressed: _deleteSelectedMessages,
+                ),
+              ]
+            : [
+                _buildTopAction(
+                  icon: Icons.call,
+                  tooltip: 'Llamada de voz',
+                  onTap: () => _makeAgoraCall(isVideo: false),
+                ),
+                _buildTopAction(
+                  icon: Icons.videocam,
+                  tooltip: 'Videollamada',
+                  onTap: () => _makeAgoraCall(isVideo: true),
+                ),
+                _buildTopAction(
+                  icon: Icons.checklist,
+                  tooltip: 'Seleccionar mensajes',
+                  onTap: () => _toggleSelectionMode(),
+                ),
+                _buildTopAction(
+                  icon: Icons.more_vert,
+                  tooltip: 'Más opciones',
+                  iconColor: Colors.black,
+                  onTap: () {
+                    showMenu<String>(
+                      context: context,
+                      position: const RelativeRect.fromLTRB(1000, 80, 12, 0),
+                      items: [
+                        PopupMenuItem(
+                          value: 'mute',
+                          child: Row(children: [
+                            Icon(_isMuted ? Icons.notifications_active : Icons.notifications_off, size: 18, color: Colors.grey),
+                            const SizedBox(width: 8),
+                            Text(_isMuted ? 'Activar notificaciones' : 'Silenciar'),
+                          ]),
+                        ),
+                        PopupMenuItem(
+                          value: 'block',
+                          child: Row(children: [
+                            Icon(_isBlocked ? Icons.lock_open : Icons.block, size: 18, color: _isBlocked ? Colors.green : Colors.red),
+                            const SizedBox(width: 8),
+                            Text(_isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'),
+                          ]),
+                        ),
+                      ],
+                    ).then((val) {
+                      if (val == null) return;
+                      _handleAppBarMenu(val);
+                    });
+                  },
+                ),
+              ],
       ),
       body: SafeArea(
         child: PopScope(
@@ -2160,7 +2278,10 @@ class ChatPageState extends State<ChatPage> {
                               _showEmojiPicker = false;
                             }),
                             onChanged: _onTypingChanged,
-                            textInputAction: TextInputAction.send,
+                            keyboardType: TextInputType.multiline,
+                            textInputAction: TextInputAction.newline,
+                            minLines: 1,
+                            maxLines: 6,
                             onSubmitted: (_) {
                               _onSendMessage(_chatInputController.text, TypeMessage.text);
                               _focusNode.requestFocus();
