@@ -511,7 +511,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
-							CURRENT_PROJECT_VERSION = 174;
+				CURRENT_PROJECT_VERSION = 241;
 				DEVELOPMENT_TEAM = FF3XTSVPAA;
 				ENABLE_BITCODE = NO;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -527,6 +527,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/Flutter",
 				);
+				MARKETING_VERSION = 3.13.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.avangelista.lamanochat;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				VERSIONING_SYSTEM = "apple-generic";
@@ -539,7 +540,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
-							CURRENT_PROJECT_VERSION = 174;
+				CURRENT_PROJECT_VERSION = 241;
 				DEVELOPMENT_TEAM = FF3XTSVPAA;
 				ENABLE_BITCODE = NO;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -555,6 +556,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/Flutter",
 				);
+				MARKETING_VERSION = 3.13.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.avangelista.lamanochat;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				VERSIONING_SYSTEM = "apple-generic";
