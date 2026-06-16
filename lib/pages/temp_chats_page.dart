@@ -117,16 +117,14 @@ class _TempChatsPageState extends State<TempChatsPage> with AutomaticKeepAliveCl
       ? 'order-$orderId-${sorted.join('-')}'
       : 'order-$orderId';
 
-    // For group orders, use motoboy2 uid as peerId so both receive messages
-    // The room is shared so both will see all messages
-    final effectivePeerId = (isGroup && motoboy2Uid.isNotEmpty) ? motoboy2Uid : motoboyFirebaseUid;
-
+    // Always use primary motoboy as peerId so GPS tracking works correctly.
+    // The customGroupChatId already includes all participant UIDs for the room.
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatPage(
           arguments: ChatPageArguments(
-            peerId:            effectivePeerId,
+            peerId:            motoboyFirebaseUid,
             peerAvatar:        '',
             peerNickname:      isGroup ? '👥 $motoboyName · Orden #$orderId' : '$motoboyName · Orden #$orderId',
             customGroupChatId: customGroupChatId,

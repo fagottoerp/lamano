@@ -58,11 +58,12 @@ class _SongPickerPageState extends State<SongPickerPage> {
 
   String? _previewingUrl;
   bool _previewPlaying = false;
+  StreamSubscription<PlayerState>? _audioStateSub;
 
   @override
   void initState() {
     super.initState();
-    _audioPlayer.playerStateStream.listen((state) {
+    _audioStateSub = _audioPlayer.playerStateStream.listen((state) {
       if (mounted) setState(() => _previewPlaying = state.playing);
     });
     _fetchCategory(_category);
@@ -71,6 +72,7 @@ class _SongPickerPageState extends State<SongPickerPage> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _audioStateSub?.cancel();
     _audioPlayer.dispose();
     _searchController.dispose();
     super.dispose();

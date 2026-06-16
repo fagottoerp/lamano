@@ -2651,6 +2651,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   Widget _buildListMessage() {
     return Flexible(
       child: StreamBuilder<QuerySnapshot>(
+        key: ValueKey('group_stream_${widget.arguments.groupId}'),
         stream: _chatProvider.getChatStream(widget.arguments.groupId, _limit),
         builder: (_, snapshot) {
           // DEBUG: Show error if Firebase fails

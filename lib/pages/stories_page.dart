@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -535,6 +536,7 @@ class _StoryViewPageState extends State<StoryViewPage> {
   final _audioPlayer = AudioPlayer();
   String _currentAudioUrl = '';
   bool _audioPlaying = false;
+  StreamSubscription<PlayerState>? _audioStateSub;
 
   Map<String, dynamic> get _current => widget.stories[_index].data() as Map<String, dynamic>;
   String get _storyId => widget.stories[_index].id;
@@ -544,7 +546,7 @@ class _StoryViewPageState extends State<StoryViewPage> {
     super.initState();
     _markViewed();
     _syncAudioForCurrent();
-    _audioPlayer.playerStateStream.listen((state) {
+    _audioStateSub = _audioPlayer.playerStateStream.listen((state) {
       if (mounted) setState(() => _audioPlaying = state.playing);
     });
   }
@@ -623,6 +625,7 @@ class _StoryViewPageState extends State<StoryViewPage> {
   @override
   void dispose() {
     _commentController.dispose();
+    _audioStateSub?.cancel();
     _audioPlayer.dispose();
     super.dispose();
   }

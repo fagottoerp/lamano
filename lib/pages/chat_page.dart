@@ -248,6 +248,7 @@ class ChatPageState extends State<ChatPage> {
     _typingSub?.cancel();
     _peerPresenceSub?.cancel();
     _peerUserSub?.cancel();
+    _audioStateSub?.cancel();
     _typingTimer?.cancel();
     _chatProvider.setTyping(_groupChatId, _currentUserId, false);
     for (final c in _videoControllers.values) { c.dispose(); }
@@ -2484,6 +2485,7 @@ class ChatPageState extends State<ChatPage> {
     return Flexible(
       child: _groupChatId.isNotEmpty
           ? StreamBuilder<QuerySnapshot>(
+              key: ValueKey('chat_stream_$_groupChatId'),
               stream: _chatProvider.getChatStream(_groupChatId, _limit),
               builder: (_, snapshot) {
                 // DEBUG: Show error if Firebase fails

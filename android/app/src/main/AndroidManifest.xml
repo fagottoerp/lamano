@@ -103,7 +103,7 @@
         <!-- flutter_foreground_task: GPS foreground service -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="location|microphone"
+            android:foregroundServiceType="location"
             android:stopWithTask="false"
             android:exported="false" />
 
