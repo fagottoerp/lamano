@@ -11,6 +11,14 @@ workflows:
       - name: Get Flutter packages
         script: flutter pub get
 
+      - name: Sync iOS version from pubspec.yaml
+        script: |
+          VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
+          BUILD=$(grep "^version:" pubspec.yaml | sed 's/version: //' | cut -d'+' -f2)
+          echo "Syncing iOS version: $VERSION build $BUILD"
+          sed -i "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $BUILD;/g" ios/Runner.xcodeproj/project.pbxproj
+          sed -i "s/MARKETING_VERSION = [0-9.]*/MARKETING_VERSION = $VERSION/g" ios/Runner.xcodeproj/project.pbxproj
+
       - name: Clean and Install CocoaPods
         script: |
           cd ios
@@ -33,7 +41,7 @@ workflows:
     publishing:
       email:
         recipients:
-          - tu-email@gmail.com   # <-- cambia esto por tu email
+          - fagottoerp@gmail.com
         notify:
           success: true
           failure: true
