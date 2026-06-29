@@ -86,12 +86,36 @@ class _GroupRadioWidgetState extends State<GroupRadioWidget> {
         .listen((snap) {
       if (!mounted) return;
 
-      final users = snap.docs.map((doc) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      const staleMs = 30 * 60 * 1000; // 30 min: doc huérfano por crash/cierre
+
+      // Limpiar docs huérfanos en background
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final connectedAt = data['connectedAt'];
+        int? ts;
+        if (connectedAt is Timestamp) ts = connectedAt.millisecondsSinceEpoch;
+        if (ts != null && (now - ts) > staleMs) {
+          doc.reference.delete().catchError((_) {});
+          continue;
+        }
+      }
+
+      final activeDocs = snap.docs.where((doc) {
+        final data = doc.data();
+        final connectedAt = data['connectedAt'];
+        int? ts;
+        if (connectedAt is Timestamp) ts = connectedAt.millisecondsSinceEpoch;
+        if (ts == null) return false; // sin timestamp = huérfano
+        return (now - ts) <= staleMs;
+      }).toList();
+
+      final users = activeDocs.map((doc) {
         final data = doc.data();
         return data['name'] as String? ?? 'Usuario';
       }).toList();
 
-      final speakers = snap.docs
+      final speakers = activeDocs
           .where((doc) {
             final data = doc.data();
             return doc.id != widget.currentUserId && (data['speaking'] as bool? ?? false);

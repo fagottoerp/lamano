@@ -2,23 +2,37 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isAdmin() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return request.auth.uid == 'UZ4b4H2CkrQEkLgBPnaPjtVn11F2'
+             || (userDoc.data.keys().hasAny(['aboutMe']) && userDoc.data.aboutMe.lower().matches('.*admin.*'))
+             || (userDoc.data.keys().hasAny(['rol_id']) && (userDoc.data.rol_id == '1' || userDoc.data.rol_id == '2'));
+    }
+
     match /users/{userId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == userId;
+
+      match /stickers/{stickerId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    match /panic_alerts/{docId} {
+      allow read, write: if request.auth != null;
     }
 
     match /messages/{groupChatId}/{subCollection}/{messageId} {
       allow read, write: if request.auth != null
                          && (groupChatId.matches('.*' + request.auth.uid + '.*')
-                             || request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1'
+                             || isAdmin()
                              || (exists(/databases/$(database)/documents/groups/$(groupChatId))
                                  && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupChatId)).data.members));
     }
 
     match /announcements/{docId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null
-                   && request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1';
+      allow write: if request.auth != null && isAdmin();
     }
 
     match /groups/{groupId} {
@@ -26,10 +40,10 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.resource.data.createdBy == request.auth.uid;
       allow update: if request.auth != null
-                    && (request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1'
+                    && (isAdmin()
                         || (resource != null && request.auth.uid in resource.data.members));
       allow delete: if request.auth != null
-                    && (request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1'
+                    && (isAdmin()
                         || (resource != null && resource.data.createdBy == request.auth.uid));
 
       match /radio_connected/{userId} {
@@ -43,8 +57,7 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.resource.data.fromId == request.auth.uid;
       allow update, delete: if request.auth != null
-                    && (resource.data.fromId == request.auth.uid
-                        || request.auth.uid == 'NVJyXFoN6kNIVPEPBVfZSF6y1Dm1');
+                    && (resource.data.fromId == request.auth.uid || isAdmin());
     }
 
     match /group_locations/{groupId}/members/{userId} {
@@ -58,7 +71,9 @@ service cloud.firestore {
     }
 
     match /user_conversations/{userId}/chats/{peerId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null 
+                   && (request.auth.uid == userId || request.auth.uid == peerId);
     }
 
     match /users_locations/{docId} {

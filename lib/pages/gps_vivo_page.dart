@@ -30,6 +30,7 @@ class GpsVivoPage extends StatefulWidget {
 
 class _GpsVivoPageState extends State<GpsVivoPage> {
   final MapController _mapController = MapController();
+  bool _mapReady = false;
   String? _selectedUserId;
   late final Future<bool> _isAdminFuture = _checkIsAdmin();
 
@@ -53,6 +54,7 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
   void dispose() {
     _recordTimer?.cancel();
     _audioRecorder.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -115,6 +117,9 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
                   .collection('users_locations')
                   .snapshots(),
               builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+            return const Center(child: CircularProgressIndicator(color: ColorConstants.primaryColor));
+          }
           final users = <_UserLocation>[];
           if (snap.hasData) {
             for (final doc in snap.data!.docs) {
@@ -156,6 +161,17 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
             final avgLng = users.map((u) => u.lng).reduce((a, b) => a + b) / users.length;
             center = LatLng(avgLat, avgLng);
             zoom = 12.0;
+          }
+
+          // Mover mapa cuando cambia la selección (sin reconstruir el widget completo)
+          if (_mapReady) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                try {
+                  _mapController.move(center, zoom);
+                } catch (_) {}
+              }
+            });
           }
 
           return Column(
@@ -209,6 +225,17 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                                const SizedBox(width: 4),
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: u.online
+                                        ? const Color(0xFF2E7D32)
+                                        : Colors.black87,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -226,6 +253,9 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
                       options: MapOptions(
                         initialCenter: center,
                         initialZoom: zoom,
+                        onMapReady: () {
+                          if (mounted) setState(() => _mapReady = true);
+                        },
                       ),
                       children: [
                         TileLayer(
@@ -278,7 +308,7 @@ class _GpsVivoPageState extends State<GpsVivoPage> {
                                       Icons.location_on,
                                       color: isSelected
                                           ? const Color(0xFF1565C0)
-                                          : (u.online ? Colors.redAccent : Colors.grey),
+                                          : (u.online ? const Color(0xFF2E7D32) : Colors.black87),
                                       size: isSelected ? 30 : 24,
                                     ),
                                     if (isSelected && ago.isNotEmpty)

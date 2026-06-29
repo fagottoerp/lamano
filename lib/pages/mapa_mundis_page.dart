@@ -242,6 +242,8 @@ class _MapaMundisPageState extends State<MapaMundisPage>
                   _buildFilterChip('⚡', 'Rápidas', 'rapidas'),
                   _buildFilterChip('🧭', 'Zonas', 'zones'),
                   _buildFilterChip('🚔', 'Controles Waze', 'wazeControls'),
+                  _buildFilterChip('🏦', 'BancoEstado', 'bancoestado'),
+                  _buildFilterChip('💳', 'Cajas Vecinas', 'cajavecina'),
                   if (_isAdmin) _buildFilterChip('👥', 'Usuarios', 'usuarios'),
                   if (_isMisionPuertoMember) _buildFilterChip('🎯', 'Misión Puerto', 'misionPuerto'),
                 ],

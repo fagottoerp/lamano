@@ -18,8 +18,10 @@ class GroupRadioService {
   GroupRadioService._internal();
   
   RtcEngine? _engine;
-  String? _currentChannelName;
+  String? _currentChannelName;    // canal Agora (sanitizado)
+  String? _currentGroupChatId;   // groupChatId original para Firestore
   String? _currentUserId;
+  String? _currentUserName;
   bool _isConnected = false;
   bool _isMuted = true; // PTT: empezar muteado
   bool _alwaysLiveMode = false; // false = PTT, true = siempre en vivo
@@ -60,22 +62,19 @@ class GroupRadioService {
       _engine = createAgoraRtcEngine();
       await _engine!.initialize(const RtcEngineContext(
         appId: _agoraAppId,
-        channelProfile: ChannelProfileType.channelProfileCommunication,
+        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
       ));
 
-      // Configuración para walkie-talkie
-      await _engine!.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
       await _engine!.enableAudio();
-      await _engine!.setAudioProfile(
-        profile: AudioProfileType.audioProfileDefault,
-        scenario: AudioScenarioType.audioScenarioChatroom,
-      );
       
       // Empezar muteado (PTT)
       await _engine!.muteLocalAudioStream(true);
 
       // Registrar event handlers
       _engine!.registerEventHandler(RtcEngineEventHandler(
+        onError: (ErrorCodeType err, String msg) {
+          debugPrint('[RADIO] ❌ Error Agora: $err - $msg');
+        },
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
           debugPrint('[RADIO] ✅ Conectado al canal: ${connection.channelId}');
           _isConnected = true;
@@ -143,24 +142,29 @@ class GroupRadioService {
       // Canal = groupChatId sanitizado
       final channelName = groupChatId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '');
       
+      // UID debe ser consistente y positivo para Agora (0-2147483647)
+      final agoraUid = userId.hashCode.abs() % 2147483647;
+      
       // Obtener token de Agora
-      final token = await _fetchAgoraToken(channelName, userId);
+      final token = await _fetchAgoraToken(channelName, agoraUid);
       
       _currentChannelName = channelName;
+      _currentGroupChatId = groupChatId;  // guardar original para Firestore
       _currentUserId = userId;
+      _currentUserName = userName;
 
       // Unirse al canal
       final options = ChannelMediaOptions(
-        channelProfile: ChannelProfileType.channelProfileCommunication,
+        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
         clientRoleType: ClientRoleType.clientRoleBroadcaster,
         autoSubscribeAudio: true,
         publishMicrophoneTrack: true,
       );
 
       await _engine!.joinChannel(
-        token: token,
+        token: token ?? '',
         channelId: channelName,
-        uid: int.tryParse(userId.hashCode.toString()) ?? 0,
+        uid: agoraUid,
         options: options,
       );
 
@@ -177,7 +181,7 @@ class GroupRadioService {
         'speaking': false,
       });
 
-      debugPrint('[RADIO] ✅ Conexión completada');
+      debugPrint('[RADIO] ✅ Conexión completada (canal: $channelName, uid: $agoraUid)');
       // Mantener CPU/audio activo cuando pantalla se bloquea
       _startRadioWakeLock(userName);
       // Notificar en el chat del grupo
@@ -198,19 +202,26 @@ class GroupRadioService {
         await _engine!.leaveChannel();
       }
 
-      if (_currentChannelName != null && _currentUserId != null) {
-        // Remover de Firestore
-        final groupId = _currentChannelName;
+      if (_currentGroupChatId != null && _currentUserId != null) {
+        // Remover de Firestore usando groupChatId original
+        final groupId = _currentGroupChatId!;
+        final uid = _currentUserId!;
+        final uname = _currentUserName ?? '';
         await FirebaseFirestore.instance
             .collection('groups')
             .doc(groupId)
             .collection('radio_connected')
-            .doc(_currentUserId)
+            .doc(uid)
             .delete();
+
+        // Notificar desconexión en el chat
+        await _sendRadioSystemMessage(groupId, uid, uname, connected: false);
       }
 
       _currentChannelName = null;
+      _currentGroupChatId = null;
       _currentUserId = null;
+      _currentUserName = null;
       _isConnected = false;
       _isMuted = true;
       _connectionController.add(false);
@@ -228,10 +239,10 @@ class GroupRadioService {
       _isMuted = false;
 
       // Marcar como hablando en Firestore
-      if (_currentChannelName != null && _currentUserId != null) {
+      if (_currentGroupChatId != null && _currentUserId != null) {
         await FirebaseFirestore.instance
             .collection('groups')
-            .doc(_currentChannelName)
+            .doc(_currentGroupChatId)
             .collection('radio_connected')
             .doc(_currentUserId)
             .update({
@@ -255,10 +266,10 @@ class GroupRadioService {
       _isMuted = true;
 
       // Quitar marca de hablando en Firestore
-      if (_currentChannelName != null && _currentUserId != null) {
+      if (_currentGroupChatId != null && _currentUserId != null) {
         await FirebaseFirestore.instance
             .collection('groups')
-            .doc(_currentChannelName)
+            .doc(_currentGroupChatId)
             .collection('radio_connected')
             .doc(_currentUserId)
             .update({'speaking': false});
@@ -283,10 +294,10 @@ class GroupRadioService {
         await _engine!.muteLocalAudioStream(false);
         _isMuted = false;
         
-        if (_currentChannelName != null && _currentUserId != null) {
+        if (_currentGroupChatId != null && _currentUserId != null) {
           await FirebaseFirestore.instance
               .collection('groups')
-              .doc(_currentChannelName)
+              .doc(_currentGroupChatId)
               .collection('radio_connected')
               .doc(_currentUserId)
               .update({
@@ -301,10 +312,10 @@ class GroupRadioService {
         await _engine!.muteLocalAudioStream(true);
         _isMuted = true;
         
-        if (_currentChannelName != null && _currentUserId != null) {
+        if (_currentGroupChatId != null && _currentUserId != null) {
           await FirebaseFirestore.instance
               .collection('groups')
-              .doc(_currentChannelName)
+              .doc(_currentGroupChatId)
               .collection('radio_connected')
               .doc(_currentUserId)
               .update({
@@ -338,38 +349,68 @@ class GroupRadioService {
     }
   }
 
-  /// Envía mensaje del sistema al chat del grupo avisando que alguien entró al radio
-  /// Actualiza el estado de radio en el documento del grupo en lugar de
-  /// insertar mensajes repetidos en la colección `messages`.
-  /// Esto evita spam de escrituras/lecturas cuando hay reconexiones.
-  Future<void> _sendRadioSystemMessage(String groupChatId, String userId, String userName) async {
+  /// Envía mensaje del sistema al chat del grupo avisando que alguien entró/salió del radio.
+  /// Inserta un mensaje real en la colección `messages` del grupo y actualiza radio_status.
+  Future<void> _sendRadioSystemMessage(String groupChatId, String userId, String userName, {bool connected = true}) async {
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
       final groupRef = FirebaseFirestore.instance.collection('groups').doc(groupChatId);
 
-      // Leer estado actual y evitar escrituras frecuentes (debounce 60s)
+      // Debounce: no enviar mensajes del mismo usuario más seguido que 5 min
       final snap = await groupRef.get();
       final data = snap.data() as Map<String, dynamic>?;
       final radio = data?['radio_status'] as Map<String, dynamic>?;
       final lastSeen = radio != null ? (radio['lastSeen'] as int? ?? 0) : 0;
-      const debounceMs = 60 * 1000; // 60 segundos
-      if (now - lastSeen < debounceMs) {
-        debugPrint('[RADIO] Saltando actualización radio_status (debounce)');
+      final lastUser = radio?['lastUserId'] as String? ?? '';
+      const debounceMs = 5 * 60 * 1000; // 5 minutos
+      if (lastUser == userId && (now - lastSeen < debounceMs)) {
+        debugPrint('[RADIO] Saltando mensaje sistema (debounce 5min)');
+        // Igual actualizar connectedCount
+        final connectedSnap = await groupRef.collection('radio_connected').get();
+        await groupRef.set({
+          'radio_status': {
+            'connectedCount': connectedSnap.docs.length,
+            'active': connected,
+          }
+        }, SetOptions(merge: true));
         return;
       }
 
+      // Contar usuarios conectados actualmente
+      final connectedSnap = await groupRef.collection('radio_connected').get();
+      final connectedCount = connectedSnap.docs.length;
+
+      // Actualizar radio_status en el documento del grupo
       await groupRef.set({
         'radio_status': {
           'lastUserId': userId,
           'lastUserName': userName,
           'lastSeen': now,
-          'active': true
+          'active': connected,
+          'connectedCount': connectedCount,
         }
       }, SetOptions(merge: true));
 
-      debugPrint('[RADIO] radio_status actualizado para $userName');
+      // Insertar mensaje de sistema en el chat del grupo
+      final action = connected ? 'se conectó a' : 'se desconectó de';
+      final emoji = connected ? '📻🟢' : '📻⚪';
+      String content = '$emoji $userName $action la radio';
+      if (connected && connectedCount > 0) {
+        content += '\n👥 $connectedCount usuario${connectedCount > 1 ? 's' : ''} en línea';
+      }
+
+      final messageRef = groupRef.collection('messages').doc();
+      await messageRef.set({
+        'idFrom': 'system',
+        'content': content,
+        'timestamp': now.toString(),
+        'type': 0,
+        'isSystemMessage': true,
+      });
+
+      debugPrint('[RADIO] Mensaje de sistema enviado: $content');
     } catch (e) {
-      debugPrint('[RADIO] Error actualizando radio_status: $e');
+      debugPrint('[RADIO] Error enviando mensaje radio: $e');
     }
   }
 
@@ -394,26 +435,31 @@ class GroupRadioService {
   }
 
   /// Obtener token de Agora desde servidor
-  Future<String> _fetchAgoraToken(String channelName, String userId) async {
+  Future<String?> _fetchAgoraToken(String channelName, int uid) async {
     try {
       final response = await http.post(
         Uri.parse(_tokenServerUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'channel_name': channelName,
-          'uid': userId.hashCode.abs(),
+          'uid': uid,
           'role': 'publisher',
         }),
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return (data['token'] as String?) ?? '';
+        final token = data['token'] as String?;
+        if (token != null && token.isNotEmpty) {
+          debugPrint('[RADIO] Token obtenido correctamente');
+          return token;
+        }
       }
     } catch (e) {
       debugPrint('[RADIO] Error obteniendo token: $e');
     }
-    return ''; // Token vacío = modo test (solo desarrollo)
+    debugPrint('[RADIO] ⚠️ Sin token - verificar servidor');
+    return null; // null es correcto para joinChannel sin token
   }
 
   /// Limpiar recursos

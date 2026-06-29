@@ -2399,16 +2399,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
                 || _nick == 'admin';
             // radio status (set by GroupRadioService)
             final radio = data?['radio_status'] as Map<String, dynamic>?;
-            final now = DateTime.now().millisecondsSinceEpoch;
-            String? radioBanner;
-            if (radio != null) {
-              final lastSeen = (radio['lastSeen'] as int?) ?? 0;
-              final lastName = (radio['lastUserName'] as String?) ?? '';
-              // show banner if seen in last 2 minutes
-              if (now - lastSeen < 120 * 1000) {
-                radioBanner = '📻 $lastName está en la señal';
-              }
-            }
+            final radioCount = (radio?['connectedCount'] as int?) ?? 0;
+            final radioActive = (radio?['active'] as bool?) ?? false;
             return Row(
               children: [
                 GestureDetector(
@@ -2460,16 +2452,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
                           '${_listMessage.length} mensajes',
                           style: const TextStyle(fontSize: 12, color: ColorConstants.textSecondary),
                         ),
-                        // Radio status banner below title
-                        if (radioBanner != null) ...[
+                        // Radio active indicator (small dot)
+                        if (radioActive && radioCount > 0) ...[
                           const SizedBox(height: 2),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(radioBanner, style: TextStyle(color: Colors.green.shade800, fontSize: 10)),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(width: 6, height: 6, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.green)),
+                              const SizedBox(width: 4),
+                              Text('📻 $radioCount en radio', style: TextStyle(color: Colors.green.shade700, fontSize: 10)),
+                            ],
                           ),
                         ],
                       ],

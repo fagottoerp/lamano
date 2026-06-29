@@ -22,6 +22,7 @@ import 'pages/pin_lock_page.dart';
 import 'providers/providers.dart';
 import 'utils/foreground_gps_service.dart';
 import 'services/shared_sticker_share_service.dart';
+import 'services/group_radio_service.dart';
 
 
 // ── Global navigator key so background handler can push routes ────────────────
@@ -327,13 +328,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
-      case AppLifecycleState.detached:
       case AppLifecycleState.hidden:
         _setOnline(false);
         _mustRelockOnResume = true;
         if (mounted) {
           setState(() => _locked = true);
         }
+        break;
+      case AppLifecycleState.detached:
+        _setOnline(false);
+        _mustRelockOnResume = true;
+        if (mounted) {
+          setState(() => _locked = true);
+        }
+        // Desconectar radio al cerrar la app
+        GroupRadioService().disconnect();
         break;
     }
   }
