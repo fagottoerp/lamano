@@ -32,13 +32,13 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   static const String _alertsCollection = 'citizen_alerts';
   static const String _geoZonesCollection = 'geo_zones';
   static const String _priorityTemplatesApiUrl =
-      'http://38.247.147.220/lamano/api_priority_alert_templates.php';
+      'http://93.127.135.73/lamano/api_priority_alert_templates.php';
     static const String _wazeProxyApiUrl =
-      'http://38.247.147.220/lamano/api_waze_alerts_proxy.php';
+      'http://93.127.135.73/lamano/api_waze_alerts_proxy.php';
       static const String _poisApiUrl =
-        'http://38.247.147.220/lamano/api_pois.php';
+        'http://93.127.135.73/lamano/api_pois.php';
       static const String _bancoestadoApiUrl =
-        'http://38.247.147.220/lamano/api_bancoestado.php';
+        'http://93.127.135.73/lamano/api_bancoestado.php';
     static const String _safePlacesCollection = 'safe_places';
 
   static final List<_AlertCategory> _categories = [
@@ -544,7 +544,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
   Future<List<Map<String, dynamic>>> _loadTraspasos() async {
     try {
       if (_currentUserId.isEmpty) return const [];
-      final uri = Uri.parse('http://38.247.147.220/lamano/api_traspasos_activos.php?user_id=$_currentUserId');
+      final uri = Uri.parse('http://93.127.135.73/lamano/api_traspasos_activos.php?user_id=$_currentUserId');
       final resp = await http.get(uri).timeout(const Duration(seconds: 10));
       if (resp.statusCode != 200) return const [];
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -666,7 +666,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
       try {
         final lat = (enriched['lat'] as num).toDouble();
         final lng = (enriched['lng'] as num).toDouble();
-        final uri = Uri.parse('http://38.247.147.220/lamano/api_poi_details.php?lat=$lat&lng=$lng');
+        final uri = Uri.parse('http://93.127.135.73/lamano/api_poi_details.php?lat=$lat&lng=$lng');
         final resp = await http.get(uri).timeout(const Duration(seconds: 8));
         if (resp.statusCode == 200) {
           final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -863,7 +863,7 @@ class _MapaMundisPageState extends State<MapaMundisPage>
     );
     
     try {
-      final uri = Uri.parse('http://38.247.147.220/lamano/api_google_place_tap.php?lat=${point.latitude}&lng=${point.longitude}');
+      final uri = Uri.parse('http://93.127.135.73/lamano/api_google_place_tap.php?lat=${point.latitude}&lng=${point.longitude}');
       final resp = await http.get(uri).timeout(const Duration(seconds: 10));
       
       if (!mounted) return;

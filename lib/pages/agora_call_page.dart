@@ -6,8 +6,8 @@ import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/call_service.dart';
 
-const String kJitsiDomain = 'jitsi.38.247.147.220.nip.io';
-const String kJitsiTokenApi = 'http://38.247.147.220/lamano/api_jitsi_token.php';
+const String kJitsiDomain = 'jitsi.93.127.135.73.nip.io';
+const String kJitsiTokenApi = 'http://93.127.135.73/lamano/api_jitsi_token.php';
 
 // Nombre de clase mantenido para no romper imports existentes
 class AgoraCallPage extends StatefulWidget {

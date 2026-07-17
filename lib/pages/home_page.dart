@@ -473,7 +473,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     try {
       final lamanoUserId = _authProvider.prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
       if (lamanoUserId.isEmpty) return;
-      final uri = Uri.parse('http://38.247.147.220/lamano/api_shift_status.php?user_id=$lamanoUserId');
+      final uri = Uri.parse('http://93.127.135.73/lamano/api_shift_status.php?user_id=$lamanoUserId');
       final resp = await http.get(uri).timeout(const Duration(seconds: 12));
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
       if (!mounted) return;
@@ -767,7 +767,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     try {
       await http.post(
-        Uri.parse('http://38.247.147.220/lamano/api_gps_off_alert.php'),
+        Uri.parse('http://93.127.135.73/lamano/api_gps_off_alert.php'),
         body: {
           'user_id': lamanoUserId,
           'user_name': nickname,

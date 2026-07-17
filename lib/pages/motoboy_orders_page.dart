@@ -267,7 +267,7 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
         qp['origin_lat'] = _lastPosition!.latitude.toStringAsFixed(6);
         qp['origin_lng'] = _lastPosition!.longitude.toStringAsFixed(6);
       }
-      final url = Uri.http('38.247.147.220', '/lamano/api_motoboy_orders.php', qp);
+      final url = Uri.http('93.127.135.73', '/lamano/api_motoboy_orders.php', qp);
       final resp = await http.get(url).timeout(const Duration(seconds: 20));
       final data = SafeJson.asMap(resp.body);
       if (SafeJson.boolValue(data['success'])) {
@@ -410,7 +410,7 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
         qp['origin_lng'] = pos.longitude.toStringAsFixed(6);
       }
 
-      final uri = Uri.http('38.247.147.220', '/lamano/api_motoboy_optimize_route.php', qp);
+      final uri = Uri.http('93.127.135.73', '/lamano/api_motoboy_optimize_route.php', qp);
       final resp = await http.get(uri).timeout(const Duration(seconds: 30));
       final data = jsonDecode(resp.body);
 
@@ -512,7 +512,7 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
         qp['origin_lat'] = pos.latitude.toStringAsFixed(6);
         qp['origin_lng'] = pos.longitude.toStringAsFixed(6);
       }
-      final uri = Uri.http('38.247.147.220', '/lamano/api_motoboy_optimize_route.php', qp);
+      final uri = Uri.http('93.127.135.73', '/lamano/api_motoboy_optimize_route.php', qp);
       final resp = await http.get(uri).timeout(const Duration(seconds: 30));
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
 
@@ -637,7 +637,7 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
     // Get Firebase UID of the person who assigned the order
     try {
       final resp = await http.get(
-        Uri.parse('http://38.247.147.220/lamano/api_firebase_uid.php?user_id=$assignedById'),
+        Uri.parse('http://93.127.135.73/lamano/api_firebase_uid.php?user_id=$assignedById'),
       ).timeout(const Duration(seconds: 10));
 
       if (resp.statusCode == 200) {
@@ -729,7 +729,7 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
       final userId = prefs.getString(FirestoreConstants.lamanoUserId) ?? '';
       if (userId.isNotEmpty) {
         http.post(
-          Uri.parse('http://38.247.147.220/lamano/api_save_phone.php'),
+          Uri.parse('http://93.127.135.73/lamano/api_save_phone.php'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({'user_id': userId, 'phone': entered}),
         ).ignore();
@@ -753,7 +753,7 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
 
     try {
       final resp = await http.post(
-        Uri.parse('http://38.247.147.220/lamano/twilio_proxy_call.php'),
+        Uri.parse('http://93.127.135.73/lamano/twilio_proxy_call.php'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'motoboy_phone': motoboyPhone,
@@ -1349,7 +1349,7 @@ class _OrdersListState extends State<_OrdersList> with AutomaticKeepAliveClientM
     if (!isCreditOrder) {
       try {
         final resp = await http.get(
-          Uri.parse('http://38.247.147.220/lamano/api_payment_methods.php?user_id=${widget.userId}'),
+          Uri.parse('http://93.127.135.73/lamano/api_payment_methods.php?user_id=${widget.userId}'),
         ).timeout(const Duration(seconds: 10));
         final data = SafeJson.asMap(resp.body);
         if (SafeJson.boolValue(data['success'])) {
@@ -1546,7 +1546,7 @@ class _TerminarOrderSheetState extends State<_TerminarOrderSheet> {
     setState(() => _submitting = true);
 
     try {
-      final uri = Uri.parse('http://38.247.147.220/lamano/api_terminar_orden.php');
+      final uri = Uri.parse('http://93.127.135.73/lamano/api_terminar_orden.php');
       final req  = http.MultipartRequest('POST', uri);
 
       req.fields['user_id']    = widget.userId;

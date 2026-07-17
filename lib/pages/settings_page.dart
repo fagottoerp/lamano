@@ -461,7 +461,7 @@ class SettingsPageState extends State<SettingsPage> {
       final lamanoUserId = _settingProvider.getPref(FirestoreConstants.lamanoUserId) ?? '';
       if (lamanoUserId.isNotEmpty) {
         await http.post(
-          Uri.parse('http://38.247.147.220/lamano/api_save_phone.php'),
+          Uri.parse('http://93.127.135.73/lamano/api_save_phone.php'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({'user_id': lamanoUserId, 'phone': phone}),
         );

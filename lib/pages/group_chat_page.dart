@@ -837,7 +837,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   void _sendGroupPushNotification(String content, int type) {
     http
         .post(
-          Uri.parse('http://38.247.147.220/lamano/api_send_message_push.php'),
+          Uri.parse('http://93.127.135.73/lamano/api_send_message_push.php'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'groupChatId': widget.arguments.groupId,

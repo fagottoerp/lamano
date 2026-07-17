@@ -27,7 +27,7 @@ class SettingProvider {
     
     final request = http.MultipartRequest(
       'POST',
-      Uri.parse('http://38.247.147.220/lamano/api_upload_chat_file.php'),
+      Uri.parse('http://93.127.135.73/lamano/api_upload_chat_file.php'),
     );
     
     request.fields['userId'] = userId;

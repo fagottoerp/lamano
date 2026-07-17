@@ -69,7 +69,7 @@ class _ShiftOpenClosePageState extends State<ShiftOpenClosePage> {
     setState(() => _loading = true);
     try {
       final uri = Uri.parse(
-        'http://38.247.147.220/lamano/api_shift_status.php?user_id=${widget.lamanoUserId}',
+        'http://93.127.135.73/lamano/api_shift_status.php?user_id=${widget.lamanoUserId}',
       );
       final resp = await http.get(uri).timeout(const Duration(seconds: 20));
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -154,7 +154,7 @@ class _ShiftOpenClosePageState extends State<ShiftOpenClosePage> {
     try {
       final req = http.MultipartRequest(
         'POST',
-        Uri.parse('http://38.247.147.220/lamano/api_shift_open.php'),
+        Uri.parse('http://93.127.135.73/lamano/api_shift_open.php'),
       );
       req.fields['user_id'] = widget.lamanoUserId;
       req.fields['opening_cash'] = _openCashCtrl.text.trim();
@@ -210,7 +210,7 @@ class _ShiftOpenClosePageState extends State<ShiftOpenClosePage> {
     try {
       final req = http.MultipartRequest(
         'POST',
-        Uri.parse('http://38.247.147.220/lamano/api_shift_close.php'),
+        Uri.parse('http://93.127.135.73/lamano/api_shift_close.php'),
       );
       req.fields['user_id'] = widget.lamanoUserId;
       req.fields['closing_cash'] = _closeCashCtrl.text.trim();

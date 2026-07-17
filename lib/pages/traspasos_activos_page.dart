@@ -50,7 +50,7 @@ class _TraspasosActivosPageState extends State<TraspasosActivosPage> {
     if (_userId.isEmpty) return;
 
     try {
-      final url = Uri.parse('http://38.247.147.220/lamano/api_traspasos_activos.php?user_id=$_userId');
+      final url = Uri.parse('http://93.127.135.73/lamano/api_traspasos_activos.php?user_id=$_userId');
       final resp = await http.get(url).timeout(const Duration(seconds: 15));
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
 
@@ -97,7 +97,7 @@ class _TraspasosActivosPageState extends State<TraspasosActivosPage> {
       }
 
       try {
-        final createUrl = Uri.parse('http://38.247.147.220/lamano/api_traspaso_create_group_v2.php');
+        final createUrl = Uri.parse('http://93.127.135.73/lamano/api_traspaso_create_group_v2.php');
         final createResp = await http.post(
           createUrl,
           headers: {'Content-Type': 'application/json'},

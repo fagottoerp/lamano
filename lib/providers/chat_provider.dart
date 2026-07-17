@@ -20,7 +20,7 @@ class ChatProvider {
     
     final request = http.MultipartRequest(
       'POST',
-      Uri.parse('http://38.247.147.220/lamano/api_upload_chat_file.php'),
+      Uri.parse('http://93.127.135.73/lamano/api_upload_chat_file.php'),
     );
     
     request.fields['userId'] = userId;
@@ -186,7 +186,7 @@ class ChatProvider {
   void _sendPushNotification(String groupChatId, String idFrom, String idTo, int type, String content, String senderName) {
     // Fire and forget - no bloqueamos la UI
     http.post(
-      Uri.parse('http://38.247.147.220/lamano/api_send_message_push.php'),
+      Uri.parse('http://93.127.135.73/lamano/api_send_message_push.php'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({
         'groupChatId': groupChatId,

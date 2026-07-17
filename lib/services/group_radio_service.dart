@@ -10,7 +10,7 @@ import 'dart:convert';
 /// Cada grupo tiene su propia frecuencia (canal de Agora)
 class GroupRadioService {
   static const String _agoraAppId = '41b0a5f3844441c3abf9e4c5fdc2eca9';
-  static const String _tokenServerUrl = 'http://38.247.147.220/lamano/api_agora_token.php';
+  static const String _tokenServerUrl = 'http://93.127.135.73/lamano/api_agora_token.php';
   
   // Singleton
   static final GroupRadioService _instance = GroupRadioService._internal();

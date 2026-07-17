@@ -10,7 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AppUpdater {
   static const String _versionUrl =
-      'http://38.247.147.220/lamano/version.json';
+      'http://93.127.135.73/lamano/version.json';
   static const String _prefsDismissedKey = 'update_dismissed_version';
   static DateTime? _lastCheckAt;
   static bool _checking = false;

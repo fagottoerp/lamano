@@ -1,6 +1,6 @@
 plugins {
     id "com.android.application"
-    id "kotlin-android"
+    id "org.jetbrains.kotlin.android"
     id "dev.flutter.flutter-gradle-plugin"
     id "com.google.gms.google-services"
 }
@@ -16,6 +16,7 @@ if (localPropertiesFile.exists()) {
 android {
     namespace "com.lamano2.com"
     compileSdk 36
+    ndkVersion = "28.2.13676358"
 
     lintOptions {
         disable 'InvalidPackage'
